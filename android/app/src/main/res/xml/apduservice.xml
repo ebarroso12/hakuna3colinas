@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Declara o AID (Application ID) que o Hakuna Connect emula via HCE.
+  F0010203040506 é um AID de exemplo no range "reservado para uso proprietário"
+  (categoria "other"). Troque pelo AID real da credencial/cartão do Top
+  quando definido — cada tipo de cartão físico (controle de acesso, por
+  exemplo) tem seu próprio AID.
+-->
+<host-apdu-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/hce_service_description"
+    android:requireDeviceUnlock="true">
+    <aid-group android:description="@string/hce_service_description" android:category="other">
+        <aid-filter android:name="F0010203040506"/>
+    </aid-group>
+</host-apdu-service>

@@ -1,0 +1,191 @@
+import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+
+import '../models/hakuna_position.dart';
+import '../models/profile.dart';
+import '../models/top.dart';
+import '../services/location_service.dart';
+import '../services/nfc_service.dart';
+import '../services/supabase_service.dart';
+
+class TopDetailScreen extends StatefulWidget {
+  const TopDetailScreen({super.key, required this.top});
+
+  final Top top;
+
+  @override
+  State<TopDetailScreen> createState() => _TopDetailScreenState();
+}
+
+class _TopDetailScreenState extends State<TopDetailScreen> {
+  Profile? _myProfile;
+  bool _tracking = false;
+  String? _nfcMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfile();
+  }
+
+  bool _profileLoadFailed = false;
+
+  Future<void> _loadProfile() async {
+    try {
+      final profile = await SupabaseService.instance.fetchMyProfile();
+      if (mounted) setState(() => _myProfile = profile);
+    } catch (_) {
+      if (mounted) setState(() => _profileLoadFailed = true);
+    }
+  }
+
+  Future<void> _toggleTracking() async {
+    if (_tracking) {
+      await LocationService.instance.stopTracking();
+      if (!mounted) return;
+      setState(() => _tracking = false);
+      return;
+    }
+    try {
+      await LocationService.instance.startTracking(
+        widget.top.id,
+        // Erros que chegam DEPOIS que o rastreamento já começou (GPS
+        // desligado, permissão revogada, sessão expirada) caem aqui, não
+        // no catch abaixo — o LocationService já para o rastreamento.
+        onError: (error) {
+          if (!mounted) return;
+          setState(() => _tracking = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Rastreamento interrompido: $error')),
+          );
+        },
+      );
+      if (!mounted) return;
+      setState(() => _tracking = true);
+    } catch (e) {
+      final deniedForever = await LocationService.instance.isPermissionDeniedForever();
+      if (!mounted) return;
+      if (deniedForever) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Permissão de localização negada. Abra as Configurações do app para liberar.'),
+            action: SnackBarAction(label: 'Abrir', onPressed: Geolocator.openAppSettings),
+          ),
+        );
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível iniciar o rastreamento: $e')),
+      );
+    }
+  }
+
+  Future<void> _readNfc() async {
+    setState(() => _nfcMessage = 'Aproxime a tag...');
+    try {
+      final text = await NfcService.instance.readTagText();
+      if (!mounted) return;
+      setState(() => _nfcMessage = text ?? 'Tag sem texto NDEF legível.');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _nfcMessage = 'Erro na leitura: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    // Checa o estado real do serviço (LocationService.instance.isTracking),
+    // não a flag local: se a tela for fechada enquanto startTracking()
+    // ainda está em andamento, _tracking pode estar false mesmo com o
+    // rastreamento já ativo no serviço.
+    if (LocationService.instance.isTracking) LocationService.instance.stopTracking();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isHakuna = _myProfile?.role == UserRole.hakuna || _myProfile?.role == UserRole.admin;
+
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.top.name)),
+      body: Column(
+        children: [
+          if (_profileLoadFailed)
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  const Icon(Icons.error_outline, color: Colors.red),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text('Não foi possível carregar seu perfil. Verifique a internet.'),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      setState(() => _profileLoadFailed = false);
+                      _loadProfile();
+                    },
+                    child: const Text('Tentar de novo'),
+                  ),
+                ],
+              ),
+            ),
+          if (isHakuna)
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: FilledButton.icon(
+                onPressed: widget.top.status.name == 'active' ? _toggleTracking : null,
+                icon: Icon(_tracking ? Icons.location_off : Icons.location_on),
+                label: Text(_tracking ? 'Parar de compartilhar posição' : 'Compartilhar minha posição'),
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _readNfc,
+                    icon: const Icon(Icons.nfc),
+                    label: const Text('Ler tag NFC'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (_nfcMessage != null)
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(_nfcMessage!),
+            ),
+          const Divider(),
+          Expanded(
+            child: StreamBuilder<List<HakunaPosition>>(
+              stream: SupabaseService.instance.watchTopPositions(widget.top.id),
+              builder: (context, snapshot) {
+                final positions = snapshot.data ?? [];
+                if (positions.isEmpty) {
+                  return const Center(child: Text('Nenhuma posição de Hakuna disponível ainda.'));
+                }
+                return ListView.builder(
+                  itemCount: positions.length,
+                  itemBuilder: (context, index) {
+                    final p = positions[index];
+                    return ListTile(
+                      leading: const Icon(Icons.medical_services),
+                      title: Text(p.profileId),
+                      subtitle: Text(
+                        'lat: ${p.latitude.toStringAsFixed(5)}, lng: ${p.longitude.toStringAsFixed(5)}\n'
+                        'atualizado às ${p.recordedAt.toLocal()}',
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
