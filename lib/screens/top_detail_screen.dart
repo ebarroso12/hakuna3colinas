@@ -79,6 +79,21 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
       if (!mounted) return;
       setState(() => _tracking = true);
     } catch (e) {
+      // Duas causas bem diferentes pro mesmo erro: GPS desligado no sistema
+      // (resolve em Configurações > Localização) ou permissão do app negada
+      // (resolve em Configurações > Apps > Hakuna Connect). Cada uma abre
+      // uma tela do Android diferente — misturar as duas confunde o usuário.
+      final serviceDisabled = await LocationService.instance.isLocationServiceDisabled();
+      if (!mounted) return;
+      if (serviceDisabled) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Localização (GPS) está desligada no aparelho. Ative para compartilhar sua posição.'),
+            action: SnackBarAction(label: 'Abrir', onPressed: Geolocator.openLocationSettings),
+          ),
+        );
+        return;
+      }
       final deniedForever = await LocationService.instance.isPermissionDeniedForever();
       if (!mounted) return;
       if (deniedForever) {

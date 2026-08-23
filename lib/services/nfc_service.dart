@@ -20,7 +20,19 @@ class NfcService {
 
   /// Lê a primeira tag aproximada e retorna o texto do primeiro registro
   /// NDEF de texto encontrado (ex: id gravado numa pulseira de senderista).
+  ///
+  /// Checa a disponibilidade ANTES de abrir a sessão: sem isso, aparelho
+  /// sem NFC ou com NFC desligado no sistema deixava a tela presa em
+  /// "Aproxime a tag..." sem nenhuma explicação pro usuário.
   Future<String?> readTagText() async {
+    final availability = await checkAvailability();
+    if (availability == NfcAvailability.unsupported) {
+      throw StateError('Este aparelho não tem leitor NFC.');
+    }
+    if (availability == NfcAvailability.disabled) {
+      throw StateError('NFC está desligado. Ative em Configurações > Conexões > NFC.');
+    }
+
     final completer = Completer<String?>();
 
     await NfcManager.instance.startSession(

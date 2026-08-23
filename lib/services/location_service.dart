@@ -19,8 +19,7 @@ class LocationService {
 
   /// Permissão concedida E serviço de localização (GPS) ligado no aparelho.
   Future<bool> ensurePermission() async {
-    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) return false;
+    if (!await Geolocator.isLocationServiceEnabled()) return false;
 
     var permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
@@ -29,6 +28,14 @@ class LocationService {
     if (permission == LocationPermission.deniedForever) return false;
     return permission == LocationPermission.always ||
         permission == LocationPermission.whileInUse;
+  }
+
+  /// True quando o GPS/localização está desligado no aparelho (não é
+  /// questão de permissão do app — é o toggle de localização do sistema).
+  /// Distinguir isso de permissão negada importa: são duas telas de
+  /// configuração diferentes no Android.
+  Future<bool> isLocationServiceDisabled() async {
+    return !await Geolocator.isLocationServiceEnabled();
   }
 
   /// True quando a permissão foi negada permanentemente — só dá pra
