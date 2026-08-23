@@ -10,6 +10,9 @@ create type public.user_role as enum ('admin', 'hakuna', 'senderista');
 create table public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,
   full_name text not null,
+  -- Identificação oficial do Legendários: todo usuário (hakuna, admin ou
+  -- senderista) é identificado por nome + número de sócio do Legendários.
+  legendarios_number text not null unique,
   role public.user_role not null default 'senderista',
   phone text,
   medical_registry text, -- CRM, apenas para hakunas

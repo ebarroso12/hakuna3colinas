@@ -19,6 +19,7 @@ class TopDetailScreen extends StatefulWidget {
 
 class _TopDetailScreenState extends State<TopDetailScreen> {
   Profile? _myProfile;
+  Map<String, Profile> _hakunaProfiles = {};
   bool _tracking = false;
   String? _nfcMessage;
 
@@ -26,6 +27,7 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
   void initState() {
     super.initState();
     _loadProfile();
+    _loadHakunaProfiles();
   }
 
   bool _profileLoadFailed = false;
@@ -36,6 +38,18 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
       if (mounted) setState(() => _myProfile = profile);
     } catch (_) {
       if (mounted) setState(() => _profileLoadFailed = true);
+    }
+  }
+
+  /// Nomes + número do Legendários dos Hakunas do Top, pra identificar quem
+  /// é quem na lista de posições. Falha aqui não é crítica — a lista de
+  /// posições cai de volta pro id cru, então só tenta uma vez.
+  Future<void> _loadHakunaProfiles() async {
+    try {
+      final profiles = await SupabaseService.instance.fetchHakunaProfiles(widget.top.id);
+      if (mounted) setState(() => _hakunaProfiles = profiles);
+    } catch (_) {
+      // segue sem os nomes; a lista mostra o id cru como fallback
     }
   }
 
@@ -171,9 +185,10 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
                   itemCount: positions.length,
                   itemBuilder: (context, index) {
                     final p = positions[index];
+                    final label = _hakunaProfiles[p.profileId]?.displayLabel ?? p.profileId;
                     return ListTile(
                       leading: const Icon(Icons.medical_services),
-                      title: Text(p.profileId),
+                      title: Text(label),
                       subtitle: Text(
                         'lat: ${p.latitude.toStringAsFixed(5)}, lng: ${p.longitude.toStringAsFixed(5)}\n'
                         'atualizado às ${p.recordedAt.toLocal()}',

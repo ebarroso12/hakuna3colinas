@@ -65,6 +65,26 @@ class SupabaseService {
     });
   }
 
+  /// Perfis (nome + número do Legendários) dos Hakunas liberados num Top,
+  /// indexados por id — usado pra identificar quem é quem na lista de
+  /// posições (que só tem o profile_id cru).
+  Future<Map<String, Profile>> fetchHakunaProfiles(String topId) async {
+    final rows = await _client
+        .from('top_hakunas')
+        .select('profile_id, profiles(id, full_name, legendarios_number, role, phone, medical_registry)')
+        .eq('top_id', topId)
+        .eq('released', true);
+    final map = <String, Profile>{};
+    for (final row in rows) {
+      final profileMap = row['profiles'] as Map<String, dynamic>?;
+      if (profileMap != null) {
+        final profile = Profile.fromMap(profileMap);
+        map[profile.id] = profile;
+      }
+    }
+    return map;
+  }
+
   /// Stream em tempo real das posições dos Hakunas de um Top específico.
   /// Emite a lista completa (mais recente por hakuna) a cada mudança.
   Stream<List<HakunaPosition>> watchTopPositions(String topId) {
