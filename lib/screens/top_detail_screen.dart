@@ -7,6 +7,7 @@ import '../models/top.dart';
 import '../services/location_service.dart';
 import '../services/nfc_service.dart';
 import '../services/supabase_service.dart';
+import '../widgets/app_logo.dart';
 
 class TopDetailScreen extends StatefulWidget {
   const TopDetailScreen({super.key, required this.top});
@@ -121,7 +122,10 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
     final isHakuna = _myProfile?.role == UserRole.hakuna || _myProfile?.role == UserRole.admin;
 
     return Scaffold(
-      appBar: AppBar(title: Text(widget.top.name)),
+      appBar: AppBar(
+        leading: const AppLogoAppBarLeading(),
+        title: Text(widget.top.name),
+      ),
       body: Column(
         children: [
           if (_profileLoadFailed)

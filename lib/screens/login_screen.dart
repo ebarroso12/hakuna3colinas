@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/supabase_service.dart';
+import '../widgets/app_logo.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -44,6 +45,8 @@ class _LoginScreenState extends State<LoginScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            const Center(child: AppLogo(size: 140)),
+            const SizedBox(height: 24),
             TextField(
               controller: _emailController,
               keyboardType: TextInputType.emailAddress,

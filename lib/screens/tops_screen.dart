@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/top.dart';
 import '../services/supabase_service.dart';
+import '../widgets/app_logo.dart';
 import 'top_detail_screen.dart';
 
 /// Lista os "Tops" (eventos) aos quais o usuário logado está vinculado,
@@ -31,6 +32,7 @@ class _TopsScreenState extends State<TopsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        leading: const AppLogoAppBarLeading(),
         title: const Text('Meus Tops'),
         actions: [
           IconButton(
