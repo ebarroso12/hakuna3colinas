@@ -4,6 +4,7 @@ import 'package:geolocator/geolocator.dart';
 import '../models/hakuna_position.dart';
 import '../models/profile.dart';
 import '../models/top.dart';
+import '../models/top_alert.dart';
 import '../services/location_service.dart';
 import '../services/nfc_service.dart';
 import '../services/stats_service.dart';
@@ -113,6 +114,66 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
     }
   }
 
+  /// Dispara o sinal de alarme (acidente/atendimento crítico) pro Top. Pede
+  /// confirmação — é uma ação séria que avisa todos os Hakunas liberados —
+  /// e anexa a posição atual quando disponível, pra ajudar a localizar
+  /// quem precisa de ajuda.
+  Future<void> _sendAlert() async {
+    final messageController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Disparar sinal de alarme?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Avisa todos os Hakunas liberados neste Top agora. Use só em acidente ou atendimento crítico.'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: messageController,
+              decoration: const InputDecoration(labelText: 'O que está acontecendo? (opcional)'),
+              minLines: 1,
+              maxLines: 3,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancelar')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Disparar alarme'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    double? lat;
+    double? lng;
+    try {
+      final position = await Geolocator.getCurrentPosition();
+      lat = position.latitude;
+      lng = position.longitude;
+    } catch (_) {
+      // segue sem posição — o alarme em si é mais importante que a localização
+    }
+
+    try {
+      await SupabaseService.instance.sendTopAlert(
+        topId: widget.top.id,
+        message: messageController.text.trim().isEmpty ? null : messageController.text.trim(),
+        latitude: lat,
+        longitude: lng,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível disparar o alarme: $e')),
+      );
+    }
+  }
+
   Future<void> _readNfc() async {
     setState(() => _nfcMessage = 'Aproxime a tag...');
     try {
@@ -184,6 +245,17 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
                     child: const Text('Tentar de novo'),
                   ),
                 ],
+              ),
+            ),
+          if (isHakuna) _AlertBanner(topId: widget.top.id, hakunaProfiles: _hakunaProfiles),
+          if (isHakuna)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+                onPressed: _sendAlert,
+                icon: const Icon(Icons.warning_amber),
+                label: const Text('EMERGÊNCIA — acidente / atendimento crítico'),
               ),
             ),
           if (isHakuna)
@@ -303,6 +375,75 @@ class _MyStatsCard extends StatelessWidget {
               ],
             ),
           ),
+        );
+      },
+    );
+  }
+}
+
+/// Mostra os alarmes recentes (última hora) do Top que ainda não foram
+/// dispensados nesta sessão. Só aparece enquanto a tela do Top estiver
+/// aberta — não há push notification neste momento.
+class _AlertBanner extends StatefulWidget {
+  const _AlertBanner({required this.topId, required this.hakunaProfiles});
+
+  final String topId;
+  final Map<String, Profile> hakunaProfiles;
+
+  @override
+  State<_AlertBanner> createState() => _AlertBannerState();
+}
+
+class _AlertBannerState extends State<_AlertBanner> {
+  final Set<int> _dismissed = {};
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<TopAlert>>(
+      stream: SupabaseService.instance.watchTopAlerts(widget.topId),
+      builder: (context, snapshot) {
+        final cutoff = DateTime.now().subtract(const Duration(hours: 1));
+        final alerts = (snapshot.data ?? [])
+            .where((a) => !_dismissed.contains(a.id) && a.createdAt.isAfter(cutoff))
+            .toList();
+        if (alerts.isEmpty) return const SizedBox.shrink();
+
+        return Column(
+          children: alerts.map((alert) {
+            final senderLabel = widget.hakunaProfiles[alert.senderId]?.displayLabel ?? 'Hakuna';
+            return Container(
+              width: double.infinity,
+              margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: Colors.red.shade700, borderRadius: BorderRadius.circular(8)),
+              child: Row(
+                children: [
+                  const Icon(Icons.warning_amber, color: Colors.white),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Alarme — $senderLabel',
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                        ),
+                        if (alert.message != null) Text(alert.message!, style: const TextStyle(color: Colors.white)),
+                        Text(
+                          alert.createdAt.toLocal().toString(),
+                          style: const TextStyle(color: Colors.white70, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white),
+                    onPressed: () => setState(() => _dismissed.add(alert.id)),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
         );
       },
     );

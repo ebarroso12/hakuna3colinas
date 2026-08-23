@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
+import 'login_with_code_screen.dart';
 import 'signup_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -81,6 +82,12 @@ class _LoginScreenState extends State<LoginScreen> {
                 MaterialPageRoute(builder: (_) => const SignupScreen()),
               ),
               child: const Text('Não tem conta? Cadastre-se'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const LoginWithCodeScreen()),
+              ),
+              child: const Text('Esqueci minha senha / entrar com código'),
             ),
           ],
         ),

@@ -161,6 +161,21 @@ create table public.triage_rules (
   active boolean not null default true
 );
 
+-- Sinal de alarme: qualquer Hakuna liberado no Top pode disparar em caso
+-- de acidente ou atendimento crítico. Visível em tempo real pra quem
+-- estiver com a tela do Top aberta (sem push notification por enquanto).
+create table public.top_alerts (
+  id bigint generated always as identity primary key,
+  top_id uuid not null references public.tops (id) on delete cascade,
+  sender_id uuid not null references public.profiles (id),
+  message text,
+  latitude double precision,
+  longitude double precision,
+  created_at timestamptz not null default now()
+);
+
+create index top_alerts_top_idx on public.top_alerts (top_id, created_at desc);
+
 -- Funções auxiliares (security definer) usadas nas policies de admin —
 -- evitam repetir a subquery "sou admin/master admin" em toda policy.
 create or replace function public.is_admin()
@@ -193,6 +208,7 @@ alter table public.nfc_tags enable row level security;
 alter table public.top_hakuna_messages enable row level security;
 alter table public.vital_signs enable row level security;
 alter table public.triage_rules enable row level security;
+alter table public.top_alerts enable row level security;
 
 -- profiles: cada um vê/edita o próprio; admin vê todos
 create policy "profiles_select_own_or_admin" on public.profiles
@@ -370,10 +386,34 @@ create policy "triage_rules_select_authenticated" on public.triage_rules
 create policy "triage_rules_write_master_admin" on public.triage_rules
   for all using (public.is_master_admin()) with check (public.is_master_admin());
 
--- Habilita Realtime nas tabelas de posição, chat e sinais vitais
+-- top_alerts: só hakunas liberados (ou admin) do MESMO top leem/escrevem
+create policy "top_alerts_select_same_top" on public.top_alerts
+  for select using (
+    exists (
+      select 1 from public.top_hakunas hk
+      where hk.top_id = top_alerts.top_id
+        and hk.profile_id = auth.uid()
+        and hk.released = true
+    )
+    or public.is_admin()
+  );
+
+create policy "top_alerts_insert_hakuna" on public.top_alerts
+  for insert with check (
+    sender_id = auth.uid()
+    and exists (
+      select 1 from public.top_hakunas hk
+      where hk.top_id = top_alerts.top_id
+        and hk.profile_id = auth.uid()
+        and hk.released = true
+    )
+  );
+
+-- Habilita Realtime nas tabelas de posição, chat, sinais vitais e alarme
 alter publication supabase_realtime add table public.hakuna_positions;
 alter publication supabase_realtime add table public.top_hakuna_messages;
 alter publication supabase_realtime add table public.vital_signs;
+alter publication supabase_realtime add table public.top_alerts;
 
 -- Regras iniciais de triagem (primeira regra que bate, por priority
 -- crescente, decide a cor):

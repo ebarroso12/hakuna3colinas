@@ -4,6 +4,7 @@ import '../models/chat_message.dart';
 import '../models/hakuna_position.dart';
 import '../models/profile.dart';
 import '../models/top.dart';
+import '../models/top_alert.dart';
 import '../models/triage_rule.dart';
 import '../models/vital_signs.dart';
 
@@ -53,6 +54,25 @@ class SupabaseService {
   }
 
   Future<void> signOut() => _client.auth.signOut();
+
+  /// Envia um código de 6 dígitos por e-mail — usado tanto pra "esqueci
+  /// minha senha" quanto pra login sem senha. Não depende de link nenhum
+  /// (o link de confirmação do Supabase só funciona se a URL de redirect
+  /// do projeto estiver configurada, o que hoje não é o caso).
+  Future<void> sendLoginCode(String email) {
+    return _client.auth.signInWithOtp(email: email);
+  }
+
+  /// Confirma o código recebido por e-mail e efetiva o login.
+  Future<void> verifyLoginCode({required String email, required String code}) {
+    return _client.auth.verifyOTP(email: email, token: code, type: OtpType.email);
+  }
+
+  /// Só funciona com uma sessão ativa (usuário já logado) — troca a
+  /// própria senha, digitada pelo próprio usuário na tela do app.
+  Future<void> updateMyPassword(String newPassword) {
+    return _client.auth.updateUser(UserAttributes(password: newPassword));
+  }
 
   Future<Profile> fetchMyProfile() async {
     final uid = currentUser!.id;
@@ -186,6 +206,37 @@ class SupabaseService {
       'top_id': topId,
       'sender_id': uid,
       'body': body,
+    });
+  }
+
+  /// Sinal de alarme do Top (acidente/atendimento crítico), em tempo real.
+  /// Só visível pra quem estiver com a tela do Top aberta — sem push
+  /// notification neste momento.
+  Stream<List<TopAlert>> watchTopAlerts(String topId) {
+    return _client
+        .from('top_alerts')
+        .stream(primaryKey: ['id'])
+        .eq('top_id', topId)
+        .order('created_at', ascending: false)
+        .map((rows) => rows.map((r) => TopAlert.fromMap(r)).toList());
+  }
+
+  Future<void> sendTopAlert({
+    required String topId,
+    String? message,
+    double? latitude,
+    double? longitude,
+  }) {
+    final uid = currentUser?.id;
+    if (uid == null) {
+      return Future.error(StateError('Sessão expirada — não é possível disparar o alarme'));
+    }
+    return _client.from('top_alerts').insert({
+      'top_id': topId,
+      'sender_id': uid,
+      'message': message,
+      'latitude': latitude,
+      'longitude': longitude,
     });
   }
 

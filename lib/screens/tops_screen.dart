@@ -5,6 +5,7 @@ import '../models/top.dart';
 import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
 import 'admin/admin_home_screen.dart';
+import 'change_password_screen.dart';
 import 'top_detail_screen.dart';
 
 /// Lista os "Tops" (eventos) aos quais o usuário logado está vinculado,
@@ -51,9 +52,21 @@ class _TopsScreenState extends State<TopsScreen> {
                 ),
               ),
             ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () => SupabaseService.instance.signOut(),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert),
+            onSelected: (value) {
+              if (value == 'change_password') {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const ChangePasswordScreen()),
+                );
+              } else if (value == 'sign_out') {
+                SupabaseService.instance.signOut();
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 'change_password', child: Text('Trocar senha')),
+              PopupMenuItem(value: 'sign_out', child: Text('Sair')),
+            ],
           ),
         ],
       ),
