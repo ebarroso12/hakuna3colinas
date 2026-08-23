@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/chat_message.dart';
 import '../models/hakuna_position.dart';
 import '../models/profile.dart';
 import '../models/top.dart';
@@ -26,6 +27,25 @@ class SupabaseService {
 
   Future<AuthResponse> signIn({required String email, required String password}) {
     return _client.auth.signInWithPassword(email: email, password: password);
+  }
+
+  /// Cadastro de um novo participante (Senderista por padrão — um admin
+  /// promove pra Hakuna depois). O trigger handle_new_user() no banco cria
+  /// a linha em profiles automaticamente a partir desses metadados.
+  Future<AuthResponse> signUp({
+    required String email,
+    required String password,
+    required String fullName,
+    required String legendariosNumber,
+  }) {
+    return _client.auth.signUp(
+      email: email,
+      password: password,
+      data: {
+        'full_name': fullName,
+        'legendarios_number': legendariosNumber,
+      },
+    );
   }
 
   Future<void> signOut() => _client.auth.signOut();
@@ -101,5 +121,29 @@ class SupabaseService {
           }
           return latestByProfile.values.map((r) => HakunaPosition.fromMap(r)).toList();
         });
+  }
+
+  /// Chat interno dos Hakunas liberados num Top, em tempo real. Substitui a
+  /// necessidade de um sistema externo (tipo Chatwoot) só pra comunicação
+  /// de equipe durante o evento.
+  Stream<List<ChatMessage>> watchTopMessages(String topId) {
+    return _client
+        .from('top_hakuna_messages')
+        .stream(primaryKey: ['id'])
+        .eq('top_id', topId)
+        .order('created_at')
+        .map((rows) => rows.map((r) => ChatMessage.fromMap(r)).toList());
+  }
+
+  Future<void> sendTopMessage({required String topId, required String body}) {
+    final uid = currentUser?.id;
+    if (uid == null) {
+      return Future.error(StateError('Sessão expirada — não é possível enviar mensagem'));
+    }
+    return _client.from('top_hakuna_messages').insert({
+      'top_id': topId,
+      'sender_id': uid,
+      'body': body,
+    });
   }
 }

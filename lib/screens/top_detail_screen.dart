@@ -8,6 +8,7 @@ import '../services/location_service.dart';
 import '../services/nfc_service.dart';
 import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
+import 'top_chat_screen.dart';
 
 class TopDetailScreen extends StatefulWidget {
   const TopDetailScreen({super.key, required this.top});
@@ -125,6 +126,18 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
       appBar: AppBar(
         leading: const AppLogoAppBarLeading(),
         title: Text(widget.top.name),
+        actions: [
+          if (isHakuna)
+            IconButton(
+              icon: const Icon(Icons.chat),
+              tooltip: 'Chat com os Hakunas',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => TopChatScreen(top: widget.top, hakunaProfiles: _hakunaProfiles),
+                ),
+              ),
+            ),
+        ],
       ),
       body: Column(
         children: [
