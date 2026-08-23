@@ -6,6 +6,7 @@ import '../models/profile.dart';
 import '../models/top.dart';
 import '../services/location_service.dart';
 import '../services/nfc_service.dart';
+import '../services/stats_service.dart';
 import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
 import 'top_chat_screen.dart';
@@ -185,6 +186,7 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
                 label: Text(_tracking ? 'Parar de compartilhar posição' : 'Compartilhar minha posição'),
               ),
             ),
+          if (isHakuna) _MyStatsCard(topId: widget.top.id, weightKg: _myProfile?.weightKg),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Row(
@@ -233,6 +235,87 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Distância percorrida, velocidade média e gasto calórico estimado do
+/// próprio Hakuna no Top, calculados localmente a partir da trilha de GPS
+/// já salva em hakuna_positions — sem nenhuma API externa.
+class _MyStatsCard extends StatelessWidget {
+  const _MyStatsCard({required this.topId, required this.weightKg});
+
+  final String topId;
+  final double? weightKg;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<HakunaPosition>>(
+      stream: SupabaseService.instance.watchMyPositionHistory(topId),
+      builder: (context, snapshot) {
+        final positions = snapshot.data ?? [];
+        final stats = StatsService.compute(positions, weightKg: weightKg);
+        if (positions.length < 2) return const SizedBox.shrink();
+
+        return Card(
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _StatItem(
+                      icon: Icons.route,
+                      label: 'Distância',
+                      value: '${stats.distanceKm.toStringAsFixed(2)} km',
+                    ),
+                    _StatItem(
+                      icon: Icons.speed,
+                      label: 'Vel. média',
+                      value: '${stats.avgSpeedKmh.toStringAsFixed(1)} km/h',
+                    ),
+                    _StatItem(
+                      icon: Icons.local_fire_department,
+                      label: 'Calorias*',
+                      value: '${stats.calories.round()} kcal',
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  stats.caloriesIsEstimate
+                      ? '* estimativa aproximada (informe seu peso no perfil pra ficar mais precisa)'
+                      : '* estimativa aproximada',
+                  style: Theme.of(context).textTheme.labelSmall,
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _StatItem extends StatelessWidget {
+  const _StatItem({required this.icon, required this.label, required this.value});
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Icon(icon, size: 20),
+        const SizedBox(height: 4),
+        Text(value, style: Theme.of(context).textTheme.titleMedium),
+        Text(label, style: Theme.of(context).textTheme.labelSmall),
+      ],
     );
   }
 }

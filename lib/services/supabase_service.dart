@@ -37,6 +37,7 @@ class SupabaseService {
     required String password,
     required String fullName,
     required String legendariosNumber,
+    double? weightKg,
   }) {
     return _client.auth.signUp(
       email: email,
@@ -44,6 +45,7 @@ class SupabaseService {
       data: {
         'full_name': fullName,
         'legendarios_number': legendariosNumber,
+        if (weightKg != null) 'weight_kg': weightKg.toString(),
       },
     );
   }
@@ -121,6 +123,24 @@ class SupabaseService {
           }
           return latestByProfile.values.map((r) => HakunaPosition.fromMap(r)).toList();
         });
+  }
+
+  /// Histórico completo (não só a última posição) das próprias posições do
+  /// Hakuna logado num Top, em ordem cronológica — usado para calcular
+  /// distância percorrida, velocidade média e gasto calórico localmente,
+  /// sem depender de nenhuma API externa.
+  Stream<List<HakunaPosition>> watchMyPositionHistory(String topId) {
+    final uid = currentUser?.id;
+    if (uid == null) return Stream.value(const []);
+    return _client
+        .from('hakuna_positions')
+        .stream(primaryKey: ['id'])
+        .eq('top_id', topId)
+        .order('recorded_at')
+        .map((rows) => rows
+            .where((r) => r['profile_id'] == uid)
+            .map((r) => HakunaPosition.fromMap(r))
+            .toList());
   }
 
   /// Chat interno dos Hakunas liberados num Top, em tempo real. Substitui a

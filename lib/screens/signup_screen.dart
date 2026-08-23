@@ -18,6 +18,7 @@ class _SignupScreenState extends State<SignupScreen> {
   final _legendariosNumberController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _weightController = TextEditingController();
   bool _loading = false;
   String? _error;
 
@@ -26,9 +27,15 @@ class _SignupScreenState extends State<SignupScreen> {
     final number = _legendariosNumberController.text.trim();
     final email = _emailController.text.trim();
     final password = _passwordController.text;
+    final weightText = _weightController.text.trim().replaceAll(',', '.');
 
     if (name.isEmpty || number.isEmpty || email.isEmpty || password.isEmpty) {
       setState(() => _error = 'Preencha todos os campos.');
+      return;
+    }
+    final weightKg = weightText.isEmpty ? null : double.tryParse(weightText);
+    if (weightText.isNotEmpty && weightKg == null) {
+      setState(() => _error = 'Peso inválido.');
       return;
     }
 
@@ -44,6 +51,7 @@ class _SignupScreenState extends State<SignupScreen> {
         password: password,
         fullName: name,
         legendariosNumber: number,
+        weightKg: weightKg,
       );
       if (!mounted) return;
       if (SupabaseService.instance.currentUser == null) {
@@ -66,6 +74,7 @@ class _SignupScreenState extends State<SignupScreen> {
     _legendariosNumberController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
+    _weightController.dispose();
     super.dispose();
   }
 
@@ -89,6 +98,15 @@ class _SignupScreenState extends State<SignupScreen> {
               controller: _legendariosNumberController,
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(labelText: 'Número do Legendários'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _weightController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Peso (kg) — opcional',
+                helperText: 'Usado só para estimar o gasto calórico na trilha.',
+              ),
             ),
             const SizedBox(height: 12),
             TextField(

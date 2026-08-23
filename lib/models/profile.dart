@@ -14,6 +14,7 @@ class Profile {
   final UserRole role;
   final String? phone;
   final String? medicalRegistry;
+  final double? weightKg;
 
   Profile({
     required this.id,
@@ -22,6 +23,7 @@ class Profile {
     required this.role,
     this.phone,
     this.medicalRegistry,
+    this.weightKg,
   });
 
   factory Profile.fromMap(Map<String, dynamic> map) {
@@ -32,6 +34,7 @@ class Profile {
       role: userRoleFromString(map['role'] as String),
       phone: map['phone'] as String?,
       medicalRegistry: map['medical_registry'] as String?,
+      weightKg: (map['weight_kg'] as num?)?.toDouble(),
     );
   }
 

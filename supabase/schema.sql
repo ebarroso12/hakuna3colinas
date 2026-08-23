@@ -16,6 +16,9 @@ create table public.profiles (
   role public.user_role not null default 'senderista',
   phone text,
   medical_registry text, -- CRM, apenas para hakunas
+  -- Opcional, só usado para estimar gasto calórico na trilha (MET x peso x
+  -- tempo) — sem isso a estimativa cai num peso médio padrão.
+  weight_kg numeric,
   created_at timestamptz not null default now()
 );
 
@@ -74,6 +77,45 @@ create table public.nfc_tags (
   created_at timestamptz not null default now()
 );
 
+-- Cadastro automático de participante: o app chama auth.signUp com
+-- full_name/legendarios_number/weight_kg nos metadados e este trigger cria
+-- a linha em profiles sozinho. Todo cadastro novo entra como 'senderista'
+-- — um admin promove pra 'hakuna' depois.
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  insert into public.profiles (id, full_name, legendarios_number, role, weight_kg)
+  values (
+    new.id,
+    coalesce(new.raw_user_meta_data ->> 'full_name', 'Sem nome'),
+    coalesce(new.raw_user_meta_data ->> 'legendarios_number', new.id::text),
+    'senderista',
+    nullif(new.raw_user_meta_data ->> 'weight_kg', '')::numeric
+  );
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+-- Chat interno dos Hakunas liberados de um mesmo Top, em tempo real.
+create table public.top_hakuna_messages (
+  id bigint generated always as identity primary key,
+  top_id uuid not null references public.tops (id) on delete cascade,
+  sender_id uuid not null references public.profiles (id) on delete cascade,
+  body text not null,
+  created_at timestamptz not null default now()
+);
+
+create index top_hakuna_messages_top_idx
+  on public.top_hakuna_messages (top_id, created_at);
+
 -- ============ RLS ============
 
 alter table public.profiles enable row level security;
@@ -82,6 +124,7 @@ alter table public.top_hakunas enable row level security;
 alter table public.top_senderistas enable row level security;
 alter table public.hakuna_positions enable row level security;
 alter table public.nfc_tags enable row level security;
+alter table public.top_hakuna_messages enable row level security;
 
 -- profiles: cada um vê/edita o próprio; admin vê todos
 create policy "profiles_select_own_or_admin" on public.profiles
@@ -162,5 +205,29 @@ create policy "nfc_tags_insert_admin" on public.nfc_tags
     exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin')
   );
 
--- Habilita Realtime na tabela de posições
+-- só hakunas liberados (ou admin) do MESMO top leem/escrevem no chat
+create policy "top_hakuna_messages_select_same_top" on public.top_hakuna_messages
+  for select using (
+    exists (
+      select 1 from public.top_hakunas hk
+      where hk.top_id = top_hakuna_messages.top_id
+        and hk.profile_id = auth.uid()
+        and hk.released = true
+    )
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin')
+  );
+
+create policy "top_hakuna_messages_insert_self" on public.top_hakuna_messages
+  for insert with check (
+    sender_id = auth.uid()
+    and exists (
+      select 1 from public.top_hakunas hk
+      where hk.top_id = top_hakuna_messages.top_id
+        and hk.profile_id = auth.uid()
+        and hk.released = true
+    )
+  );
+
+-- Habilita Realtime nas tabelas de posição e chat
 alter publication supabase_realtime add table public.hakuna_positions;
+alter publication supabase_realtime add table public.top_hakuna_messages;
