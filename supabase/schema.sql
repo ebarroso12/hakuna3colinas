@@ -87,14 +87,36 @@ create policy "profiles_select_own_or_admin" on public.profiles
     or exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin')
   );
 
+-- with check impede o usuário de trocar a própria "role" (ex: senderista
+-- virar admin) — sem isso, RLS de UPDATE só valida a linha, não o conteúdo.
 create policy "profiles_update_own" on public.profiles
-  for update using (id = auth.uid());
+  for update using (id = auth.uid())
+  with check (
+    id = auth.uid()
+    and role = (select role from public.profiles where id = auth.uid())
+  );
 
 -- tops: qualquer usuário autenticado vinculado ao top (hakuna ou senderista) pode ver
 create policy "tops_select_linked" on public.tops
   for select using (
     exists (select 1 from public.top_hakunas th where th.top_id = id and th.profile_id = auth.uid())
     or exists (select 1 from public.top_senderistas ts where ts.top_id = id and ts.profile_id = auth.uid())
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin')
+  );
+
+-- top_hakunas/top_senderistas precisam de policy própria: RLS sem nenhuma
+-- policy nega tudo por padrão, inclusive quando a tabela é referenciada
+-- dentro de subquery de outra policy (como acima e abaixo) — sem isso,
+-- tops_select_linked e hakuna_positions_* nunca liberam nada pra ninguém.
+create policy "top_hakunas_select_own_or_admin" on public.top_hakunas
+  for select using (
+    profile_id = auth.uid()
+    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin')
+  );
+
+create policy "top_senderistas_select_own_or_admin" on public.top_senderistas
+  for select using (
+    profile_id = auth.uid()
     or exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin')
   );
 
