@@ -15,6 +15,9 @@ class Profile {
   final String? phone;
   final String? medicalRegistry;
   final double? weightKg;
+  final bool isMasterAdmin;
+  final DateTime? birthDate;
+  final List<String> comorbidities;
 
   Profile({
     required this.id,
@@ -24,6 +27,9 @@ class Profile {
     this.phone,
     this.medicalRegistry,
     this.weightKg,
+    this.isMasterAdmin = false,
+    this.birthDate,
+    this.comorbidities = const [],
   });
 
   factory Profile.fromMap(Map<String, dynamic> map) {
@@ -35,9 +41,23 @@ class Profile {
       phone: map['phone'] as String?,
       medicalRegistry: map['medical_registry'] as String?,
       weightKg: (map['weight_kg'] as num?)?.toDouble(),
+      isMasterAdmin: map['is_master_admin'] as bool? ?? false,
+      birthDate: map['birth_date'] != null ? DateTime.parse(map['birth_date'] as String) : null,
+      comorbidities: (map['comorbidities'] as List<dynamic>?)?.cast<String>() ?? const [],
     );
   }
 
   /// Como o usuário deve ser identificado na tela: nome + número do Legendários.
   String get displayLabel => '$fullName · $legendariosNumber';
+
+  /// Idade em anos completos a partir da data de nascimento, usada na
+  /// triagem por cor. Null se o Senderista não informou a data.
+  int? get age {
+    final b = birthDate;
+    if (b == null) return null;
+    final now = DateTime.now();
+    var years = now.year - b.year;
+    if (now.month < b.month || (now.month == b.month && now.day < b.day)) years--;
+    return years;
+  }
 }

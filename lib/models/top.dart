@@ -10,6 +10,8 @@ TopStatus topStatusFromString(String value) {
 class Top {
   final String id;
   final String name;
+  final String? topNumber;
+  final String? location;
   final String? description;
   final TopStatus status;
   final DateTime? startsAt;
@@ -18,6 +20,8 @@ class Top {
   Top({
     required this.id,
     required this.name,
+    this.topNumber,
+    this.location,
     this.description,
     required this.status,
     this.startsAt,
@@ -28,6 +32,8 @@ class Top {
     return Top(
       id: map['id'] as String,
       name: map['name'] as String,
+      topNumber: map['top_number'] as String?,
+      location: map['location'] as String?,
       description: map['description'] as String?,
       status: topStatusFromString(map['status'] as String),
       startsAt: map['starts_at'] != null ? DateTime.parse(map['starts_at'] as String) : null,

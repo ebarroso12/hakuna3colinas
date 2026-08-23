@@ -10,6 +10,7 @@ import '../services/stats_service.dart';
 import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
 import 'top_chat_screen.dart';
+import 'top_senderistas_screen.dart';
 
 class TopDetailScreen extends StatefulWidget {
   const TopDetailScreen({super.key, required this.top});
@@ -143,6 +144,14 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
         leading: const AppLogoAppBarLeading(),
         title: Text(widget.top.name),
         actions: [
+          if (isHakuna)
+            IconButton(
+              icon: const Icon(Icons.monitor_heart),
+              tooltip: 'Sinais vitais dos Senderistas',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => TopSenderistasScreen(top: widget.top)),
+              ),
+            ),
           if (isHakuna)
             IconButton(
               icon: const Icon(Icons.chat),

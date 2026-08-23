@@ -4,6 +4,8 @@ import '../models/chat_message.dart';
 import '../models/hakuna_position.dart';
 import '../models/profile.dart';
 import '../models/top.dart';
+import '../models/triage_rule.dart';
+import '../models/vital_signs.dart';
 
 /// Wrapper fino sobre o client do Supabase. Mantém as queries do app
 /// centralizadas em um único lugar.
@@ -93,7 +95,10 @@ class SupabaseService {
   Future<Map<String, Profile>> fetchHakunaProfiles(String topId) async {
     final rows = await _client
         .from('top_hakunas')
-        .select('profile_id, profiles(id, full_name, legendarios_number, role, phone, medical_registry)')
+        .select(
+          'profile_id, profiles(id, full_name, legendarios_number, role, phone, medical_registry, '
+          'weight_kg, is_master_admin, birth_date, comorbidities)',
+        )
         .eq('top_id', topId)
         .eq('released', true);
     final map = <String, Profile>{};
@@ -105,6 +110,23 @@ class SupabaseService {
       }
     }
     return map;
+  }
+
+  /// Perfis dos Senderistas inscritos num Top — usado pra escolher em quem
+  /// registrar sinais vitais.
+  Future<List<Profile>> fetchTopSenderistaProfiles(String topId) async {
+    final rows = await _client
+        .from('top_senderistas')
+        .select(
+          'profile_id, profiles(id, full_name, legendarios_number, role, phone, medical_registry, '
+          'weight_kg, is_master_admin, birth_date, comorbidities)',
+        )
+        .eq('top_id', topId);
+    return rows
+        .map((r) => r['profiles'] as Map<String, dynamic>?)
+        .whereType<Map<String, dynamic>>()
+        .map((m) => Profile.fromMap(m))
+        .toList();
   }
 
   /// Stream em tempo real das posições dos Hakunas de um Top específico.
@@ -164,6 +186,54 @@ class SupabaseService {
       'top_id': topId,
       'sender_id': uid,
       'body': body,
+    });
+  }
+
+  /// Regras de triagem ativas, usadas por qualquer usuário logado pra
+  /// calcular a cor de um participante — a edição delas é exclusiva do
+  /// admin master (AdminService).
+  Future<List<TriageRule>> fetchActiveTriageRules() async {
+    final rows = await _client.from('triage_rules').select().eq('active', true).order('priority');
+    return rows.map((r) => TriageRule.fromMap(r)).toList();
+  }
+
+  /// Sinais vitais de um participante num Top, em tempo real, do mais
+  /// recente pro mais antigo.
+  Stream<List<VitalSigns>> watchVitalSigns({required String topId, required String profileId}) {
+    return _client
+        .from('vital_signs')
+        .stream(primaryKey: ['id'])
+        .eq('top_id', topId)
+        .order('recorded_at', ascending: false)
+        .map((rows) => rows.where((r) => r['profile_id'] == profileId).map((r) => VitalSigns.fromMap(r)).toList());
+  }
+
+  Future<void> recordVitalSigns({
+    required String topId,
+    required String profileId,
+    int? heartRate,
+    int? systolicBp,
+    int? diastolicBp,
+    int? spo2,
+    double? temperatureC,
+    int? respiratoryRate,
+    String? notes,
+  }) {
+    final uid = currentUser?.id;
+    if (uid == null) {
+      return Future.error(StateError('Sessão expirada — não é possível registrar sinais vitais'));
+    }
+    return _client.from('vital_signs').insert({
+      'top_id': topId,
+      'profile_id': profileId,
+      'recorded_by': uid,
+      'heart_rate': heartRate,
+      'systolic_bp': systolicBp,
+      'diastolic_bp': diastolicBp,
+      'spo2': spo2,
+      'temperature_c': temperatureC,
+      'respiratory_rate': respiratoryRate,
+      'notes': notes,
     });
   }
 }
