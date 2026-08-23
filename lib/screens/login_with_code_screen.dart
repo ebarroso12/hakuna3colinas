@@ -35,7 +35,7 @@ class _LoginWithCodeScreenState extends State<LoginWithCodeScreen> {
       if (!mounted) return;
       setState(() => _codeSent = true);
     } catch (e) {
-      if (mounted) setState(() => _error = 'Não foi possível enviar o código: $e');
+      if (mounted) setState(() => _error = friendlyAuthError(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -58,7 +58,7 @@ class _LoginWithCodeScreenState extends State<LoginWithCodeScreen> {
         code: code,
       );
     } catch (e) {
-      if (mounted) setState(() => _error = 'Código inválido ou expirado: $e');
+      if (mounted) setState(() => _error = friendlyAuthError(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }

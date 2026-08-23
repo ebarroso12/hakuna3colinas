@@ -29,6 +29,7 @@ class AdminUserEditScreen extends StatefulWidget {
 class _AdminUserEditScreenState extends State<AdminUserEditScreen> {
   late UserRole _role;
   late Set<String> _comorbidities;
+  late bool _approved;
   DateTime? _birthDate;
   bool _saving = false;
   String? _error;
@@ -39,6 +40,7 @@ class _AdminUserEditScreenState extends State<AdminUserEditScreen> {
     _role = widget.profile.role;
     _comorbidities = widget.profile.comorbidities.toSet();
     _birthDate = widget.profile.birthDate;
+    _approved = widget.profile.approved;
   }
 
   Future<void> _pickBirthDate() async {
@@ -59,6 +61,9 @@ class _AdminUserEditScreenState extends State<AdminUserEditScreen> {
     try {
       if (_role != widget.profile.role) {
         await AdminService.instance.updateProfileRole(widget.profile.id, _role);
+      }
+      if (_approved != widget.profile.approved) {
+        await AdminService.instance.setApproved(widget.profile.id, _approved);
       }
       await AdminService.instance.updateProfileTriageInfo(
         widget.profile.id,
@@ -111,6 +116,15 @@ class _AdminUserEditScreenState extends State<AdminUserEditScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          if (!widget.profile.isMasterAdmin)
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Acesso liberado'),
+              subtitle: const Text('Desligado = usuário fica preso na tela de aguardando aprovação'),
+              value: _approved,
+              onChanged: (v) => setState(() => _approved = v),
+            ),
+          const SizedBox(height: 8),
           Text('Papel', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           DropdownButtonFormField<UserRole>(

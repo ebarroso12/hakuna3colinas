@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
+import '../widgets/password_field.dart';
 
 /// Troca a própria senha — só funciona logado. A senha é digitada aqui
 /// mesmo, pelo próprio usuário; nunca passa por fora do app.
@@ -40,7 +41,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
       );
       Navigator.of(context).pop();
     } catch (e) {
-      if (mounted) setState(() => _error = 'Não foi possível trocar a senha: $e');
+      if (mounted) setState(() => _error = friendlyAuthError(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -65,17 +66,9 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            TextField(
-              controller: _passwordController,
-              obscureText: true,
-              decoration: const InputDecoration(labelText: 'Nova senha'),
-            ),
+            PasswordField(controller: _passwordController, labelText: 'Nova senha'),
             const SizedBox(height: 12),
-            TextField(
-              controller: _confirmController,
-              obscureText: true,
-              decoration: const InputDecoration(labelText: 'Confirmar nova senha'),
-            ),
+            PasswordField(controller: _confirmController, labelText: 'Confirmar nova senha'),
             const SizedBox(height: 24),
             if (_error != null)
               Padding(

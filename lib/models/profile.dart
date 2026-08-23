@@ -18,6 +18,7 @@ class Profile {
   final bool isMasterAdmin;
   final DateTime? birthDate;
   final List<String> comorbidities;
+  final bool approved;
 
   Profile({
     required this.id,
@@ -30,6 +31,7 @@ class Profile {
     this.isMasterAdmin = false,
     this.birthDate,
     this.comorbidities = const [],
+    this.approved = false,
   });
 
   factory Profile.fromMap(Map<String, dynamic> map) {
@@ -44,6 +46,7 @@ class Profile {
       isMasterAdmin: map['is_master_admin'] as bool? ?? false,
       birthDate: map['birth_date'] != null ? DateTime.parse(map['birth_date'] as String) : null,
       comorbidities: (map['comorbidities'] as List<dynamic>?)?.cast<String>() ?? const [],
+      approved: map['approved'] as bool? ?? false,
     );
   }
 

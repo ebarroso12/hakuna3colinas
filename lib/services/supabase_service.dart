@@ -1,3 +1,4 @@
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/chat_message.dart';
@@ -7,6 +8,30 @@ import '../models/top.dart';
 import '../models/top_alert.dart';
 import '../models/triage_rule.dart';
 import '../models/vital_signs.dart';
+
+/// Traduz os erros mais comuns de autenticação do Supabase pra mensagens
+/// que fazem sentido pro usuário — sem isso ele via a exceção crua (em
+/// inglês, com jargão técnico) toda vez que algo dava errado no login.
+String friendlyAuthError(Object error) {
+  final message = error is AuthException ? error.message : error.toString();
+  final lower = message.toLowerCase();
+  if (lower.contains('email rate limit') || lower.contains('rate limit') || lower.contains('429')) {
+    return 'Muitos e-mails pedidos em pouco tempo. Aguarde alguns minutos e tente de novo.';
+  }
+  if (lower.contains('invalid') && (lower.contains('otp') || lower.contains('token'))) {
+    return 'Código inválido ou expirado. Confira o número ou peça um código novo.';
+  }
+  if (lower.contains('invalid login credentials')) {
+    return 'E-mail ou senha incorretos.';
+  }
+  if (lower.contains('email not confirmed')) {
+    return 'E-mail ainda não confirmado. Confira sua caixa de entrada.';
+  }
+  if (lower.contains('user not found') || lower.contains('signups not allowed')) {
+    return 'Não encontramos essa conta.';
+  }
+  return message;
+}
 
 /// Wrapper fino sobre o client do Supabase. Mantém as queries do app
 /// centralizadas em um único lugar.
@@ -54,6 +79,36 @@ class SupabaseService {
   }
 
   Future<void> signOut() => _client.auth.signOut();
+
+  /// Client ID "Aplicativo da Web" do projeto hakuna3colinas-app no Google
+  /// Cloud — usado como audiência do ID token, tanto aqui quanto na
+  /// configuração do provedor Google no Supabase. Precisa também existir
+  /// um client Android (mesmo projeto, com o applicationId e a assinatura
+  /// do app) pra o login nativo não travar com DEVELOPER_ERROR — ver
+  /// supabase/README de setup se isso ainda não tiver sido criado.
+  static const _googleWebClientId =
+      '1041273208236-amlguf3rdm6pp6lnpfuacc68hc0fjj5q.apps.googleusercontent.com';
+
+  /// Login nativo com Google: pega o ID token da conta Google do aparelho
+  /// e troca por uma sessão do Supabase — sem senha, sem e-mail.
+  Future<void> signInWithGoogle() async {
+    final googleSignIn = GoogleSignIn(serverClientId: _googleWebClientId);
+    final googleUser = await googleSignIn.signIn();
+    if (googleUser == null) {
+      // usuário cancelou a tela de escolha de conta — não é erro
+      return;
+    }
+    final googleAuth = await googleUser.authentication;
+    final idToken = googleAuth.idToken;
+    if (idToken == null) {
+      throw StateError('Não foi possível obter o token do Google.');
+    }
+    await _client.auth.signInWithIdToken(
+      provider: OAuthProvider.google,
+      idToken: idToken,
+      accessToken: googleAuth.accessToken,
+    );
+  }
 
   /// Envia um código de 6 dígitos por e-mail — usado tanto pra "esqueci
   /// minha senha" quanto pra login sem senha. Não depende de link nenhum

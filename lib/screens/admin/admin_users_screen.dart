@@ -29,6 +29,16 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
 
   void _reload() => setState(() => _future = AdminService.instance.fetchAllProfiles());
 
+  Future<void> _approve(Profile profile) async {
+    try {
+      await AdminService.instance.approveProfile(profile.id);
+      _reload();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível aprovar: $e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -45,7 +55,10 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
           if (snapshot.hasError) {
             return Center(child: Text('Erro ao carregar: ${snapshot.error}'));
           }
-          final profiles = snapshot.data ?? [];
+          // Pendentes de aprovação primeiro — é a fila que o admin master
+          // precisa ver de cara toda vez que abre a tela.
+          final profiles = [...snapshot.data ?? []]
+            ..sort((a, b) => a.approved == b.approved ? 0 : (a.approved ? 1 : -1));
           return ListView.builder(
             itemCount: profiles.length,
             itemBuilder: (context, index) {
@@ -53,8 +66,15 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
               final locked = profile.isMasterAdmin && !widget.isMasterAdmin;
               return ListTile(
                 title: Text(profile.displayLabel),
-                subtitle: Text(profile.isMasterAdmin ? 'Admin Master' : profile.role.name),
-                trailing: locked ? const Icon(Icons.lock_outline) : const Icon(Icons.chevron_right),
+                subtitle: Text(
+                  profile.isMasterAdmin
+                      ? 'Admin Master'
+                      : '${profile.role.name}${profile.approved ? '' : ' · pendente de aprovação'}',
+                  style: profile.approved ? null : const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold),
+                ),
+                trailing: !profile.approved
+                    ? FilledButton(onPressed: () => _approve(profile), child: const Text('Aprovar'))
+                    : (locked ? const Icon(Icons.lock_outline) : const Icon(Icons.chevron_right)),
                 onTap: locked
                     ? null
                     : () async {

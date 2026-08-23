@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
+import '../widgets/password_field.dart';
 import 'login_with_code_screen.dart';
 import 'signup_screen.dart';
 
@@ -16,6 +17,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _loading = false;
+  bool _loadingGoogle = false;
   String? _error;
 
   Future<void> _signIn() async {
@@ -31,9 +33,23 @@ class _LoginScreenState extends State<LoginScreen> {
         password: _passwordController.text,
       );
     } catch (e) {
-      setState(() => _error = 'Não foi possível entrar: $e');
+      setState(() => _error = friendlyAuthError(e));
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _signInWithGoogle() async {
+    setState(() {
+      _loadingGoogle = true;
+      _error = null;
+    });
+    try {
+      await SupabaseService.instance.signInWithGoogle();
+    } catch (e) {
+      if (mounted) setState(() => _error = 'Não foi possível entrar com Google: $e');
+    } finally {
+      if (mounted) setState(() => _loadingGoogle = false);
     }
   }
 
@@ -55,11 +71,7 @@ class _LoginScreenState extends State<LoginScreen> {
               decoration: const InputDecoration(labelText: 'E-mail'),
             ),
             const SizedBox(height: 12),
-            TextField(
-              controller: _passwordController,
-              obscureText: true,
-              decoration: const InputDecoration(labelText: 'Senha'),
-            ),
+            PasswordField(controller: _passwordController, labelText: 'Senha'),
             const SizedBox(height: 24),
             if (_error != null)
               Padding(
@@ -75,6 +87,22 @@ class _LoginScreenState extends State<LoginScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Text('Entrar'),
+            ),
+            const SizedBox(height: 12),
+            const Row(
+              children: [
+                Expanded(child: Divider()),
+                Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('ou')),
+                Expanded(child: Divider()),
+              ],
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _loadingGoogle ? null : _signInWithGoogle,
+              icon: _loadingGoogle
+                  ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.g_mobiledata, size: 28),
+              label: const Text('Entrar com Google'),
             ),
             const SizedBox(height: 12),
             TextButton(

@@ -27,6 +27,15 @@ class AdminService {
     return _client.from('profiles').update({'role': role.name}).eq('id', profileId);
   }
 
+  /// Libera o acesso de um cadastro pendente — sem isso o usuário fica
+  /// preso na tela de "aguardando aprovação" pra sempre.
+  Future<void> approveProfile(String profileId) => setApproved(profileId, true);
+
+  /// Libera ou revoga o acesso de um usuário.
+  Future<void> setApproved(String profileId, bool approved) {
+    return _client.from('profiles').update({'approved': approved}).eq('id', profileId);
+  }
+
   /// Dados usados na triagem por cor. Qualquer admin pode editar (só o
   /// papel 'admin' e a flag de admin master são exclusivos do admin master).
   Future<void> updateProfileTriageInfo(String profileId, {DateTime? birthDate, required List<String> comorbidities}) {

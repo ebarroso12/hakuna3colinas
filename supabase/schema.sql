@@ -27,6 +27,9 @@ create table public.profiles (
   -- Usados na triagem por cor (idade + nº de comorbidades).
   birth_date date,
   comorbidities text[] not null default '{}',
+  -- Todo cadastro novo entra como não aprovado; só usa o app depois que um
+  -- admin (ou o admin master) libera. Ninguém entra sozinho.
+  approved boolean not null default false,
   created_at timestamptz not null default now()
 );
 

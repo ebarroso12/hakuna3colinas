@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
+import '../widgets/password_field.dart';
 
 /// Cadastro de um novo participante. Todo mundo entra como Senderista —
 /// um admin promove pra Hakuna depois (não dá pra se autodeclarar Hakuna
@@ -62,7 +63,7 @@ class _SignupScreenState extends State<SignupScreen> {
         Navigator.of(context).pop();
       }
     } catch (e) {
-      setState(() => _error = 'Não foi possível cadastrar: $e');
+      setState(() => _error = friendlyAuthError(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -115,11 +116,7 @@ class _SignupScreenState extends State<SignupScreen> {
               decoration: const InputDecoration(labelText: 'E-mail'),
             ),
             const SizedBox(height: 12),
-            TextField(
-              controller: _passwordController,
-              obscureText: true,
-              decoration: const InputDecoration(labelText: 'Senha'),
-            ),
+            PasswordField(controller: _passwordController, labelText: 'Senha'),
             const SizedBox(height: 24),
             if (_error != null)
               Padding(
