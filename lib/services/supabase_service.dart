@@ -1,8 +1,10 @@
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/attendance.dart';
 import '../models/chat_message.dart';
 import '../models/hakuna_position.dart';
+import '../models/participant.dart';
 import '../models/profile.dart';
 import '../models/top.dart';
 import '../models/top_alert.dart';
@@ -15,10 +17,13 @@ import '../models/vital_signs.dart';
 String friendlyAuthError(Object error) {
   final message = error is AuthException ? error.message : error.toString();
   final lower = message.toLowerCase();
-  if (lower.contains('email rate limit') || lower.contains('rate limit') || lower.contains('429')) {
+  if (lower.contains('email rate limit') ||
+      lower.contains('rate limit') ||
+      lower.contains('429')) {
     return 'Muitos e-mails pedidos em pouco tempo. Aguarde alguns minutos e tente de novo.';
   }
-  if (lower.contains('invalid') && (lower.contains('otp') || lower.contains('token'))) {
+  if (lower.contains('invalid') &&
+      (lower.contains('otp') || lower.contains('token'))) {
     return 'Código inválido ou expirado. Confira o número ou peça um código novo.';
   }
   if (lower.contains('invalid login credentials')) {
@@ -27,7 +32,8 @@ String friendlyAuthError(Object error) {
   if (lower.contains('email not confirmed')) {
     return 'E-mail ainda não confirmado. Confira sua caixa de entrada.';
   }
-  if (lower.contains('user not found') || lower.contains('signups not allowed')) {
+  if (lower.contains('user not found') ||
+      lower.contains('signups not allowed')) {
     return 'Não encontramos essa conta.';
   }
   return message;
@@ -53,7 +59,10 @@ class SupabaseService {
 
   Stream<AuthState> get authStateChanges => _client.auth.onAuthStateChange;
 
-  Future<AuthResponse> signIn({required String email, required String password}) {
+  Future<AuthResponse> signIn({
+    required String email,
+    required String password,
+  }) {
     return _client.auth.signInWithPassword(email: email, password: password);
   }
 
@@ -120,7 +129,11 @@ class SupabaseService {
 
   /// Confirma o código recebido por e-mail e efetiva o login.
   Future<void> verifyLoginCode({required String email, required String code}) {
-    return _client.auth.verifyOTP(email: email, token: code, type: OtpType.email);
+    return _client.auth.verifyOTP(
+      email: email,
+      token: code,
+      type: OtpType.email,
+    );
   }
 
   /// Só funciona com uma sessão ativa (usuário já logado) — troca a
@@ -138,7 +151,10 @@ class SupabaseService {
   /// Tops (eventos) aos quais o usuário atual está vinculado (como hakuna
   /// liberado ou senderista inscrito), respeitando a RLS do banco.
   Future<List<Top>> fetchMyTops() async {
-    final rows = await _client.from('tops').select().order('starts_at', ascending: false);
+    final rows = await _client
+        .from('tops')
+        .select()
+        .order('starts_at', ascending: false);
     return rows.map((r) => Top.fromMap(r)).toList();
   }
 
@@ -154,7 +170,9 @@ class SupabaseService {
   }) {
     final uid = currentUser?.id;
     if (uid == null) {
-      return Future.error(StateError('Sessão expirada — não é possível publicar posição'));
+      return Future.error(
+        StateError('Sessão expirada — não é possível publicar posição'),
+      );
     }
     return _client.from('hakuna_positions').insert({
       'top_id': topId,
@@ -218,7 +236,9 @@ class SupabaseService {
           for (final row in rows) {
             latestByProfile[row['profile_id'] as String] = row;
           }
-          return latestByProfile.values.map((r) => HakunaPosition.fromMap(r)).toList();
+          return latestByProfile.values
+              .map((r) => HakunaPosition.fromMap(r))
+              .toList();
         });
   }
 
@@ -234,10 +254,12 @@ class SupabaseService {
         .stream(primaryKey: ['id'])
         .eq('top_id', topId)
         .order('recorded_at')
-        .map((rows) => rows
-            .where((r) => r['profile_id'] == uid)
-            .map((r) => HakunaPosition.fromMap(r))
-            .toList());
+        .map(
+          (rows) => rows
+              .where((r) => r['profile_id'] == uid)
+              .map((r) => HakunaPosition.fromMap(r))
+              .toList(),
+        );
   }
 
   /// Chat interno dos Hakunas liberados num Top, em tempo real. Substitui a
@@ -255,7 +277,9 @@ class SupabaseService {
   Future<void> sendTopMessage({required String topId, required String body}) {
     final uid = currentUser?.id;
     if (uid == null) {
-      return Future.error(StateError('Sessão expirada — não é possível enviar mensagem'));
+      return Future.error(
+        StateError('Sessão expirada — não é possível enviar mensagem'),
+      );
     }
     return _client.from('top_hakuna_messages').insert({
       'top_id': topId,
@@ -284,7 +308,9 @@ class SupabaseService {
   }) {
     final uid = currentUser?.id;
     if (uid == null) {
-      return Future.error(StateError('Sessão expirada — não é possível disparar o alarme'));
+      return Future.error(
+        StateError('Sessão expirada — não é possível disparar o alarme'),
+      );
     }
     return _client.from('top_alerts').insert({
       'top_id': topId,
@@ -299,19 +325,31 @@ class SupabaseService {
   /// calcular a cor de um participante — a edição delas é exclusiva do
   /// admin master (AdminService).
   Future<List<TriageRule>> fetchActiveTriageRules() async {
-    final rows = await _client.from('triage_rules').select().eq('active', true).order('priority');
+    final rows = await _client
+        .from('triage_rules')
+        .select()
+        .eq('active', true)
+        .order('priority');
     return rows.map((r) => TriageRule.fromMap(r)).toList();
   }
 
   /// Sinais vitais de um participante num Top, em tempo real, do mais
   /// recente pro mais antigo.
-  Stream<List<VitalSigns>> watchVitalSigns({required String topId, required String profileId}) {
+  Stream<List<VitalSigns>> watchVitalSigns({
+    required String topId,
+    required String profileId,
+  }) {
     return _client
         .from('vital_signs')
         .stream(primaryKey: ['id'])
         .eq('top_id', topId)
         .order('recorded_at', ascending: false)
-        .map((rows) => rows.where((r) => r['profile_id'] == profileId).map((r) => VitalSigns.fromMap(r)).toList());
+        .map(
+          (rows) => rows
+              .where((r) => r['profile_id'] == profileId)
+              .map((r) => VitalSigns.fromMap(r))
+              .toList(),
+        );
   }
 
   Future<void> recordVitalSigns({
@@ -327,7 +365,9 @@ class SupabaseService {
   }) {
     final uid = currentUser?.id;
     if (uid == null) {
-      return Future.error(StateError('Sessão expirada — não é possível registrar sinais vitais'));
+      return Future.error(
+        StateError('Sessão expirada — não é possível registrar sinais vitais'),
+      );
     }
     return _client.from('vital_signs').insert({
       'top_id': topId,
@@ -341,5 +381,123 @@ class SupabaseService {
       'respiratory_rate': respiratoryRate,
       'notes': notes,
     });
+  }
+
+  // ============ Participantes (cadastro rápido, sem exigir login) ============
+  // Ver supabase/participants_and_attendance.sql — Fase 1 do plano de
+  // evolução pra plataforma operacional. Só modelo/CRUD aqui; a UI de
+  // cadastro e o fluxo de atendimento em si ficam pras fases seguintes.
+
+  Future<List<Participant>> fetchTopParticipants(String topId) async {
+    final rows = await _client
+        .from('top_participants')
+        .select()
+        .eq('top_id', topId)
+        .eq('active', true)
+        .order('full_name');
+    return rows.map((r) => Participant.fromMap(r)).toList();
+  }
+
+  Stream<List<Participant>> watchTopParticipants(String topId) {
+    return _client
+        .from('top_participants')
+        .stream(primaryKey: ['id'])
+        .eq('top_id', topId)
+        .order('full_name')
+        .map(
+          (rows) => rows
+              .where((r) => r['active'] == true)
+              .map((r) => Participant.fromMap(r))
+              .toList(),
+        );
+  }
+
+  Future<Participant> registerParticipant({
+    required String topId,
+    required String fullName,
+    String? participantCode,
+    String? nickname,
+    String? phone,
+    DateTime? birthDate,
+    String? emergencyContact,
+    String? notes,
+    String? tagUid,
+    String? linkedProfileId,
+  }) async {
+    final uid = currentUser?.id;
+    if (uid == null) {
+      throw StateError(
+        'Sessão expirada — não é possível cadastrar participante',
+      );
+    }
+    final row = await _client
+        .from('top_participants')
+        .insert({
+          'top_id': topId,
+          'full_name': fullName,
+          'participant_code': participantCode,
+          'nickname': nickname,
+          'phone': phone,
+          'birth_date': birthDate?.toIso8601String().split('T').first,
+          'emergency_contact': emergencyContact,
+          'notes': notes,
+          'tag_uid': tagUid,
+          'linked_profile_id': linkedProfileId,
+          'registered_by': uid,
+        })
+        .select()
+        .single();
+    return Participant.fromMap(row);
+  }
+
+  Future<void> updateParticipant(
+    String participantId,
+    Map<String, dynamic> changes,
+  ) {
+    return _client
+        .from('top_participants')
+        .update(changes)
+        .eq('id', participantId);
+  }
+
+  // ============ Atendimentos ============
+
+  Stream<List<Attendance>> watchTopAttendances(String topId) {
+    return _client
+        .from('atendimentos')
+        .stream(primaryKey: ['id'])
+        .eq('top_id', topId)
+        .order('opened_at', ascending: false)
+        .map((rows) => rows.map((r) => Attendance.fromMap(r)).toList());
+  }
+
+  Future<Attendance> openAttendance({
+    required String topId,
+    required double latitude,
+    required double longitude,
+    String? senderistaId,
+    String? participantId,
+    String? notes,
+    AttendancePriority priority = AttendancePriority.normal,
+  }) async {
+    final uid = currentUser?.id;
+    if (uid == null) {
+      throw StateError('Sessão expirada — não é possível abrir atendimento');
+    }
+    final row = await _client
+        .from('atendimentos')
+        .insert({
+          'top_id': topId,
+          'opened_by': uid,
+          'senderista_id': senderistaId,
+          'participant_id': participantId,
+          'notes': notes,
+          'priority': priority.name,
+          'latitude': latitude,
+          'longitude': longitude,
+        })
+        .select()
+        .single();
+    return Attendance.fromMap(row);
   }
 }
