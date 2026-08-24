@@ -167,6 +167,49 @@ create policy "attendance_members_insert_self" on public.attendance_members
 
 alter publication supabase_realtime add table public.attendance_members;
 
+-- ============ NFC de verdade (Fase 6) ============
+--
+-- nfc_tags já existia no schema mas nenhum código Dart o usava — o app só
+-- lia/gravava texto cru na tag física, sem resolver nada no backend (e
+-- gravava dado identificador direto na tag, contrariando "token opaco").
+-- Passa a gerar um UUID aleatório server-side (não previsível) como
+-- tag_uid, gravado na tag física — os dados reais (nome, contato) ficam só
+-- no banco, resolvidos via tag_uid.
+alter table public.nfc_tags alter column tag_uid set default gen_random_uuid()::text;
+
+-- Só admin podia inserir tag — trava o cadastro em campo, já que agora é o
+-- Hakuna liberado que vincula a tag no momento de cadastrar/identificar um
+-- participante (mesma autoridade que já tem pra top_participants).
+create policy "nfc_tags_insert_hakuna" on public.nfc_tags
+  for insert with check (
+    top_id is not null
+    and exists (
+      select 1 from public.top_hakunas th
+      where th.top_id = nfc_tags.top_id
+        and th.profile_id = auth.uid()
+        and th.released = true
+    )
+  );
+
+-- A policy original de select só deixava o dono da tag (ou admin) vê-la —
+-- fazia sentido pra "minha própria tag", mas quebra o propósito de "ler a
+-- tag de um participante em campo": qualquer Hakuna liberado do mesmo Top
+-- precisa conseguir identificar de quem é a tag que está lendo.
+alter policy "nfc_tags_select_owner_or_admin" on public.nfc_tags
+  using (
+    owner_profile_id = auth.uid()
+    or public.is_admin()
+    or (
+      top_id is not null
+      and exists (
+        select 1 from public.top_hakunas th
+        where th.top_id = nfc_tags.top_id
+          and th.profile_id = auth.uid()
+          and th.released = true
+      )
+    )
+  );
+
 -- ============ mensagens de sistema no chat (Fase 5) ============
 --
 -- Eventos importantes (abrir/aceitar/escalar/apoio/finalizar atendimento)

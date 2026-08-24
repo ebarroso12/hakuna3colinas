@@ -465,6 +465,53 @@ class SupabaseService {
         .eq('id', participantId);
   }
 
+  /// Cria uma tag NFC nova no banco (token opaco, gerado pelo Postgres via
+  /// gen_random_uuid() — não previsível, sem dado identificador embutido) e
+  /// devolve o valor pronto pra gravar fisicamente na tag com
+  /// NfcService.writeTagText. Ver supabase/participants_and_attendance.sql.
+  Future<String> registerNfcTag({required String topId}) async {
+    final row = await _client
+        .from('nfc_tags')
+        .insert({'top_id': topId})
+        .select('tag_uid')
+        .single();
+    return row['tag_uid'] as String;
+  }
+
+  Future<void> linkParticipantTag({
+    required String participantId,
+    required String tagUid,
+  }) {
+    return _client
+        .from('top_participants')
+        .update({'tag_uid': tagUid})
+        .eq('id', participantId);
+  }
+
+  Future<void> unlinkParticipantTag(String participantId) {
+    return _client
+        .from('top_participants')
+        .update({'tag_uid': null})
+        .eq('id', participantId);
+  }
+
+  /// Resolve o token lido de uma tag física pro participante correspondente
+  /// dentro do Top atual — null se a tag não estiver vinculada a ninguém
+  /// (ou pertencer a outro Top).
+  Future<Participant?> findParticipantByTag({
+    required String tagUid,
+    required String topId,
+  }) async {
+    final rows = await _client
+        .from('top_participants')
+        .select()
+        .eq('tag_uid', tagUid)
+        .eq('top_id', topId)
+        .limit(1);
+    if (rows.isEmpty) return null;
+    return Participant.fromMap(rows.first);
+  }
+
   // ============ Atendimentos ============
 
   Stream<List<Attendance>> watchTopAttendances(String topId) {

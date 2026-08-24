@@ -6,11 +6,11 @@ import '../models/profile.dart';
 import '../models/top.dart';
 import '../models/top_alert.dart';
 import '../services/location_service.dart';
-import '../services/nfc_service.dart';
 import '../services/stats_service.dart';
 import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
 import 'attendance_list_screen.dart';
+import 'nfc_screen.dart';
 import 'participants_screen.dart';
 import 'top_chat_screen.dart';
 import 'top_map_screen.dart';
@@ -29,7 +29,6 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
   Profile? _myProfile;
   Map<String, Profile> _hakunaProfiles = {};
   bool _tracking = false;
-  String? _nfcMessage;
 
   @override
   void initState() {
@@ -200,18 +199,6 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
     }
   }
 
-  Future<void> _readNfc() async {
-    setState(() => _nfcMessage = 'Aproxime a tag...');
-    try {
-      final text = await NfcService.instance.readTagText();
-      if (!mounted) return;
-      setState(() => _nfcMessage = text ?? 'Tag sem texto NDEF legível.');
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _nfcMessage = 'Erro na leitura: $e');
-    }
-  }
-
   @override
   void dispose() {
     // Checa o estado real do serviço (LocationService.instance.isTracking),
@@ -289,6 +276,15 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
                   OutlinedButton.icon(
                     onPressed: () => Navigator.of(context).push(
                       MaterialPageRoute(
+                        builder: (_) => NfcScreen(top: widget.top),
+                      ),
+                    ),
+                    icon: const Icon(Icons.nfc),
+                    label: const Text('TAG / NFC'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(
                         builder: (_) => TopChatScreen(
                           top: widget.top,
                           hakunaProfiles: _hakunaProfiles,
@@ -357,25 +353,6 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
             ),
           if (isHakuna)
             _MyStatsCard(topId: widget.top.id, weightKg: _myProfile?.weightKg),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _readNfc,
-                    icon: const Icon(Icons.nfc),
-                    label: const Text('Ler tag NFC'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (_nfcMessage != null)
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: Text(_nfcMessage!),
-            ),
           const Divider(),
           Expanded(
             child: StreamBuilder<List<HakunaPosition>>(
