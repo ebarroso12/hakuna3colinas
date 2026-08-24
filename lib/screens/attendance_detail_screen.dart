@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../models/attendance.dart';
+import '../models/hakuna_position.dart';
 import '../models/profile.dart';
 import '../services/attendance_service.dart';
+import '../services/distance_service.dart';
 import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
 
@@ -174,6 +176,59 @@ class _AttendanceDetailScreenState extends State<AttendanceDetailScreen> {
               if (current.notes != null) ...[
                 const SizedBox(height: 8),
                 Text(current.notes!),
+              ],
+              if (current.isOpen) ...[
+                const SizedBox(height: 16),
+                const Text(
+                  'Hakunas mais próximos (linha reta)',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                StreamBuilder<List<HakunaPosition>>(
+                  stream: SupabaseService.instance.watchTopPositions(
+                    current.topId,
+                  ),
+                  builder: (context, positionSnapshot) {
+                    final positions = List<HakunaPosition>.from(
+                      positionSnapshot.data ?? const [],
+                    );
+                    if (positions.isEmpty) {
+                      return const Text(
+                        'Nenhuma posição de Hakuna disponível.',
+                      );
+                    }
+                    positions.sort(
+                      (a, b) =>
+                          DistanceService.meters(
+                            lat1: current.latitude,
+                            lng1: current.longitude,
+                            lat2: a.latitude,
+                            lng2: a.longitude,
+                          ).compareTo(
+                            DistanceService.meters(
+                              lat1: current.latitude,
+                              lng1: current.longitude,
+                              lat2: b.latitude,
+                              lng2: b.longitude,
+                            ),
+                          ),
+                    );
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: positions.take(3).map((p) {
+                        final meters = DistanceService.meters(
+                          lat1: current.latitude,
+                          lng1: current.longitude,
+                          lat2: p.latitude,
+                          lng2: p.longitude,
+                        );
+                        return Text(
+                          '${_profileLabel(p.profileId)} — ${DistanceService.formatDistance(meters)} '
+                          '— ~${DistanceService.estimateWalkMinutes(meters)} min a pé',
+                        );
+                      }).toList(),
+                    );
+                  },
+                ),
               ],
               const SizedBox(height: 24),
               if (current.isOpen) ...[
