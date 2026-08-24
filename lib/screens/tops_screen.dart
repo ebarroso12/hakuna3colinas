@@ -42,29 +42,43 @@ class _TopsScreenState extends State<TopsScreen> {
         leading: const AppLogoAppBarLeading(),
         title: const Text('Meus Tops'),
         actions: [
-          if (_myProfile?.role == UserRole.admin || _myProfile?.isMasterAdmin == true)
+          if (_myProfile?.role == UserRole.admin ||
+              _myProfile?.isMasterAdmin == true)
             IconButton(
               icon: const Icon(Icons.admin_panel_settings_outlined),
               tooltip: 'Administração',
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => AdminHomeScreen(isMasterAdmin: _myProfile?.isMasterAdmin ?? false),
-                ),
-              ),
+              onPressed: () async {
+                await Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => AdminHomeScreen(
+                      isMasterAdmin: _myProfile?.isMasterAdmin ?? false,
+                    ),
+                  ),
+                );
+                // A lista não recarrega sozinha ao voltar do painel de admin
+                // (initState só roda uma vez) — sem isso, um Top recém
+                // criado/editado só aparecia depois de recarregar a página.
+                if (mounted) _refresh();
+              },
             ),
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert),
             onSelected: (value) {
               if (value == 'change_password') {
                 Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const ChangePasswordScreen()),
+                  MaterialPageRoute(
+                    builder: (_) => const ChangePasswordScreen(),
+                  ),
                 );
               } else if (value == 'sign_out') {
                 SupabaseService.instance.signOut();
               }
             },
             itemBuilder: (context) => const [
-              PopupMenuItem(value: 'change_password', child: Text('Trocar senha')),
+              PopupMenuItem(
+                value: 'change_password',
+                child: Text('Trocar senha'),
+              ),
               PopupMenuItem(value: 'sign_out', child: Text('Sair')),
             ],
           ),
@@ -79,7 +93,9 @@ class _TopsScreenState extends State<TopsScreen> {
               return const Center(child: CircularProgressIndicator());
             }
             if (snapshot.hasError) {
-              return Center(child: Text('Erro ao carregar tops: ${snapshot.error}'));
+              return Center(
+                child: Text('Erro ao carregar tops: ${snapshot.error}'),
+              );
             }
             final tops = snapshot.data ?? [];
             if (tops.isEmpty) {
@@ -94,7 +110,9 @@ class _TopsScreenState extends State<TopsScreen> {
                   subtitle: Text(top.status.name),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => TopDetailScreen(top: top)),
+                    MaterialPageRoute(
+                      builder: (_) => TopDetailScreen(top: top),
+                    ),
                   ),
                 );
               },
