@@ -11,7 +11,11 @@ import '../widgets/app_logo.dart';
 /// função que se cogitou resolver com o Chatwoot, mas aqui usando o
 /// Realtime que já roda no projeto, sem misturar com o CRM da clínica.
 class TopChatScreen extends StatefulWidget {
-  const TopChatScreen({super.key, required this.top, required this.hakunaProfiles});
+  const TopChatScreen({
+    super.key,
+    required this.top,
+    required this.hakunaProfiles,
+  });
 
   final Top top;
   final Map<String, Profile> hakunaProfiles;
@@ -34,7 +38,10 @@ class _TopChatScreenState extends State<TopChatScreen> {
       _sendError = null;
     });
     try {
-      await SupabaseService.instance.sendTopMessage(topId: widget.top.id, body: text);
+      await SupabaseService.instance.sendTopMessage(
+        topId: widget.top.id,
+        body: text,
+      );
       _messageController.clear();
     } catch (e) {
       if (mounted) setState(() => _sendError = 'Não foi possível enviar: $e');
@@ -67,11 +74,15 @@ class _TopChatScreenState extends State<TopChatScreen> {
               builder: (context, snapshot) {
                 final messages = snapshot.data ?? [];
                 if (messages.isEmpty) {
-                  return const Center(child: Text('Nenhuma mensagem ainda. Comece a conversa.'));
+                  return const Center(
+                    child: Text('Nenhuma mensagem ainda. Comece a conversa.'),
+                  );
                 }
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (_scrollController.hasClients) {
-                    _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+                    _scrollController.jumpTo(
+                      _scrollController.position.maxScrollExtent,
+                    );
                   }
                 });
                 return ListView.builder(
@@ -80,18 +91,42 @@ class _TopChatScreenState extends State<TopChatScreen> {
                   itemCount: messages.length,
                   itemBuilder: (context, index) {
                     final m = messages[index];
+                    if (m.isSystem) {
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Center(
+                          child: Text(
+                            m.body,
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(fontStyle: FontStyle.italic),
+                          ),
+                        ),
+                      );
+                    }
                     final isMine = m.senderId == myId;
-                    final senderLabel = widget.hakunaProfiles[m.senderId]?.displayLabel ?? m.senderId;
+                    final senderLabel =
+                        widget.hakunaProfiles[m.senderId]?.displayLabel ??
+                        m.senderId;
                     return Align(
-                      alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
+                      alignment: isMine
+                          ? Alignment.centerRight
+                          : Alignment.centerLeft,
                       child: Container(
                         margin: const EdgeInsets.symmetric(vertical: 4),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        constraints: BoxConstraints(
+                          maxWidth: MediaQuery.of(context).size.width * 0.75,
+                        ),
                         decoration: BoxDecoration(
                           color: isMine
                               ? Theme.of(context).colorScheme.primaryContainer
-                              : Theme.of(context).colorScheme.surfaceContainerHighest,
+                              : Theme.of(context)
+                                    .colorScheme
+                                    .surfaceContainerHighest,
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Column(
@@ -100,7 +135,8 @@ class _TopChatScreenState extends State<TopChatScreen> {
                             if (!isMine)
                               Text(
                                 senderLabel,
-                                style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.bold),
+                                style: Theme.of(context).textTheme.labelSmall
+                                    ?.copyWith(fontWeight: FontWeight.bold),
                               ),
                             Text(m.body),
                           ],
@@ -115,7 +151,10 @@ class _TopChatScreenState extends State<TopChatScreen> {
           if (_sendError != null)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Text(_sendError!, style: const TextStyle(color: Colors.red)),
+              child: Text(
+                _sendError!,
+                style: const TextStyle(color: Colors.red),
+              ),
             ),
           SafeArea(
             child: Padding(
@@ -138,7 +177,11 @@ class _TopChatScreenState extends State<TopChatScreen> {
                   IconButton.filled(
                     onPressed: _sending ? null : _send,
                     icon: _sending
-                        ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                        ? const SizedBox(
+                            height: 16,
+                            width: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
                         : const Icon(Icons.send),
                   ),
                 ],

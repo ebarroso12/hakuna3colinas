@@ -274,7 +274,11 @@ class SupabaseService {
         .map((rows) => rows.map((r) => ChatMessage.fromMap(r)).toList());
   }
 
-  Future<void> sendTopMessage({required String topId, required String body}) {
+  Future<void> sendTopMessage({
+    required String topId,
+    required String body,
+    bool isSystem = false,
+  }) {
     final uid = currentUser?.id;
     if (uid == null) {
       return Future.error(
@@ -285,6 +289,7 @@ class SupabaseService {
       'top_id': topId,
       'sender_id': uid,
       'body': body,
+      'is_system': isSystem,
     });
   }
 

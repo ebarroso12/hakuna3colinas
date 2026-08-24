@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
@@ -29,6 +31,11 @@ class AttendanceListScreen extends StatefulWidget {
 class _AttendanceListScreenState extends State<AttendanceListScreen> {
   bool _opening = false;
 
+  String get _myLabel {
+    final id = SupabaseService.instance.currentUser?.id;
+    return widget.hakunaProfiles[id]?.displayLabel ?? 'Um Hakuna';
+  }
+
   Future<void> _openNewAttendance() async {
     final participant = await _pickParticipant();
     if (participant == null && !mounted) return;
@@ -41,6 +48,18 @@ class _AttendanceListScreenState extends State<AttendanceListScreen> {
         latitude: position.latitude,
         longitude: position.longitude,
         participantId: participant?.id,
+      );
+      final participantLabel = participant?.displayLabel;
+      unawaited(
+        SupabaseService.instance
+            .sendTopMessage(
+              topId: widget.top.id,
+              body: participantLabel == null
+                  ? '$_myLabel abriu um novo atendimento.'
+                  : '$_myLabel abriu um atendimento para $participantLabel.',
+              isSystem: true,
+            )
+            .catchError((_) {}),
       );
       if (!mounted) return;
       Navigator.of(context).push(

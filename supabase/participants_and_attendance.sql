@@ -167,6 +167,15 @@ create policy "attendance_members_insert_self" on public.attendance_members
 
 alter publication supabase_realtime add table public.attendance_members;
 
+-- ============ mensagens de sistema no chat (Fase 5) ============
+--
+-- Eventos importantes (abrir/aceitar/escalar/apoio/finalizar atendimento)
+-- geram uma mensagem automática no chat do Top, sem depender de alguém
+-- digitar — is_system só muda a renderização (centralizada, sem balão);
+-- sender_id continua sendo quem praticou a ação, pra passar pela RLS de
+-- insert já existente (sender_id = auth.uid()) sem precisar de policy nova.
+alter table public.top_hakuna_messages add column if not exists is_system boolean not null default false;
+
 -- ============ notificações (preparação — sem FCM ainda, Fase 8) ============
 
 create table public.notifications (

@@ -29,6 +29,17 @@ class _AttendanceDetailScreenState extends State<AttendanceDetailScreen> {
   String _profileLabel(String id) =>
       widget.hakunaProfiles[id]?.displayLabel ?? id;
 
+  String get _myLabel {
+    final id = SupabaseService.instance.currentUser?.id;
+    return widget.hakunaProfiles[id]?.displayLabel ?? 'Um Hakuna';
+  }
+
+  void _postSystem(String topId, String body) {
+    SupabaseService.instance
+        .sendTopMessage(topId: topId, body: body, isSystem: true)
+        .catchError((_) {});
+  }
+
   Future<void> _runAction(Future<void> Function() action) async {
     setState(() => _busy = true);
     try {
@@ -55,6 +66,8 @@ class _AttendanceDetailScreenState extends State<AttendanceDetailScreen> {
             content: Text('Outro Hakuna já aceitou este atendimento.'),
           ),
         );
+      } else {
+        _postSystem(current.topId, '$_myLabel aceitou o atendimento.');
       }
     } catch (e) {
       if (!mounted) return;
@@ -67,23 +80,45 @@ class _AttendanceDetailScreenState extends State<AttendanceDetailScreen> {
   }
 
   Future<void> _advance(Attendance current, AttendanceStatus next) {
-    return _runAction(
-      () => SupabaseService.instance.updateAttendanceStatus(
+    return _runAction(() async {
+      await SupabaseService.instance.updateAttendanceStatus(
         attendanceId: current.id,
         newStatus: attendanceStatusToString(next),
         timestampColumn: AttendanceService.timestampColumnFor(next),
-      ),
-    );
+      );
+      _postSystem(
+        current.topId,
+        '$_myLabel marcou "${AttendanceService.statusLabel(next)}".',
+      );
+    });
   }
 
   Future<void> _finish(Attendance current) {
-    return _runAction(
-      () => SupabaseService.instance.updateAttendanceStatus(
+    return _runAction(() async {
+      await SupabaseService.instance.updateAttendanceStatus(
         attendanceId: current.id,
         newStatus: attendanceStatusToString(AttendanceStatus.encerrado),
         timestampColumn: 'closed_at',
-      ),
-    );
+      );
+      _postSystem(current.topId, '$_myLabel finalizou o atendimento.');
+    });
+  }
+
+  Future<void> _requestSupport(Attendance current) {
+    return _runAction(() async {
+      await SupabaseService.instance.joinAttendanceSupport(current.id);
+      _postSystem(current.topId, '$_myLabel está apoiando o atendimento.');
+    });
+  }
+
+  Future<void> _escalate(Attendance current) {
+    return _runAction(() async {
+      await SupabaseService.instance.escalateAttendance(current.id);
+      _postSystem(
+        current.topId,
+        '🔴 URGÊNCIA acionada por $_myLabel no atendimento.',
+      );
+    });
   }
 
   @override
@@ -162,10 +197,7 @@ class _AttendanceDetailScreenState extends State<AttendanceDetailScreen> {
                       child: OutlinedButton.icon(
                         onPressed: _busy
                             ? null
-                            : () => _runAction(
-                                () => SupabaseService.instance
-                                    .joinAttendanceSupport(current.id),
-                              ),
+                            : () => _requestSupport(current),
                         icon: const Icon(Icons.group_add),
                         label: const Text('PEDIR / DAR APOIO'),
                       ),
@@ -176,12 +208,7 @@ class _AttendanceDetailScreenState extends State<AttendanceDetailScreen> {
                         style: OutlinedButton.styleFrom(
                           foregroundColor: Colors.red,
                         ),
-                        onPressed: _busy
-                            ? null
-                            : () => _runAction(
-                                () => SupabaseService.instance
-                                    .escalateAttendance(current.id),
-                              ),
+                        onPressed: _busy ? null : () => _escalate(current),
                         icon: const Icon(Icons.priority_high),
                         label: const Text('URGÊNCIA'),
                       ),
