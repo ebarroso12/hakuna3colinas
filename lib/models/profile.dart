@@ -44,14 +44,30 @@ class Profile {
       medicalRegistry: map['medical_registry'] as String?,
       weightKg: (map['weight_kg'] as num?)?.toDouble(),
       isMasterAdmin: map['is_master_admin'] as bool? ?? false,
-      birthDate: map['birth_date'] != null ? DateTime.parse(map['birth_date'] as String) : null,
-      comorbidities: (map['comorbidities'] as List<dynamic>?)?.cast<String>() ?? const [],
+      birthDate: map['birth_date'] != null
+          ? DateTime.parse(map['birth_date'] as String)
+          : null,
+      comorbidities:
+          (map['comorbidities'] as List<dynamic>?)?.cast<String>() ?? const [],
       approved: map['approved'] as bool? ?? false,
     );
   }
 
   /// Como o usuário deve ser identificado na tela: nome + número do Legendários.
   String get displayLabel => '$fullName · $legendariosNumber';
+
+  /// "Apelido" pra @menção no chat: só letras do nome completo, em
+  /// minúsculas, com a primeira maiúscula — ex: "Dr. Edson Barroso" vira
+  /// "Dredsonbarroso". Não é único garantido (dois "João Silva" colidiriam),
+  /// mas a busca de @menção sempre resolve pelo id do perfil escolhido na
+  /// sugestão, então uma colisão de apelido não troca o destinatário real.
+  String get mentionHandle {
+    final lettersOnly = fullName
+        .replaceAll(RegExp(r'[^a-zA-ZÀ-ÿ]'), '')
+        .toLowerCase();
+    if (lettersOnly.isEmpty) return 'usuario';
+    return lettersOnly[0].toUpperCase() + lettersOnly.substring(1);
+  }
 
   /// Idade em anos completos a partir da data de nascimento, usada na
   /// triagem por cor. Null se o Senderista não informou a data.
@@ -60,7 +76,8 @@ class Profile {
     if (b == null) return null;
     final now = DateTime.now();
     var years = now.year - b.year;
-    if (now.month < b.month || (now.month == b.month && now.day < b.day)) years--;
+    if (now.month < b.month || (now.month == b.month && now.day < b.day))
+      years--;
     return years;
   }
 }

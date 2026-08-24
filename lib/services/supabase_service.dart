@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/app_notification.dart';
 import '../models/attendance.dart';
 import '../models/chat_message.dart';
+import '../models/direct_message.dart';
 import '../models/hakuna_position.dart';
 import '../models/participant.dart';
 import '../models/profile.dart';
@@ -678,5 +679,56 @@ class SupabaseService {
         .from('notifications')
         .update({'read_at': DateTime.now().toIso8601String()})
         .eq('id', notificationId);
+  }
+
+  // ============ Mensagens privadas (Hakuna <-> Hakuna) ============
+  // Ver supabase/chat_mentions_and_dm.sql. Escopadas por Top, igual tudo
+  // mais no app.
+
+  /// Conversa 1:1 entre o usuário atual e [otherUserId] dentro do Top —
+  /// filtra client-side porque o Realtime .stream() do Supabase não
+  /// suporta uma condição OR nativamente (mesmo padrão já usado em
+  /// watchMyPositionHistory/watchAttendanceMemberIds).
+  Stream<List<DirectMessage>> watchDirectMessages({
+    required String topId,
+    required String otherUserId,
+  }) {
+    final myId = currentUser?.id;
+    return _client
+        .from('direct_messages')
+        .stream(primaryKey: ['id'])
+        .eq('top_id', topId)
+        .order('created_at')
+        .map(
+          (rows) => rows
+              .where(
+                (r) =>
+                    (r['sender_id'] == myId &&
+                        r['recipient_id'] == otherUserId) ||
+                    (r['sender_id'] == otherUserId &&
+                        r['recipient_id'] == myId),
+              )
+              .map((r) => DirectMessage.fromMap(r))
+              .toList(),
+        );
+  }
+
+  Future<void> sendDirectMessage({
+    required String topId,
+    required String recipientId,
+    required String body,
+  }) {
+    final uid = currentUser?.id;
+    if (uid == null) {
+      return Future.error(
+        StateError('Sessão expirada — não é possível enviar mensagem'),
+      );
+    }
+    return _client.from('direct_messages').insert({
+      'top_id': topId,
+      'sender_id': uid,
+      'recipient_id': recipientId,
+      'body': body,
+    });
   }
 }
