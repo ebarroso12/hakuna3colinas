@@ -55,6 +55,12 @@ dependencies:
   # Login com Google (nativo, sem senha)
   google_sign_in: ^6.2.1
 
+  # Mapa operacional (Hakunas + atendimentos). OpenStreetMap em vez de
+  # Google Maps: sem chave de API, sem cobrança por uso — evita o risco de
+  # custo com atualização de GPS/rota que o projeto precisa controlar.
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

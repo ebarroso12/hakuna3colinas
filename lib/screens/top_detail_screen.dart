@@ -13,6 +13,7 @@ import '../widgets/app_logo.dart';
 import 'attendance_list_screen.dart';
 import 'participants_screen.dart';
 import 'top_chat_screen.dart';
+import 'top_map_screen.dart';
 import 'top_senderistas_screen.dart';
 
 class TopDetailScreen extends StatefulWidget {
@@ -243,6 +244,18 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
+                  OutlinedButton.icon(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => TopMapScreen(
+                          top: widget.top,
+                          hakunaProfiles: _hakunaProfiles,
+                        ),
+                      ),
+                    ),
+                    icon: const Icon(Icons.map),
+                    label: const Text('Mapa'),
+                  ),
                   OutlinedButton.icon(
                     onPressed: () => Navigator.of(context).push(
                       MaterialPageRoute(
