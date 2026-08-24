@@ -213,11 +213,23 @@ alter table public.vital_signs enable row level security;
 alter table public.triage_rules enable row level security;
 alter table public.top_alerts enable row level security;
 
+-- Helper usado só pelo with check de profiles_update_own, pra pegar a role
+-- atual do usuário sem reconsultar profiles dentro da própria policy de
+-- profiles (isso causava "infinite recursion detected in policy for
+-- relation profiles" — SECURITY DEFINER contorna a checagem de RLS aqui,
+-- igual is_admin()/is_master_admin()).
+create or replace function public.my_profile_role()
+returns public.user_role
+language sql stable security definer set search_path = public
+as $$
+  select role from public.profiles where id = auth.uid();
+$$;
+
 -- profiles: cada um vê/edita o próprio; admin vê todos
 create policy "profiles_select_own_or_admin" on public.profiles
   for select using (
     id = auth.uid()
-    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin')
+    or public.is_admin()
   );
 
 -- with check impede o usuário de trocar a própria "role" (ex: senderista
@@ -226,7 +238,7 @@ create policy "profiles_update_own" on public.profiles
   for update using (id = auth.uid())
   with check (
     id = auth.uid()
-    and role = (select role from public.profiles where id = auth.uid())
+    and role = public.my_profile_role()
   );
 
 -- Admin (comum ou master) edita qualquer perfil, MENOS o do admin master
@@ -274,13 +286,13 @@ create policy "tops_admin_delete" on public.tops
 create policy "top_hakunas_select_own_or_admin" on public.top_hakunas
   for select using (
     profile_id = auth.uid()
-    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin')
+    or public.is_admin()
   );
 
 create policy "top_senderistas_select_own_or_admin" on public.top_senderistas
   for select using (
     profile_id = auth.uid()
-    or exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin')
+    or public.is_admin()
   );
 
 -- admin gerencia quem está liberado/atribuído em cada Top (delegar função
