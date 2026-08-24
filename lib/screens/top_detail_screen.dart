@@ -10,6 +10,7 @@ import '../services/nfc_service.dart';
 import '../services/stats_service.dart';
 import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
+import 'attendance_list_screen.dart';
 import 'participants_screen.dart';
 import 'top_chat_screen.dart';
 import 'top_senderistas_screen.dart';
@@ -242,6 +243,18 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
+                  OutlinedButton.icon(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => AttendanceListScreen(
+                          top: widget.top,
+                          hakunaProfiles: _hakunaProfiles,
+                        ),
+                      ),
+                    ),
+                    icon: const Icon(Icons.medical_services),
+                    label: const Text('Atendimentos'),
+                  ),
                   OutlinedButton.icon(
                     onPressed: () => Navigator.of(context).push(
                       MaterialPageRoute(

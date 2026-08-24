@@ -112,6 +112,24 @@ alter table public.atendimentos
   add column if not exists en_route_at timestamptz,
   add column if not exists on_scene_at timestamptz;
 
+-- A policy original (atendimentos_update_owner_or_admin) só deixava quem
+-- ABRIU o atendimento (ou admin) atualizá-lo — fazia sentido pro alarme
+-- simples de antes, mas trava o fluxo de despacho: outro Hakuna precisa
+-- conseguir ACEITAR/avançar um chamado que alguém mais abriu. Ampliamos pra
+-- qualquer Hakuna liberado do mesmo Top; a corrida de "dois Hakunas aceitam
+-- o mesmo chamado" é resolvida no app com update condicional (WHERE status
+-- = <esperado>), não aqui — RLS não substitui controle de concorrência.
+alter policy "atendimentos_update_owner_or_admin" on public.atendimentos
+  using (
+    exists (
+      select 1 from public.top_hakunas th
+      where th.top_id = atendimentos.top_id
+        and th.profile_id = auth.uid()
+        and th.released = true
+    )
+    or public.is_admin()
+  );
+
 -- Quem apoia/está envolvido num atendimento além de quem abriu/foi atribuído.
 create table public.attendance_members (
   attendance_id uuid not null references public.atendimentos (id) on delete cascade,

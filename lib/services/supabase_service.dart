@@ -500,4 +500,79 @@ class SupabaseService {
         .single();
     return Attendance.fromMap(row);
   }
+
+  /// Transiciona o status do atendimento, marcando o responsável (na
+  /// primeira atribuição) e o timestamp da etapa — ver
+  /// AttendanceService.timestampColumnFor. Não valida a transição em si
+  /// (isso é responsabilidade de quem chama, via AttendanceService); a RLS
+  /// já garante que só quem abriu/foi atribuído ou um admin pode escrever.
+  Future<void> updateAttendanceStatus({
+    required String attendanceId,
+    required String newStatus,
+    String? timestampColumn,
+    String? assignTo,
+  }) {
+    final changes = <String, dynamic>{'status': newStatus};
+    if (timestampColumn != null) {
+      changes[timestampColumn] = DateTime.now().toIso8601String();
+    }
+    if (assignTo != null) changes['assigned_to'] = assignTo;
+    return _client.from('atendimentos').update(changes).eq('id', attendanceId);
+  }
+
+  /// Aceita um atendimento — só funciona se ele ainda estiver em 'aberto' ou
+  /// 'reconhecido' no momento da escrita (update condicional pelo WHERE
+  /// implícito no .eq/.inFilter). Se outro Hakuna já aceitou entre a leitura
+  /// da tela e este clique, a atualização afeta 0 linhas e devolve false —
+  /// evita dois Hakunas assumindo o mesmo chamado.
+  Future<bool> acceptAttendance(String attendanceId) async {
+    final uid = currentUser?.id;
+    if (uid == null) {
+      throw StateError(
+        'Sessão expirada — não é possível aceitar o atendimento',
+      );
+    }
+    final rows = await _client
+        .from('atendimentos')
+        .update({
+          'status': 'atribuido',
+          'assigned_to': uid,
+          'assigned_at': DateTime.now().toIso8601String(),
+        })
+        .eq('id', attendanceId)
+        .inFilter('status', ['aberto', 'reconhecido'])
+        .select();
+    return rows.isNotEmpty;
+  }
+
+  Future<void> escalateAttendance(String attendanceId) {
+    return _client
+        .from('atendimentos')
+        .update({'priority': 'urgencia'})
+        .eq('id', attendanceId);
+  }
+
+  /// Hakunas apoiando/envolvidos num atendimento, além de quem abriu/foi
+  /// atribuído — usado pra "PEDIR APOIO" (outros Hakunas tocam "Estou
+  /// indo" na tela do atendimento pra entrar nesta lista).
+  Stream<List<String>> watchAttendanceMemberIds(String attendanceId) {
+    return _client
+        .from('attendance_members')
+        .stream(primaryKey: ['attendance_id', 'profile_id'])
+        .eq('attendance_id', attendanceId)
+        .map((rows) => rows.map((r) => r['profile_id'] as String).toList());
+  }
+
+  Future<void> joinAttendanceSupport(String attendanceId) {
+    final uid = currentUser?.id;
+    if (uid == null) {
+      return Future.error(
+        StateError('Sessão expirada — não é possível se juntar ao atendimento'),
+      );
+    }
+    return _client.from('attendance_members').upsert({
+      'attendance_id': attendanceId,
+      'profile_id': uid,
+    });
+  }
 }
