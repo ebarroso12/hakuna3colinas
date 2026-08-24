@@ -7,6 +7,7 @@ import '../services/attendance_service.dart';
 import '../services/distance_service.dart';
 import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
+import 'clinical_ai_screen.dart';
 
 /// Tela operacional de um atendimento — botões grandes pro fluxo:
 /// ACEITAR -> A CAMINHO -> CHEGUEI -> INICIAR ATENDIMENTO -> FINALIZAR,
@@ -34,6 +35,17 @@ class _AttendanceDetailScreenState extends State<AttendanceDetailScreen> {
   String get _myLabel {
     final id = SupabaseService.instance.currentUser?.id;
     return widget.hakunaProfiles[id]?.displayLabel ?? 'Um Hakuna';
+  }
+
+  /// Hakuna Medical AI é restrita a médico com CRM cadastrado (ou admin) —
+  /// reforçado de novo na Edge Function, essa checagem aqui só evita
+  /// mostrar o botão pra quem não pode usar.
+  bool get _isAuthorizedMedical {
+    final id = SupabaseService.instance.currentUser?.id;
+    final profile = widget.hakunaProfiles[id];
+    if (profile == null) return false;
+    return profile.role == UserRole.admin ||
+        (profile.role == UserRole.hakuna && profile.medicalRegistry != null);
   }
 
   void _postSystem(String topId, String body) {
@@ -292,6 +304,21 @@ class _AttendanceDetailScreenState extends State<AttendanceDetailScreen> {
                   onPressed: _busy ? null : () => _finish(current),
                   child: const Text('FINALIZAR'),
                 ),
+                if (_isAuthorizedMedical) ...[
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => ClinicalAiScreen(
+                          topId: current.topId,
+                          attendanceId: current.id,
+                        ),
+                      ),
+                    ),
+                    icon: const Icon(Icons.psychology_alt),
+                    label: const Text('IA MÉDICA'),
+                  ),
+                ],
               ],
               const SizedBox(height: 24),
               const Text(
