@@ -109,17 +109,34 @@ class _AttendanceDetailScreenState extends State<AttendanceDetailScreen> {
   Future<void> _requestSupport(Attendance current) {
     return _runAction(() async {
       await SupabaseService.instance.joinAttendanceSupport(current.id);
-      _postSystem(current.topId, '$_myLabel está apoiando o atendimento.');
+      final body = '$_myLabel está apoiando o atendimento.';
+      _postSystem(current.topId, body);
+      SupabaseService.instance
+          .createNotification(
+            topId: current.topId,
+            type: 'apoio',
+            title: 'Apoio no atendimento',
+            body: body,
+            relatedAttendanceId: current.id,
+          )
+          .catchError((_) {});
     });
   }
 
   Future<void> _escalate(Attendance current) {
     return _runAction(() async {
       await SupabaseService.instance.escalateAttendance(current.id);
-      _postSystem(
-        current.topId,
-        '🔴 URGÊNCIA acionada por $_myLabel no atendimento.',
-      );
+      final body = '🔴 URGÊNCIA acionada por $_myLabel no atendimento.';
+      _postSystem(current.topId, body);
+      SupabaseService.instance
+          .createNotification(
+            topId: current.topId,
+            type: 'urgencia',
+            title: 'URGÊNCIA',
+            body: body,
+            relatedAttendanceId: current.id,
+          )
+          .catchError((_) {});
     });
   }
 

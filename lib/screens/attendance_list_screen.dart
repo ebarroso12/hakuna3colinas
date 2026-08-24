@@ -50,14 +50,26 @@ class _AttendanceListScreenState extends State<AttendanceListScreen> {
         participantId: participant?.id,
       );
       final participantLabel = participant?.displayLabel;
+      final messageBody = participantLabel == null
+          ? '$_myLabel abriu um novo atendimento.'
+          : '$_myLabel abriu um atendimento para $participantLabel.';
       unawaited(
         SupabaseService.instance
             .sendTopMessage(
               topId: widget.top.id,
-              body: participantLabel == null
-                  ? '$_myLabel abriu um novo atendimento.'
-                  : '$_myLabel abriu um atendimento para $participantLabel.',
+              body: messageBody,
               isSystem: true,
+            )
+            .catchError((_) {}),
+      );
+      unawaited(
+        SupabaseService.instance
+            .createNotification(
+              topId: widget.top.id,
+              type: 'atendimento',
+              title: 'Novo atendimento',
+              body: messageBody,
+              relatedAttendanceId: attendance.id,
             )
             .catchError((_) {}),
       );

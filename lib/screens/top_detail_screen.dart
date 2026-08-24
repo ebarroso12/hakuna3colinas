@@ -11,6 +11,7 @@ import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
 import 'attendance_list_screen.dart';
 import 'nfc_screen.dart';
+import 'notifications_screen.dart';
 import 'participants_screen.dart';
 import 'top_chat_screen.dart';
 import 'top_map_screen.dart';
@@ -281,6 +282,15 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
                     ),
                     icon: const Icon(Icons.nfc),
                     label: const Text('TAG / NFC'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => NotificationsScreen(top: widget.top),
+                      ),
+                    ),
+                    icon: const Icon(Icons.notifications),
+                    label: const Text('Notificações'),
                   ),
                   OutlinedButton.icon(
                     onPressed: () => Navigator.of(context).push(

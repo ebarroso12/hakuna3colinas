@@ -1,6 +1,7 @@
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/app_notification.dart';
 import '../models/attendance.dart';
 import '../models/chat_message.dart';
 import '../models/hakuna_position.dart';
@@ -626,5 +627,56 @@ class SupabaseService {
       'attendance_id': attendanceId,
       'profile_id': uid,
     });
+  }
+
+  // ============ Notificações ============
+  // In-app via Realtime — funciona enquanto o app está aberto. Push de
+  // verdade (app fechado/background) exige Firebase Cloud Messaging: uma
+  // Edge Function no Supabase + credencial de serviço do Firebase, o que é
+  // deploy em produção e um segredo novo — decisão que fica pro Dr. Edson
+  // autorizar explicitamente (Fase 8, ver auditoria).
+
+  /// Notificações destinadas ao usuário atual (diretas + broadcasts do
+  /// Top), mais recentes primeiro.
+  Stream<List<AppNotification>> watchMyNotifications(String topId) {
+    final uid = currentUser?.id;
+    return _client
+        .from('notifications')
+        .stream(primaryKey: ['id'])
+        .eq('top_id', topId)
+        .order('created_at', ascending: false)
+        .map(
+          (rows) => rows
+              .where(
+                (r) => r['recipient_id'] == null || r['recipient_id'] == uid,
+              )
+              .map((r) => AppNotification.fromMap(r))
+              .toList(),
+        );
+  }
+
+  Future<void> createNotification({
+    required String topId,
+    required String type,
+    required String title,
+    String? body,
+    String? relatedAttendanceId,
+    String? recipientId,
+  }) {
+    return _client.from('notifications').insert({
+      'top_id': topId,
+      'recipient_id': recipientId,
+      'type': type,
+      'title': title,
+      'body': body,
+      'related_attendance_id': relatedAttendanceId,
+    });
+  }
+
+  Future<void> markNotificationRead(int notificationId) {
+    return _client
+        .from('notifications')
+        .update({'read_at': DateTime.now().toIso8601String()})
+        .eq('id', notificationId);
   }
 }
