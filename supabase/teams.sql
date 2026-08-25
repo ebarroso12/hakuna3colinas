@@ -169,6 +169,7 @@ create policy "team_messages_insert_member" on public.team_messages
       )
       or public.is_team_member(top_id, team)
       or public.is_team_admin(top_id, team)
+      or public.is_admin()
     )
   );
 

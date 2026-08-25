@@ -79,18 +79,57 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
     }
   }
 
-  Future<void> _remove(String profileId) async {
+  Future<void> _block(String profileId, String label) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Bloquear membro?'),
+        content: Text(
+          '$label sai da equipe e não pode ser readicionado até você desbloquear.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Bloquear'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
     try {
-      await SupabaseService.instance.removeTeamMember(
+      await SupabaseService.instance.setTeamMemberBlocked(
         topId: widget.top.id,
         team: widget.team,
         profileId: profileId,
+        blocked: true,
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Não foi possível remover: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Não foi possível bloquear: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _unblock(String profileId) async {
+    try {
+      await SupabaseService.instance.setTeamMemberBlocked(
+        topId: widget.top.id,
+        team: widget.team,
+        profileId: profileId,
+        blocked: false,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Não foi possível desbloquear: $e')),
+        );
       }
     }
   }
@@ -105,8 +144,7 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: const AppLogoAppBarLeading(),
-        title: Text('Membros · ${widget.team.label}'),
+        title: AppBarLogoTitle(title: Text('Membros · ${widget.team.label}')),
       ),
       body: Column(
         children: [
@@ -151,71 +189,103 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
                 team: widget.team,
               ),
               builder: (context, snapshot) {
-                final roster = snapshot.data ?? [];
-                if (roster.isEmpty) {
-                  return const Center(
-                    child: Text(
-                      'Ninguém nesta equipe ainda. Busque acima pra adicionar.',
-                    ),
-                  );
-                }
+                final roster = (snapshot.data ?? [])
+                    .where((m) => !m.blocked)
+                    .toList();
+                final blocked = (snapshot.data ?? [])
+                    .where((m) => m.blocked)
+                    .toList();
                 return FutureBuilder<Map<String, MemberName>>(
                   future: SupabaseService.instance.fetchMemberNames(
                     topId: widget.top.id,
                     team: widget.team,
-                    profileIds: roster.map((m) => m.profileId).toList(),
+                    profileIds: (snapshot.data ?? [])
+                        .map((m) => m.profileId)
+                        .toList(),
                   ),
                   builder: (context, namesSnapshot) {
                     final names = namesSnapshot.data ?? {};
-                    return ListView.builder(
-                      itemCount: roster.length,
-                      itemBuilder: (context, index) {
-                        final m = roster[index];
-                        final label =
-                            names[m.profileId]?.displayLabel ?? m.profileId;
-                        return ListTile(
-                          title: Text(label),
-                          subtitle: Text(
-                            m.isTeamAdmin ? 'Admin da equipe' : 'Membro',
+                    return ListView(
+                      children: [
+                        if (roster.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Text(
+                              'Ninguém nesta equipe ainda. Busque acima pra adicionar.',
+                            ),
                           ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
+                        for (final m in roster)
+                          ListTile(
+                            title: Text(
+                              names[m.profileId]?.displayLabel ?? m.profileId,
+                            ),
+                            subtitle: Text(
+                              m.isTeamAdmin ? 'Admin da equipe' : 'Membro',
+                            ),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Column(
+                                  children: [
+                                    const Text(
+                                      'Liberado',
+                                      style: TextStyle(fontSize: 11),
+                                    ),
+                                    Switch(
+                                      value: m.released,
+                                      onChanged: (v) =>
+                                          _release(m.profileId, v),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(width: 4),
+                                Column(
+                                  children: [
+                                    const Text(
+                                      'Admin',
+                                      style: TextStyle(fontSize: 11),
+                                    ),
+                                    Switch(
+                                      value: m.isTeamAdmin,
+                                      onChanged: (v) =>
+                                          _toggleAdmin(m.profileId, v),
+                                    ),
+                                  ],
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.block),
+                                  tooltip: 'Bloquear',
+                                  onPressed: () => _block(
+                                    m.profileId,
+                                    names[m.profileId]?.displayLabel ??
+                                        m.profileId,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        if (blocked.isNotEmpty)
+                          ExpansionTile(
+                            title: Text('Bloqueados (${blocked.length})'),
                             children: [
-                              Column(
-                                children: [
-                                  const Text(
-                                    'Liberado',
-                                    style: TextStyle(fontSize: 11),
+                              for (final m in blocked)
+                                ListTile(
+                                  leading: const Icon(
+                                    Icons.block,
+                                    color: Colors.red,
                                   ),
-                                  Switch(
-                                    value: m.released,
-                                    onChanged: (v) => _release(m.profileId, v),
+                                  title: Text(
+                                    names[m.profileId]?.displayLabel ??
+                                        m.profileId,
                                   ),
-                                ],
-                              ),
-                              const SizedBox(width: 4),
-                              Column(
-                                children: [
-                                  const Text(
-                                    'Admin',
-                                    style: TextStyle(fontSize: 11),
+                                  trailing: OutlinedButton(
+                                    onPressed: () => _unblock(m.profileId),
+                                    child: const Text('Desbloquear'),
                                   ),
-                                  Switch(
-                                    value: m.isTeamAdmin,
-                                    onChanged: (v) =>
-                                        _toggleAdmin(m.profileId, v),
-                                  ),
-                                ],
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.delete_outline),
-                                tooltip: 'Remover da equipe',
-                                onPressed: () => _remove(m.profileId),
-                              ),
+                                ),
                             ],
                           ),
-                        );
-                      },
+                      ],
                     );
                   },
                 );

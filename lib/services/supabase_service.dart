@@ -892,4 +892,82 @@ class SupabaseService {
       'body': body,
     });
   }
+
+  /// Mensagem de alerta do admin da equipe — renderizada em negrito no
+  /// app. Só admin da equipe (ou admin global) consegue, pelo RLS.
+  Future<void> sendTeamAlert({
+    required String topId,
+    required Team team,
+    required String body,
+  }) {
+    final uid = currentUser?.id;
+    if (uid == null) {
+      return Future.error(
+        StateError('Sessão expirada — não é possível enviar mensagem'),
+      );
+    }
+    return _client.from('team_messages').insert({
+      'top_id': topId,
+      'team': team.dbKey ?? 'geral',
+      'sender_id': uid,
+      'body': body,
+      'is_alert': true,
+    });
+  }
+
+  /// Moderação: admin da equipe edita a mensagem de qualquer membro.
+  Future<void> editTeamMessage({required int messageId, required String body}) {
+    return _client
+        .from('team_messages')
+        .update({'body': body, 'edited_at': DateTime.now().toIso8601String()})
+        .eq('id', messageId);
+  }
+
+  /// Moderação: admin da equipe apaga a mensagem de qualquer membro.
+  Future<void> deleteTeamMessage(int messageId) {
+    return _client.from('team_messages').delete().eq('id', messageId);
+  }
+
+  /// Bloqueia alguém da equipe — remove a liberação e marca como
+  /// bloqueado, pra não reaparecer na busca de searchProfilesForTeam até
+  /// um admin desbloquear explicitamente (setTeamMemberBlocked com
+  /// blocked: false).
+  Future<void> setTeamMemberBlocked({
+    required String topId,
+    required Team team,
+    required String profileId,
+    required bool blocked,
+  }) {
+    final data = <String, dynamic>{
+      'top_id': topId,
+      'team': team.dbKey!,
+      'profile_id': profileId,
+      'blocked': blocked,
+    };
+    // released e blocked não podem ser true ao mesmo tempo (constraint no
+    // banco) — ao bloquear, revoga a liberação junto.
+    if (blocked) data['released'] = false;
+    return _client
+        .from('top_team_members')
+        .upsert(data, onConflict: 'top_id,team,profile_id');
+  }
+
+  /// Membros bloqueados de uma equipe — só quem administra a equipe (ou
+  /// admin global) vê, pelo RLS.
+  Stream<List<TeamMembership>> watchBlockedTeamMembers({
+    required String topId,
+    required Team team,
+  }) {
+    return _client
+        .from('top_team_members')
+        .stream(primaryKey: ['id'])
+        .eq('top_id', topId)
+        .eq('team', team.dbKey!)
+        .map(
+          (rows) => rows
+              .where((r) => r['blocked'] == true)
+              .map((r) => TeamMembership.fromMap(r))
+              .toList(),
+        );
+  }
 }

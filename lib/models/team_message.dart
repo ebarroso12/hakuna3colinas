@@ -6,6 +6,8 @@ class TeamMessage {
   final Team team;
   final String senderId;
   final String body;
+  final bool isAlert;
+  final DateTime? editedAt;
   final DateTime createdAt;
 
   TeamMessage({
@@ -14,6 +16,8 @@ class TeamMessage {
     required this.team,
     required this.senderId,
     required this.body,
+    required this.isAlert,
+    this.editedAt,
     required this.createdAt,
   });
 
@@ -24,6 +28,10 @@ class TeamMessage {
       team: teamFromDbKey(map['team'] as String),
       senderId: map['sender_id'] as String,
       body: map['body'] as String,
+      isAlert: map['is_alert'] as bool? ?? false,
+      editedAt: map['edited_at'] != null
+          ? DateTime.parse(map['edited_at'] as String)
+          : null,
       createdAt: DateTime.parse(map['created_at'] as String),
     );
   }

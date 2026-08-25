@@ -9,6 +9,7 @@ class TeamMembership {
   final String profileId;
   final bool isTeamAdmin;
   final bool released;
+  final bool blocked;
   final DateTime createdAt;
 
   TeamMembership({
@@ -18,6 +19,7 @@ class TeamMembership {
     required this.profileId,
     required this.isTeamAdmin,
     required this.released,
+    required this.blocked,
     required this.createdAt,
   });
 
@@ -29,6 +31,7 @@ class TeamMembership {
       profileId: map['profile_id'] as String,
       isTeamAdmin: map['is_team_admin'] as bool? ?? false,
       released: map['released'] as bool? ?? false,
+      blocked: map['blocked'] as bool? ?? false,
       createdAt: DateTime.parse(map['created_at'] as String),
     );
   }

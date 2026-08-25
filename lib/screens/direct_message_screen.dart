@@ -1,22 +1,31 @@
 import 'package:flutter/material.dart';
 
 import '../models/direct_message.dart';
-import '../models/profile.dart';
 import '../models/top.dart';
 import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
 
-/// Conversa privada entre dois Hakunas do mesmo Top — ninguém mais vê
-/// (nem admin). Ver supabase/chat_mentions_and_dm.sql.
+/// Conversa privada entre dois membros do mesmo Top (Hakuna ou de
+/// qualquer equipe) — ninguém mais vê (nem admin). Ver
+/// supabase/chat_mentions_and_dm.sql e is_in_top_community em
+/// supabase/teams_dm_moderation_ttl.sql.
 class DirectMessageScreen extends StatefulWidget {
   const DirectMessageScreen({
     super.key,
     required this.top,
-    required this.other,
+    required this.otherId,
+    required this.otherLabel,
+    required this.otherFirstName,
   });
 
   final Top top;
-  final Profile other;
+  final String otherId;
+
+  /// Nome + número do Legendários, pro título da tela.
+  final String otherLabel;
+
+  /// Só o nome, pro placeholder do campo de mensagem.
+  final String otherFirstName;
 
   @override
   State<DirectMessageScreen> createState() => _DirectMessageScreenState();
@@ -38,7 +47,7 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
     try {
       await SupabaseService.instance.sendDirectMessage(
         topId: widget.top.id,
-        recipientId: widget.other.id,
+        recipientId: widget.otherId,
         body: text,
       );
       _messageController.clear();
@@ -62,8 +71,7 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        leading: const AppLogoAppBarLeading(),
-        title: Text('Privado · ${widget.other.displayLabel}'),
+        title: AppBarLogoTitle(title: Text('Privado · ${widget.otherLabel}')),
       ),
       body: Column(
         children: [
@@ -71,7 +79,7 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
             child: StreamBuilder<List<DirectMessage>>(
               stream: SupabaseService.instance.watchDirectMessages(
                 topId: widget.top.id,
-                otherUserId: widget.other.id,
+                otherUserId: widget.otherId,
               ),
               builder: (context, snapshot) {
                 final messages = snapshot.data ?? [];
@@ -143,7 +151,7 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
                       controller: _messageController,
                       decoration: InputDecoration(
                         hintText:
-                            'Mensagem privada para ${widget.other.fullName}...',
+                            'Mensagem privada para ${widget.otherFirstName}...',
                         border: const OutlineInputBorder(),
                       ),
                       minLines: 1,

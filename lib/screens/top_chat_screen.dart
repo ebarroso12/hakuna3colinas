@@ -173,8 +173,7 @@ class _TopChatScreenState extends State<TopChatScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        leading: const AppLogoAppBarLeading(),
-        title: Text('Chat · ${widget.top.name}'),
+        title: AppBarLogoTitle(title: Text('Chat · ${widget.top.name}')),
       ),
       endDrawer: Drawer(
         child: SafeArea(
@@ -197,8 +196,12 @@ class _TopChatScreenState extends State<TopChatScreen> {
                     Navigator.of(context).pop();
                     Navigator.of(context).push(
                       MaterialPageRoute(
-                        builder: (_) =>
-                            DirectMessageScreen(top: widget.top, other: p),
+                        builder: (_) => DirectMessageScreen(
+                          top: widget.top,
+                          otherId: p.id,
+                          otherLabel: p.displayLabel,
+                          otherFirstName: p.fullName,
+                        ),
                       ),
                     );
                   },
