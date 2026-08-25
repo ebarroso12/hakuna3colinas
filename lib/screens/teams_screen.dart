@@ -55,6 +55,14 @@ class _TeamsScreenState extends State<TeamsScreen> {
   bool get _isHakuna =>
       _myProfile?.role == UserRole.hakuna || _myProfile?.role == UserRole.admin;
 
+  /// Admin global do app enxerga e entra em qualquer equipe — o RLS já
+  /// dá esse acesso no banco (is_admin() em toda policy de equipe), mas a
+  /// tela antes só liberava o toque em quem tinha a própria linha
+  /// released em top_team_members, escondendo o chat até de quem
+  /// administra tudo.
+  bool get _isGlobalAdmin =>
+      _myProfile?.role == UserRole.admin || _myProfile?.isMasterAdmin == true;
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -106,17 +114,21 @@ class _TeamsScreenState extends State<TeamsScreen> {
                     builder: (context) {
                       final membership = myMemberships[team];
                       final released = membership?.released ?? false;
+                      final canEnter = released || _isGlobalAdmin;
+                      final subtitle = released
+                          ? (membership!.isTeamAdmin
+                                ? 'Você administra esta equipe'
+                                : 'Você faz parte desta equipe')
+                          : (_isGlobalAdmin
+                                ? 'Você não participa, mas administra o app'
+                                : 'Você não participa — peça a um admin da equipe');
                       return _TeamTile(
                         team: team,
-                        subtitle: released
-                            ? (membership!.isTeamAdmin
-                                  ? 'Você administra esta equipe'
-                                  : 'Você faz parte desta equipe')
-                            : 'Você não participa — peça a um admin da equipe',
-                        trailing: released
+                        subtitle: subtitle,
+                        trailing: canEnter
                             ? const Icon(Icons.chevron_right)
                             : null,
-                        onTap: released
+                        onTap: canEnter
                             ? () => Navigator.of(context).push(
                                 MaterialPageRoute(
                                   builder: (_) => TeamHomeScreen(
