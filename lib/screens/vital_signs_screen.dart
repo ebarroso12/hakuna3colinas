@@ -10,7 +10,12 @@ import '../widgets/triage_badge.dart';
 
 /// Registro e histórico de sinais vitais de um Senderista específico num Top.
 class VitalSignsScreen extends StatefulWidget {
-  const VitalSignsScreen({super.key, required this.top, required this.profile, this.triageColor});
+  const VitalSignsScreen({
+    super.key,
+    required this.top,
+    required this.profile,
+    this.triageColor,
+  });
 
   final Top top;
   final Profile profile;
@@ -44,9 +49,13 @@ class _VitalSignsScreenState extends State<VitalSignsScreen> {
         systolicBp: int.tryParse(_systolicController.text),
         diastolicBp: int.tryParse(_diastolicController.text),
         spo2: int.tryParse(_spo2Controller.text),
-        temperatureC: double.tryParse(_temperatureController.text.replaceAll(',', '.')),
+        temperatureC: double.tryParse(
+          _temperatureController.text.replaceAll(',', '.'),
+        ),
         respiratoryRate: int.tryParse(_respiratoryController.text),
-        notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
+        notes: _notesController.text.trim().isEmpty
+            ? null
+            : _notesController.text.trim(),
       );
       if (!mounted) return;
       _heartRateController.clear();
@@ -82,8 +91,7 @@ class _VitalSignsScreenState extends State<VitalSignsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: const AppLogoAppBarLeading(),
-        title: Text(widget.profile.displayLabel),
+        title: AppBarLogoTitle(title: Text(widget.profile.displayLabel)),
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 12),
@@ -104,7 +112,9 @@ class _VitalSignsScreenState extends State<VitalSignsScreen> {
                       child: TextField(
                         controller: _heartRateController,
                         keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(labelText: 'FC (bpm)'),
+                        decoration: const InputDecoration(
+                          labelText: 'FC (bpm)',
+                        ),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -112,7 +122,9 @@ class _VitalSignsScreenState extends State<VitalSignsScreen> {
                       child: TextField(
                         controller: _spo2Controller,
                         keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(labelText: 'SpO2 (%)'),
+                        decoration: const InputDecoration(
+                          labelText: 'SpO2 (%)',
+                        ),
                       ),
                     ),
                   ],
@@ -124,7 +136,9 @@ class _VitalSignsScreenState extends State<VitalSignsScreen> {
                       child: TextField(
                         controller: _systolicController,
                         keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(labelText: 'PA sistólica'),
+                        decoration: const InputDecoration(
+                          labelText: 'PA sistólica',
+                        ),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -132,7 +146,9 @@ class _VitalSignsScreenState extends State<VitalSignsScreen> {
                       child: TextField(
                         controller: _diastolicController,
                         keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(labelText: 'PA diastólica'),
+                        decoration: const InputDecoration(
+                          labelText: 'PA diastólica',
+                        ),
                       ),
                     ),
                   ],
@@ -143,8 +159,12 @@ class _VitalSignsScreenState extends State<VitalSignsScreen> {
                     Expanded(
                       child: TextField(
                         controller: _temperatureController,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        decoration: const InputDecoration(labelText: 'Temperatura (°C)'),
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Temperatura (°C)',
+                        ),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -152,7 +172,9 @@ class _VitalSignsScreenState extends State<VitalSignsScreen> {
                       child: TextField(
                         controller: _respiratoryController,
                         keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(labelText: 'FR (irpm)'),
+                        decoration: const InputDecoration(
+                          labelText: 'FR (irpm)',
+                        ),
                       ),
                     ),
                   ],
@@ -160,7 +182,9 @@ class _VitalSignsScreenState extends State<VitalSignsScreen> {
                 const SizedBox(height: 8),
                 TextField(
                   controller: _notesController,
-                  decoration: const InputDecoration(labelText: 'Observações / sinais de alarme'),
+                  decoration: const InputDecoration(
+                    labelText: 'Observações / sinais de alarme',
+                  ),
                   minLines: 1,
                   maxLines: 3,
                 ),
@@ -168,12 +192,19 @@ class _VitalSignsScreenState extends State<VitalSignsScreen> {
                 if (_error != null)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8),
-                    child: Text(_error!, style: const TextStyle(color: Colors.red)),
+                    child: Text(
+                      _error!,
+                      style: const TextStyle(color: Colors.red),
+                    ),
                   ),
                 FilledButton.icon(
                   onPressed: _saving ? null : _save,
                   icon: _saving
-                      ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                      ? const SizedBox(
+                          height: 16,
+                          width: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
                       : const Icon(Icons.save),
                   label: const Text('Registrar sinais vitais'),
                 ),
@@ -183,7 +214,10 @@ class _VitalSignsScreenState extends State<VitalSignsScreen> {
           const Divider(),
           Expanded(
             child: StreamBuilder<List<VitalSigns>>(
-              stream: SupabaseService.instance.watchVitalSigns(topId: widget.top.id, profileId: widget.profile.id),
+              stream: SupabaseService.instance.watchVitalSigns(
+                topId: widget.top.id,
+                profileId: widget.profile.id,
+              ),
               builder: (context, snapshot) {
                 final history = snapshot.data ?? [];
                 if (history.isEmpty) {

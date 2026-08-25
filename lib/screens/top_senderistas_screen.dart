@@ -30,7 +30,8 @@ class _TopSenderistasScreenState extends State<TopSenderistasScreen> {
   }
 
   Future<(List<Profile>, List<TriageRule>)> _load() async {
-    final senderistas = await SupabaseService.instance.fetchTopSenderistaProfiles(widget.top.id);
+    final senderistas = await SupabaseService.instance
+        .fetchTopSenderistaProfiles(widget.top.id);
     final rules = await SupabaseService.instance.fetchActiveTriageRules();
     return (senderistas, rules);
   }
@@ -39,8 +40,7 @@ class _TopSenderistasScreenState extends State<TopSenderistasScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: const AppLogoAppBarLeading(),
-        title: Text('Senderistas · ${widget.top.name}'),
+        title: AppBarLogoTitle(title: Text('Senderistas · ${widget.top.name}')),
       ),
       body: FutureBuilder<(List<Profile>, List<TriageRule>)>(
         future: _future,
@@ -53,7 +53,9 @@ class _TopSenderistasScreenState extends State<TopSenderistasScreen> {
           }
           final (senderistas, rules) = snapshot.data!;
           if (senderistas.isEmpty) {
-            return const Center(child: Text('Nenhum Senderista inscrito neste Top.'));
+            return const Center(
+              child: Text('Nenhum Senderista inscrito neste Top.'),
+            );
           }
           return ListView.builder(
             itemCount: senderistas.length,
@@ -65,7 +67,11 @@ class _TopSenderistasScreenState extends State<TopSenderistasScreen> {
                 trailing: TriageBadge(color: color),
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) => VitalSignsScreen(top: widget.top, profile: profile, triageColor: color),
+                    builder: (_) => VitalSignsScreen(
+                      top: widget.top,
+                      profile: profile,
+                      triageColor: color,
+                    ),
                   ),
                 ),
               );

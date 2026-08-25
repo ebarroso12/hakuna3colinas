@@ -28,9 +28,39 @@ class AppLogoAppBarLeading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(8),
-      child: AppLogo(size: 32),
+    return Padding(padding: const EdgeInsets.all(8), child: AppLogo(size: 32));
+  }
+}
+
+/// Título de AppBar com a logo embutida — tocar na logo volta pro menu
+/// principal (Meus Tops) de qualquer tela, não importa a profundidade da
+/// navegação. O botão de voltar padrão do Flutter continua funcionando
+/// normalmente (não sobrescrevemos mais o `leading`, ele volta a aparecer
+/// sozinho quando há uma tela anterior na pilha).
+class AppBarLogoTitle extends StatelessWidget {
+  const AppBarLogoTitle({super.key, required this.title});
+
+  final Widget title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        GestureDetector(
+          onTap: () => Navigator.of(context).popUntil((route) => route.isFirst),
+          child: const Padding(
+            padding: EdgeInsets.symmetric(vertical: 4),
+            child: AppLogo(size: 32),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: DefaultTextStyle.merge(
+            overflow: TextOverflow.ellipsis,
+            child: title,
+          ),
+        ),
+      ],
     );
   }
 }

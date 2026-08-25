@@ -220,10 +220,7 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
         _myProfile?.role == UserRole.admin;
 
     return Scaffold(
-      appBar: AppBar(
-        leading: const AppLogoAppBarLeading(),
-        title: Text(widget.top.name),
-      ),
+      appBar: AppBar(title: AppBarLogoTitle(title: Text(widget.top.name))),
       body: Column(
         children: [
           if (_myProfile != null)

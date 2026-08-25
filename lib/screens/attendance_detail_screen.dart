@@ -155,10 +155,7 @@ class _AttendanceDetailScreenState extends State<AttendanceDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        leading: const AppLogoAppBarLeading(),
-        title: const Text('Atendimento'),
-      ),
+      appBar: AppBar(title: AppBarLogoTitle(title: const Text('Atendimento'))),
       body: StreamBuilder<List<Attendance>>(
         stream: SupabaseService.instance.watchTopAttendances(
           widget.attendance.topId,

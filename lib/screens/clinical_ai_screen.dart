@@ -106,8 +106,7 @@ class _ClinicalAiScreenState extends State<ClinicalAiScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: const AppLogoAppBarLeading(),
-        title: const Text('Hakuna Medical AI'),
+        title: AppBarLogoTitle(title: const Text('Hakuna Medical AI')),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),

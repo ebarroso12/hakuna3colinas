@@ -27,8 +27,7 @@ class _AdminTriageRulesScreenState extends State<AdminTriageRulesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: const AppLogoAppBarLeading(),
-        title: const Text('Regras de triagem'),
+        title: AppBarLogoTitle(title: const Text('Regras de triagem')),
       ),
       body: FutureBuilder<List<TriageRule>>(
         future: _future,
@@ -60,10 +59,18 @@ class _RuleTile extends StatefulWidget {
 }
 
 class _RuleTileState extends State<_RuleTile> {
-  late final _minAgeController = TextEditingController(text: widget.rule.minAge.toString());
-  late final _maxAgeController = TextEditingController(text: widget.rule.maxAge?.toString() ?? '');
-  late final _minComorbController = TextEditingController(text: widget.rule.minComorbidities.toString());
-  late final _maxComorController = TextEditingController(text: widget.rule.maxComorbidities.toString());
+  late final _minAgeController = TextEditingController(
+    text: widget.rule.minAge.toString(),
+  );
+  late final _maxAgeController = TextEditingController(
+    text: widget.rule.maxAge?.toString() ?? '',
+  );
+  late final _minComorbController = TextEditingController(
+    text: widget.rule.minComorbidities.toString(),
+  );
+  late final _maxComorController = TextEditingController(
+    text: widget.rule.maxComorbidities.toString(),
+  );
   late bool _active = widget.rule.active;
   bool _saving = false;
 
@@ -75,19 +82,27 @@ class _RuleTileState extends State<_RuleTile> {
         color: widget.rule.color,
         label: widget.rule.label,
         minAge: int.tryParse(_minAgeController.text) ?? widget.rule.minAge,
-        maxAge: _maxAgeController.text.trim().isEmpty ? null : int.tryParse(_maxAgeController.text),
-        minComorbidities: int.tryParse(_minComorbController.text) ?? widget.rule.minComorbidities,
-        maxComorbidities: int.tryParse(_maxComorController.text) ?? widget.rule.maxComorbidities,
+        maxAge: _maxAgeController.text.trim().isEmpty
+            ? null
+            : int.tryParse(_maxAgeController.text),
+        minComorbidities:
+            int.tryParse(_minComorbController.text) ??
+            widget.rule.minComorbidities,
+        maxComorbidities:
+            int.tryParse(_maxComorController.text) ??
+            widget.rule.maxComorbidities,
         priority: widget.rule.priority,
         active: _active,
       );
       await AdminService.instance.updateTriageRule(updated);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Regra salva.')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Regra salva.')));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao salvar: $e')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Erro ao salvar: $e')));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -114,10 +129,22 @@ class _RuleTileState extends State<_RuleTile> {
           children: [
             Row(
               children: [
-                Container(width: 16, height: 16, color: widget.rule.color.materialColor),
+                Container(
+                  width: 16,
+                  height: 16,
+                  color: widget.rule.color.materialColor,
+                ),
                 const SizedBox(width: 8),
-                Expanded(child: Text(widget.rule.label, style: Theme.of(context).textTheme.titleSmall)),
-                Switch(value: _active, onChanged: (v) => setState(() => _active = v)),
+                Expanded(
+                  child: Text(
+                    widget.rule.label,
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                ),
+                Switch(
+                  value: _active,
+                  onChanged: (v) => setState(() => _active = v),
+                ),
               ],
             ),
             Row(
@@ -134,7 +161,9 @@ class _RuleTileState extends State<_RuleTile> {
                   child: TextField(
                     controller: _maxAgeController,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Idade máx. (vazio = sem limite)'),
+                    decoration: const InputDecoration(
+                      labelText: 'Idade máx. (vazio = sem limite)',
+                    ),
                   ),
                 ),
               ],
@@ -145,7 +174,9 @@ class _RuleTileState extends State<_RuleTile> {
                   child: TextField(
                     controller: _minComorbController,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Comorbidades mín.'),
+                    decoration: const InputDecoration(
+                      labelText: 'Comorbidades mín.',
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -153,7 +184,9 @@ class _RuleTileState extends State<_RuleTile> {
                   child: TextField(
                     controller: _maxComorController,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Comorbidades máx.'),
+                    decoration: const InputDecoration(
+                      labelText: 'Comorbidades máx.',
+                    ),
                   ),
                 ),
               ],
@@ -163,7 +196,11 @@ class _RuleTileState extends State<_RuleTile> {
               child: TextButton(
                 onPressed: _saving ? null : _save,
                 child: _saving
-                    ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    ? const SizedBox(
+                        height: 16,
+                        width: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
                     : const Text('Salvar'),
               ),
             ),

@@ -39,8 +39,7 @@ class _TopsScreenState extends State<TopsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: const AppLogoAppBarLeading(),
-        title: const Text('Meus Tops'),
+        title: AppBarLogoTitle(title: const Text('Meus Tops')),
         actions: [
           if (_myProfile?.role == UserRole.admin ||
               _myProfile?.isMasterAdmin == true)

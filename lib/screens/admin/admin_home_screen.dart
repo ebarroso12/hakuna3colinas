@@ -15,8 +15,7 @@ class AdminHomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: const AppLogoAppBarLeading(),
-        title: const Text('Administração'),
+        title: AppBarLogoTitle(title: const Text('Administração')),
       ),
       body: ListView(
         children: [
@@ -26,7 +25,9 @@ class AdminHomeScreen extends StatelessWidget {
             subtitle: const Text('Papéis, atribuições, dados de triagem'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => AdminUsersScreen(isMasterAdmin: isMasterAdmin)),
+              MaterialPageRoute(
+                builder: (_) => AdminUsersScreen(isMasterAdmin: isMasterAdmin),
+              ),
             ),
           ),
           ListTile(
@@ -34,9 +35,9 @@ class AdminHomeScreen extends StatelessWidget {
             title: const Text('Tops'),
             subtitle: const Text('Criar, editar, gerenciar equipe'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AdminTopsScreen()),
-            ),
+            onTap: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const AdminTopsScreen())),
           ),
           if (isMasterAdmin)
             ListTile(
@@ -45,7 +46,9 @@ class AdminHomeScreen extends StatelessWidget {
               subtitle: const Text('Idade e comorbidades por cor'),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const AdminTriageRulesScreen()),
+                MaterialPageRoute(
+                  builder: (_) => const AdminTriageRulesScreen(),
+                ),
               ),
             ),
         ],

@@ -81,8 +81,7 @@ class _ParticipantFormScreenState extends State<ParticipantFormScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: const AppLogoAppBarLeading(),
-        title: const Text('Cadastrar participante'),
+        title: AppBarLogoTitle(title: const Text('Cadastrar participante')),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),

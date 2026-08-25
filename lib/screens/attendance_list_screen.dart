@@ -133,8 +133,9 @@ class _AttendanceListScreenState extends State<AttendanceListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: const AppLogoAppBarLeading(),
-        title: Text('Atendimentos · ${widget.top.name}'),
+        title: AppBarLogoTitle(
+          title: Text('Atendimentos · ${widget.top.name}'),
+        ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _opening ? null : _openNewAttendance,

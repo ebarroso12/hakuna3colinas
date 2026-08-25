@@ -27,7 +27,8 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     _future = AdminService.instance.fetchAllProfiles();
   }
 
-  void _reload() => setState(() => _future = AdminService.instance.fetchAllProfiles());
+  void _reload() =>
+      setState(() => _future = AdminService.instance.fetchAllProfiles());
 
   Future<void> _approve(Profile profile) async {
     try {
@@ -35,17 +36,16 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
       _reload();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível aprovar: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Não foi possível aprovar: $e')));
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        leading: const AppLogoAppBarLeading(),
-        title: const Text('Usuários'),
-      ),
+      appBar: AppBar(title: AppBarLogoTitle(title: const Text('Usuários'))),
       body: FutureBuilder<List<Profile>>(
         future: _future,
         builder: (context, snapshot) {
@@ -58,7 +58,9 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
           // Pendentes de aprovação primeiro — é a fila que o admin master
           // precisa ver de cara toda vez que abre a tela.
           final profiles = [...snapshot.data ?? []]
-            ..sort((a, b) => a.approved == b.approved ? 0 : (a.approved ? 1 : -1));
+            ..sort(
+              (a, b) => a.approved == b.approved ? 0 : (a.approved ? 1 : -1),
+            );
           return ListView.builder(
             itemCount: profiles.length,
             itemBuilder: (context, index) {
@@ -70,17 +72,30 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                   profile.isMasterAdmin
                       ? 'Admin Master'
                       : '${profile.role.name}${profile.approved ? '' : ' · pendente de aprovação'}',
-                  style: profile.approved ? null : const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold),
+                  style: profile.approved
+                      ? null
+                      : const TextStyle(
+                          color: Colors.orange,
+                          fontWeight: FontWeight.bold,
+                        ),
                 ),
                 trailing: !profile.approved
-                    ? FilledButton(onPressed: () => _approve(profile), child: const Text('Aprovar'))
-                    : (locked ? const Icon(Icons.lock_outline) : const Icon(Icons.chevron_right)),
+                    ? FilledButton(
+                        onPressed: () => _approve(profile),
+                        child: const Text('Aprovar'),
+                      )
+                    : (locked
+                          ? const Icon(Icons.lock_outline)
+                          : const Icon(Icons.chevron_right)),
                 onTap: locked
                     ? null
                     : () async {
                         await Navigator.of(context).push(
                           MaterialPageRoute(
-                            builder: (_) => AdminUserEditScreen(profile: profile, isMasterAdmin: widget.isMasterAdmin),
+                            builder: (_) => AdminUserEditScreen(
+                              profile: profile,
+                              isMasterAdmin: widget.isMasterAdmin,
+                            ),
                           ),
                         );
                         _reload();

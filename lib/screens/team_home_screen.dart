@@ -41,10 +41,7 @@ class _TeamHomeScreenState extends State<TeamHomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        leading: const AppLogoAppBarLeading(),
-        title: Text(widget.team.label),
-      ),
+      appBar: AppBar(title: AppBarLogoTitle(title: Text(widget.team.label))),
       body: StreamBuilder<List<TeamMembership>>(
         stream: SupabaseService.instance.watchMyTeamMemberships(widget.top.id),
         builder: (context, snapshot) {

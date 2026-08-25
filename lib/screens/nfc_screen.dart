@@ -187,10 +187,7 @@ class _NfcScreenState extends State<NfcScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        leading: const AppLogoAppBarLeading(),
-        title: const Text('TAG / NFC'),
-      ),
+      appBar: AppBar(title: AppBarLogoTitle(title: const Text('TAG / NFC'))),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(

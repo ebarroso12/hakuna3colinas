@@ -18,9 +18,15 @@ class AdminTopFormScreen extends StatefulWidget {
 
 class _AdminTopFormScreenState extends State<AdminTopFormScreen> {
   late final _nameController = TextEditingController(text: widget.top?.name);
-  late final _numberController = TextEditingController(text: widget.top?.topNumber);
-  late final _locationController = TextEditingController(text: widget.top?.location);
-  late final _descriptionController = TextEditingController(text: widget.top?.description);
+  late final _numberController = TextEditingController(
+    text: widget.top?.topNumber,
+  );
+  late final _locationController = TextEditingController(
+    text: widget.top?.location,
+  );
+  late final _descriptionController = TextEditingController(
+    text: widget.top?.description,
+  );
   late TopStatus _status = widget.top?.status ?? TopStatus.draft;
   late DateTime? _startsAt = widget.top?.startsAt;
   late DateTime? _endsAt = widget.top?.endsAt;
@@ -58,9 +64,15 @@ class _AdminTopFormScreenState extends State<AdminTopFormScreen> {
       _error = null;
     });
     try {
-      final topNumber = _numberController.text.trim().isEmpty ? null : _numberController.text.trim();
-      final location = _locationController.text.trim().isEmpty ? null : _locationController.text.trim();
-      final description = _descriptionController.text.trim().isEmpty ? null : _descriptionController.text.trim();
+      final topNumber = _numberController.text.trim().isEmpty
+          ? null
+          : _numberController.text.trim();
+      final location = _locationController.text.trim().isEmpty
+          ? null
+          : _locationController.text.trim();
+      final description = _descriptionController.text.trim().isEmpty
+          ? null
+          : _descriptionController.text.trim();
       if (_isEditing) {
         await AdminService.instance.updateTop(
           topId: widget.top!.id,
@@ -96,10 +108,18 @@ class _AdminTopFormScreenState extends State<AdminTopFormScreen> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Excluir Top'),
-        content: Text('Excluir "${widget.top!.name}"? Remove também posições, sinais vitais e mensagens ligados a ele.'),
+        content: Text(
+          'Excluir "${widget.top!.name}"? Remove também posições, sinais vitais e mensagens ligados a ele.',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancelar')),
-          TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Excluir')),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Excluir'),
+          ),
         ],
       ),
     );
@@ -110,7 +130,9 @@ class _AdminTopFormScreenState extends State<AdminTopFormScreen> {
       Navigator.of(context).pop();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível excluir: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Não foi possível excluir: $e')));
     }
   }
 
@@ -127,28 +149,44 @@ class _AdminTopFormScreenState extends State<AdminTopFormScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: const AppLogoAppBarLeading(),
-        title: Text(_isEditing ? 'Editar Top' : 'Novo Top'),
+        title: AppBarLogoTitle(
+          title: Text(_isEditing ? 'Editar Top' : 'Novo Top'),
+        ),
         actions: [
           if (_isEditing)
             IconButton(
               icon: const Icon(Icons.people_outline),
               tooltip: 'Gerenciar equipe',
               onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => AdminTopMembersScreen(top: widget.top!)),
+                MaterialPageRoute(
+                  builder: (_) => AdminTopMembersScreen(top: widget.top!),
+                ),
               ),
             ),
-          if (_isEditing) IconButton(icon: const Icon(Icons.delete_outline), onPressed: _confirmDelete),
+          if (_isEditing)
+            IconButton(
+              icon: const Icon(Icons.delete_outline),
+              onPressed: _confirmDelete,
+            ),
         ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          TextField(controller: _nameController, decoration: const InputDecoration(labelText: 'Nome do Top')),
+          TextField(
+            controller: _nameController,
+            decoration: const InputDecoration(labelText: 'Nome do Top'),
+          ),
           const SizedBox(height: 12),
-          TextField(controller: _numberController, decoration: const InputDecoration(labelText: 'Número do Top')),
+          TextField(
+            controller: _numberController,
+            decoration: const InputDecoration(labelText: 'Número do Top'),
+          ),
           const SizedBox(height: 12),
-          TextField(controller: _locationController, decoration: const InputDecoration(labelText: 'Local')),
+          TextField(
+            controller: _locationController,
+            decoration: const InputDecoration(labelText: 'Local'),
+          ),
           const SizedBox(height: 12),
           TextField(
             controller: _descriptionController,
@@ -160,19 +198,29 @@ class _AdminTopFormScreenState extends State<AdminTopFormScreen> {
           DropdownButtonFormField<TopStatus>(
             initialValue: _status,
             decoration: const InputDecoration(labelText: 'Status'),
-            items: TopStatus.values.map((s) => DropdownMenuItem(value: s, child: Text(s.name))).toList(),
+            items: TopStatus.values
+                .map((s) => DropdownMenuItem(value: s, child: Text(s.name)))
+                .toList(),
             onChanged: (s) => setState(() => _status = s ?? _status),
           ),
           const SizedBox(height: 12),
           ListTile(
             contentPadding: EdgeInsets.zero,
-            title: Text(_startsAt == null ? 'Início não definido' : 'Início: ${_startsAt!.toLocal().toString().split(' ').first}'),
+            title: Text(
+              _startsAt == null
+                  ? 'Início não definido'
+                  : 'Início: ${_startsAt!.toLocal().toString().split(' ').first}',
+            ),
             trailing: const Icon(Icons.edit_calendar),
             onTap: () => _pickDate(isStart: true),
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,
-            title: Text(_endsAt == null ? 'Fim não definido' : 'Fim: ${_endsAt!.toLocal().toString().split(' ').first}'),
+            title: Text(
+              _endsAt == null
+                  ? 'Fim não definido'
+                  : 'Fim: ${_endsAt!.toLocal().toString().split(' ').first}',
+            ),
             trailing: const Icon(Icons.edit_calendar),
             onTap: () => _pickDate(isStart: false),
           ),
@@ -185,7 +233,11 @@ class _AdminTopFormScreenState extends State<AdminTopFormScreen> {
           FilledButton(
             onPressed: _saving ? null : _save,
             child: _saving
-                ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
                 : const Text('Salvar'),
           ),
         ],

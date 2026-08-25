@@ -17,7 +17,11 @@ const _comorbidityLabels = {
 /// é aceito pelo banco se quem edita for o admin master — o dropdown já
 /// reflete essa regra desabilitando a opção pra admins comuns.
 class AdminUserEditScreen extends StatefulWidget {
-  const AdminUserEditScreen({super.key, required this.profile, required this.isMasterAdmin});
+  const AdminUserEditScreen({
+    super.key,
+    required this.profile,
+    required this.isMasterAdmin,
+  });
 
   final Profile profile;
   final bool isMasterAdmin;
@@ -84,10 +88,18 @@ class _AdminUserEditScreenState extends State<AdminUserEditScreen> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Remover usuário'),
-        content: Text('Remover ${widget.profile.displayLabel} do app? Essa ação não pode ser desfeita.'),
+        content: Text(
+          'Remover ${widget.profile.displayLabel} do app? Essa ação não pode ser desfeita.',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancelar')),
-          TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Remover')),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Remover'),
+          ),
         ],
       ),
     );
@@ -98,7 +110,9 @@ class _AdminUserEditScreenState extends State<AdminUserEditScreen> {
       Navigator.of(context).pop();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível remover: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Não foi possível remover: $e')));
     }
   }
 
@@ -106,11 +120,13 @@ class _AdminUserEditScreenState extends State<AdminUserEditScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: const AppLogoAppBarLeading(),
-        title: Text(widget.profile.displayLabel),
+        title: AppBarLogoTitle(title: Text(widget.profile.displayLabel)),
         actions: [
           if (!widget.profile.isMasterAdmin)
-            IconButton(icon: const Icon(Icons.delete_outline), onPressed: _confirmDelete),
+            IconButton(
+              icon: const Icon(Icons.delete_outline),
+              onPressed: _confirmDelete,
+            ),
         ],
       ),
       body: ListView(
@@ -120,7 +136,9 @@ class _AdminUserEditScreenState extends State<AdminUserEditScreen> {
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('Acesso liberado'),
-              subtitle: const Text('Desligado = usuário fica preso na tela de aguardando aprovação'),
+              subtitle: const Text(
+                'Desligado = usuário fica preso na tela de aguardando aprovação',
+              ),
               value: _approved,
               onChanged: (v) => setState(() => _approved = v),
             ),
@@ -130,36 +148,46 @@ class _AdminUserEditScreenState extends State<AdminUserEditScreen> {
           DropdownButtonFormField<UserRole>(
             initialValue: _role,
             items: UserRole.values
-                .map((r) => DropdownMenuItem(
-                      value: r,
-                      enabled: r != UserRole.admin || widget.isMasterAdmin,
-                      child: Text(r.name),
-                    ))
+                .map(
+                  (r) => DropdownMenuItem(
+                    value: r,
+                    enabled: r != UserRole.admin || widget.isMasterAdmin,
+                    child: Text(r.name),
+                  ),
+                )
                 .toList(),
-            onChanged: widget.profile.isMasterAdmin ? null : (r) => setState(() => _role = r ?? _role),
+            onChanged: widget.profile.isMasterAdmin
+                ? null
+                : (r) => setState(() => _role = r ?? _role),
           ),
           const SizedBox(height: 24),
           Text('Triagem', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           ListTile(
             contentPadding: EdgeInsets.zero,
-            title: Text(_birthDate == null ? 'Data de nascimento não informada' : _birthDate!.toLocal().toString().split(' ').first),
+            title: Text(
+              _birthDate == null
+                  ? 'Data de nascimento não informada'
+                  : _birthDate!.toLocal().toString().split(' ').first,
+            ),
             trailing: const Icon(Icons.edit_calendar),
             onTap: _pickBirthDate,
           ),
           const SizedBox(height: 8),
-          ..._knownComorbidities.map((c) => CheckboxListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(_comorbidityLabels[c] ?? c),
-                value: _comorbidities.contains(c),
-                onChanged: (v) => setState(() {
-                  if (v ?? false) {
-                    _comorbidities.add(c);
-                  } else {
-                    _comorbidities.remove(c);
-                  }
-                }),
-              )),
+          ..._knownComorbidities.map(
+            (c) => CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(_comorbidityLabels[c] ?? c),
+              value: _comorbidities.contains(c),
+              onChanged: (v) => setState(() {
+                if (v ?? false) {
+                  _comorbidities.add(c);
+                } else {
+                  _comorbidities.remove(c);
+                }
+              }),
+            ),
+          ),
           const SizedBox(height: 16),
           if (_error != null)
             Padding(
@@ -169,7 +197,11 @@ class _AdminUserEditScreenState extends State<AdminUserEditScreen> {
           FilledButton(
             onPressed: _saving ? null : _save,
             child: _saving
-                ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
                 : const Text('Salvar'),
           ),
         ],

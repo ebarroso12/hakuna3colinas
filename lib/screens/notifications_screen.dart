@@ -30,10 +30,7 @@ class NotificationsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final myId = SupabaseService.instance.currentUser?.id;
     return Scaffold(
-      appBar: AppBar(
-        leading: const AppLogoAppBarLeading(),
-        title: const Text('Notificações'),
-      ),
+      appBar: AppBar(title: AppBarLogoTitle(title: const Text('Notificações'))),
       body: StreamBuilder<List<AppNotification>>(
         stream: SupabaseService.instance.watchMyNotifications(top.id),
         builder: (context, snapshot) {

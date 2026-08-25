@@ -73,8 +73,7 @@ class _TopMapScreenState extends State<TopMapScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: const AppLogoAppBarLeading(),
-        title: Text('Mapa · ${widget.top.name}'),
+        title: AppBarLogoTitle(title: Text('Mapa · ${widget.top.name}')),
       ),
       body: StreamBuilder<List<HakunaPosition>>(
         stream: SupabaseService.instance.watchTopPositions(widget.top.id),

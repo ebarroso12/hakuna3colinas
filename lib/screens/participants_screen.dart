@@ -72,8 +72,9 @@ class _ParticipantsScreenState extends State<ParticipantsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: const AppLogoAppBarLeading(),
-        title: Text('Participantes · ${widget.top.name}'),
+        title: AppBarLogoTitle(
+          title: Text('Participantes · ${widget.top.name}'),
+        ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _openRegisterForm,
