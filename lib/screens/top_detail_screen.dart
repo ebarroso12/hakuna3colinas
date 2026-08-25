@@ -13,6 +13,7 @@ import 'attendance_list_screen.dart';
 import 'nfc_screen.dart';
 import 'notifications_screen.dart';
 import 'participants_screen.dart';
+import 'teams_screen.dart';
 import 'top_chat_screen.dart';
 import 'top_map_screen.dart';
 import 'top_senderistas_screen.dart';
@@ -225,6 +226,19 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
       ),
       body: Column(
         children: [
+          if (_myProfile != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+              child: OutlinedButton.icon(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => TeamsScreen(top: widget.top),
+                  ),
+                ),
+                icon: const Icon(Icons.groups),
+                label: const Text('Equipes'),
+              ),
+            ),
           if (isHakuna)
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),

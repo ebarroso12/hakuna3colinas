@@ -1,0 +1,71 @@
+import 'package:flutter/material.dart';
+
+/// As 9 equipes de "Legendários 3 Colinas" + o canal geral, aberto a
+/// todos. Ver supabase/teams.sql.
+enum Team {
+  adm,
+  logistica,
+  hakunas,
+  voz,
+  intercessao,
+  producao,
+  midia,
+  eventos,
+  seguranca,
+  geral;
+
+  String get label => switch (this) {
+    Team.adm => 'ADM',
+    Team.logistica => 'Logística',
+    Team.hakunas => 'Hakunas',
+    Team.voz => 'Voz',
+    Team.intercessao => 'Intercessão',
+    Team.producao => 'Produção',
+    Team.midia => 'Mídia',
+    Team.eventos => 'Eventos',
+    Team.seguranca => 'Segurança',
+    Team.geral => 'Legendários 3 Colinas',
+  };
+
+  IconData get icon => switch (this) {
+    Team.adm => Icons.badge_outlined,
+    Team.logistica => Icons.local_shipping_outlined,
+    Team.hakunas => Icons.medical_services_outlined,
+    Team.voz => Icons.mic_outlined,
+    Team.intercessao => Icons.volunteer_activism_outlined,
+    Team.producao => Icons.movie_creation_outlined,
+    Team.midia => Icons.camera_alt_outlined,
+    Team.eventos => Icons.event_outlined,
+    Team.seguranca => Icons.shield_outlined,
+    Team.geral => Icons.groups_outlined,
+  };
+
+  /// Hakunas já tem toda a infraestrutura própria (top_hakunas, chat,
+  /// atendimento, despacho) — não duplicada nas tabelas novas de equipe.
+  bool get hasOwnInfrastructure => this == Team.hakunas;
+
+  /// Chave usada em top_team_members/team_messages. Null pra Hakunas —
+  /// ver [hasOwnInfrastructure].
+  String? get dbKey => hasOwnInfrastructure ? null : name;
+
+  /// Todas as equipes exclusivas (isoladas entre si), sem contar o canal
+  /// geral — na ordem pedida.
+  static const exclusive = [
+    Team.adm,
+    Team.logistica,
+    Team.hakunas,
+    Team.voz,
+    Team.intercessao,
+    Team.producao,
+    Team.midia,
+    Team.eventos,
+    Team.seguranca,
+  ];
+}
+
+Team teamFromDbKey(String key) {
+  return Team.values.firstWhere(
+    (t) => t.dbKey == key,
+    orElse: () => Team.geral,
+  );
+}

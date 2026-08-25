@@ -6,8 +6,12 @@ import '../models/attendance.dart';
 import '../models/chat_message.dart';
 import '../models/direct_message.dart';
 import '../models/hakuna_position.dart';
+import '../models/member_name.dart';
 import '../models/participant.dart';
 import '../models/profile.dart';
+import '../models/team.dart';
+import '../models/team_membership.dart';
+import '../models/team_message.dart';
 import '../models/top.dart';
 import '../models/top_alert.dart';
 import '../models/triage_rule.dart';
@@ -728,6 +732,163 @@ class SupabaseService {
       'top_id': topId,
       'sender_id': uid,
       'recipient_id': recipientId,
+      'body': body,
+    });
+  }
+
+  // ============ Equipes (ADM, LOGÍSTICA, VOZ, ...) ============
+  // Ver supabase/teams.sql. Hakunas continua na infraestrutura própria
+  // (top_hakunas/top_chat_screen) — não duplicada aqui.
+
+  /// Minhas linhas em top_team_members neste Top (qualquer equipe,
+  /// liberado ou não) — pra saber em quais equipes eu estou e com que
+  /// status. Filtra client-side pelo mesmo motivo de sempre: o Realtime
+  /// .stream() não dá pra combinar "top_id = X e profile_id = eu" com o
+  /// fato de que o RLS já devolve outras linhas (times que eu administro).
+  Stream<List<TeamMembership>> watchMyTeamMemberships(String topId) {
+    final uid = currentUser?.id;
+    return _client
+        .from('top_team_members')
+        .stream(primaryKey: ['id'])
+        .eq('top_id', topId)
+        .map(
+          (rows) => rows
+              .where((r) => r['profile_id'] == uid)
+              .map((r) => TeamMembership.fromMap(r))
+              .toList(),
+        );
+  }
+
+  /// Roster completo (pendente + liberado) de uma equipe — só devolve
+  /// algo pelo RLS se eu for admin daquela equipe ou admin global.
+  Stream<List<TeamMembership>> watchTeamRoster({
+    required String topId,
+    required Team team,
+  }) {
+    return _client
+        .from('top_team_members')
+        .stream(primaryKey: ['id'])
+        .eq('top_id', topId)
+        .eq('team', team.dbKey!)
+        .order('created_at')
+        .map((rows) => rows.map((r) => TeamMembership.fromMap(r)).toList());
+  }
+
+  /// Resolve nome/número do Legendários pra uma lista de ids dentro do
+  /// contexto de uma equipe — nunca devolve dado médico (ver
+  /// member_names_for_team em supabase/teams.sql).
+  Future<Map<String, MemberName>> fetchMemberNames({
+    required String topId,
+    required Team team,
+    required List<String> profileIds,
+  }) async {
+    if (profileIds.isEmpty) return {};
+    final rows = await _client.rpc(
+      'member_names_for_team',
+      params: {
+        'p_top_id': topId,
+        'p_team': team.dbKey ?? 'geral',
+        'p_ids': profileIds,
+      },
+    );
+    final map = <String, MemberName>{};
+    for (final row in rows as List) {
+      final name = MemberName.fromMap(row as Map<String, dynamic>);
+      map[name.id] = name;
+    }
+    return map;
+  }
+
+  /// Busca perfis aprovados por nome/número pra um admin de equipe decidir
+  /// quem convidar — só admin daquela equipe (ou admin global) recebe
+  /// resultado (ver searchable_profiles em supabase/teams.sql).
+  Future<List<MemberName>> searchProfilesForTeam({
+    required String topId,
+    required Team team,
+    String query = '',
+  }) async {
+    final rows = await _client.rpc(
+      'searchable_profiles',
+      params: {'p_top_id': topId, 'p_team': team.dbKey!, 'p_query': query},
+    );
+    return (rows as List)
+        .map((row) => MemberName.fromMap(row as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Libera (ou revoga) alguém numa equipe — só o admin daquela equipe (ou
+  /// admin global) consegue, pelo RLS. Cria a linha se ainda não existir.
+  Future<void> setTeamMemberReleased({
+    required String topId,
+    required Team team,
+    required String profileId,
+    required bool released,
+  }) {
+    return _client.from('top_team_members').upsert({
+      'top_id': topId,
+      'team': team.dbKey!,
+      'profile_id': profileId,
+      'released': released,
+    }, onConflict: 'top_id,team,profile_id');
+  }
+
+  /// Promove/rebaixa alguém a admin daquela equipe especificamente — não é
+  /// o admin global do app.
+  Future<void> setTeamMemberAdmin({
+    required String topId,
+    required Team team,
+    required String profileId,
+    required bool isTeamAdmin,
+  }) {
+    return _client.from('top_team_members').upsert({
+      'top_id': topId,
+      'team': team.dbKey!,
+      'profile_id': profileId,
+      'is_team_admin': isTeamAdmin,
+    }, onConflict: 'top_id,team,profile_id');
+  }
+
+  Future<void> removeTeamMember({
+    required String topId,
+    required Team team,
+    required String profileId,
+  }) {
+    return _client
+        .from('top_team_members')
+        .delete()
+        .eq('top_id', topId)
+        .eq('team', team.dbKey!)
+        .eq('profile_id', profileId);
+  }
+
+  Stream<List<TeamMessage>> watchTeamMessages({
+    required String topId,
+    required Team team,
+  }) {
+    return _client
+        .from('team_messages')
+        .stream(primaryKey: ['id'])
+        .eq('top_id', topId)
+        .eq('team', team.dbKey ?? 'geral')
+        .order('created_at')
+        .map((rows) => rows.map((r) => TeamMessage.fromMap(r)).toList());
+  }
+
+  Future<void> sendTeamMessage({
+    required String topId,
+    required Team team,
+    required String body,
+  }) {
+    final uid = currentUser?.id;
+    if (uid == null) {
+      return Future.error(
+        StateError('Sessão expirada — não é possível enviar mensagem'),
+      );
+    }
+    return _client.from('team_messages').insert({
+      'top_id': topId,
+      'team': team.dbKey ?? 'geral',
+      'sender_id': uid,
       'body': body,
     });
   }
