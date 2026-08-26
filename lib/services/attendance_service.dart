@@ -44,6 +44,13 @@ class AttendanceService {
   /// Próxima transição principal disponível a partir do estado atual — o
   /// botão de ação primária mostrado na tela. Retorna null quando o
   /// atendimento já está encerrado/cancelado (nada mais a fazer).
+  ///
+  /// NOTA: hoje nenhum caller transiciona um atendimento pra
+  /// [AttendanceStatus.escalado] — `SupabaseService.escalateAttendance`
+  /// (chamado pelo botão URGÊNCIA) só sobe a prioridade, de propósito, pra
+  /// não pular etapas do atendimento em andamento. O case abaixo existe
+  /// pronto pro dia que uma transição explícita pra "escalado" for
+  /// adicionada (aí sim faz sentido ir direto pra FINALIZAR).
   static (AttendanceStatus, String)? primaryAction(AttendanceStatus status) {
     switch (status) {
       case AttendanceStatus.aberto:

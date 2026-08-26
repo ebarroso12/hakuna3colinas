@@ -48,6 +48,24 @@ enum Team {
   /// ver [hasOwnInfrastructure].
   String? get dbKey => hasOwnInfrastructure ? null : name;
 
+  /// Mesma chave de [dbKey], mas falha alto e com mensagem clara em vez de
+  /// um null-check genérico (ou de um fallback silencioso pro canal
+  /// 'geral') quando chamado com Team.hakunas — nenhuma tabela nova de
+  /// equipe (top_team_members/team_messages) tem linha pra Hakunas, que
+  /// usa a infraestrutura própria (ver [hasOwnInfrastructure]). Toda
+  /// SupabaseService que opera nessas tabelas deve usar este getter, nunca
+  /// `dbKey!` ou `dbKey ?? 'geral'` diretamente.
+  String get requiredDbKey {
+    final key = dbKey;
+    if (key == null) {
+      throw ArgumentError(
+        'Team.hakunas não tem linha em top_team_members/team_messages — '
+        'usa a infraestrutura própria (top_hakunas/top_chat_screen).',
+      );
+    }
+    return key;
+  }
+
   /// Todas as equipes exclusivas (isoladas entre si), sem contar o canal
   /// geral — na ordem pedida.
   static const exclusive = [

@@ -29,6 +29,12 @@ class TopChatScreen extends StatefulWidget {
   State<TopChatScreen> createState() => _TopChatScreenState();
 }
 
+/// Casa um @handle no texto da mensagem — precisa aceitar o mesmo alfabeto
+/// que [Profile.mentionHandle] usa pra montar o apelido (a-z, A-Z e À-ÿ),
+/// senão nomes acentuados (ex: "José", "João") ficam com a menção cortada
+/// antes do acento e nunca resolvem pra ninguém.
+final _mentionRegExp = RegExp(r'@([a-zA-ZÀ-ÿ]+)');
+
 class _TopChatScreenState extends State<TopChatScreen> {
   final _messageController = TextEditingController();
   final _scrollController = ScrollController();
@@ -90,7 +96,7 @@ class _TopChatScreenState extends State<TopChatScreen> {
     final handleIndex = _handleIndex;
     final myId = SupabaseService.instance.currentUser?.id;
     final myLabel = widget.hakunaProfiles[myId]?.displayLabel ?? 'Um Hakuna';
-    for (final match in RegExp(r'@(\w+)').allMatches(body)) {
+    for (final match in _mentionRegExp.allMatches(body)) {
       final mentioned = handleIndex[match.group(1)!.toLowerCase()];
       if (mentioned == null || mentioned.id == myId) continue;
       SupabaseService.instance
@@ -140,7 +146,7 @@ class _TopChatScreenState extends State<TopChatScreen> {
     final handles = _handleIndex;
     final spans = <TextSpan>[];
     var lastEnd = 0;
-    for (final match in RegExp(r'@(\w+)').allMatches(body)) {
+    for (final match in _mentionRegExp.allMatches(body)) {
       final isKnown = handles.containsKey(match.group(1)!.toLowerCase());
       if (match.start > lastEnd)
         spans.add(TextSpan(text: body.substring(lastEnd, match.start)));

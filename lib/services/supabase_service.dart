@@ -603,6 +603,14 @@ class SupabaseService {
     return rows.isNotEmpty;
   }
 
+  /// Só sobe a prioridade — NÃO troca o status pra
+  /// `AttendanceStatus.escalado`. Fazer isso mudaria a próxima ação
+  /// mostrada na tela (`AttendanceService.primaryAction`) direto pra
+  /// FINALIZAR, pulando etapas do atendimento em andamento (CHEGUEI,
+  /// INICIAR ATENDIMENTO) — arriscado demais pra decidir sem confirmação
+  /// de produto. O status `escalado` do enum fica reservado pra uma
+  /// transição futura explícita (ex: um botão "marcar como escalado" à
+  /// parte), não é setado por este método hoje.
   Future<void> escalateAttendance(String attendanceId) {
     return _client
         .from('atendimentos')
@@ -769,7 +777,7 @@ class SupabaseService {
         .from('top_team_members')
         .stream(primaryKey: ['id'])
         .eq('top_id', topId)
-        .eq('team', team.dbKey!)
+        .eq('team', team.requiredDbKey)
         .order('created_at')
         .map((rows) => rows.map((r) => TeamMembership.fromMap(r)).toList());
   }
@@ -787,7 +795,7 @@ class SupabaseService {
       'member_names_for_team',
       params: {
         'p_top_id': topId,
-        'p_team': team.dbKey ?? 'geral',
+        'p_team': team.requiredDbKey,
         'p_ids': profileIds,
       },
     );
@@ -809,7 +817,11 @@ class SupabaseService {
   }) async {
     final rows = await _client.rpc(
       'searchable_profiles',
-      params: {'p_top_id': topId, 'p_team': team.dbKey!, 'p_query': query},
+      params: {
+        'p_top_id': topId,
+        'p_team': team.requiredDbKey,
+        'p_query': query,
+      },
     );
     return (rows as List)
         .map((row) => MemberName.fromMap(row as Map<String, dynamic>))
@@ -826,7 +838,7 @@ class SupabaseService {
   }) {
     return _client.from('top_team_members').upsert({
       'top_id': topId,
-      'team': team.dbKey!,
+      'team': team.requiredDbKey,
       'profile_id': profileId,
       'released': released,
     }, onConflict: 'top_id,team,profile_id');
@@ -842,7 +854,7 @@ class SupabaseService {
   }) {
     return _client.from('top_team_members').upsert({
       'top_id': topId,
-      'team': team.dbKey!,
+      'team': team.requiredDbKey,
       'profile_id': profileId,
       'is_team_admin': isTeamAdmin,
     }, onConflict: 'top_id,team,profile_id');
@@ -857,7 +869,7 @@ class SupabaseService {
         .from('top_team_members')
         .delete()
         .eq('top_id', topId)
-        .eq('team', team.dbKey!)
+        .eq('team', team.requiredDbKey)
         .eq('profile_id', profileId);
   }
 
@@ -869,7 +881,7 @@ class SupabaseService {
         .from('team_messages')
         .stream(primaryKey: ['id'])
         .eq('top_id', topId)
-        .eq('team', team.dbKey ?? 'geral')
+        .eq('team', team.requiredDbKey)
         .order('created_at')
         .map((rows) => rows.map((r) => TeamMessage.fromMap(r)).toList());
   }
@@ -887,7 +899,7 @@ class SupabaseService {
     }
     return _client.from('team_messages').insert({
       'top_id': topId,
-      'team': team.dbKey ?? 'geral',
+      'team': team.requiredDbKey,
       'sender_id': uid,
       'body': body,
     });
@@ -908,7 +920,7 @@ class SupabaseService {
     }
     return _client.from('team_messages').insert({
       'top_id': topId,
-      'team': team.dbKey ?? 'geral',
+      'team': team.requiredDbKey,
       'sender_id': uid,
       'body': body,
       'is_alert': true,
@@ -940,7 +952,7 @@ class SupabaseService {
   }) {
     final data = <String, dynamic>{
       'top_id': topId,
-      'team': team.dbKey!,
+      'team': team.requiredDbKey,
       'profile_id': profileId,
       'blocked': blocked,
     };
@@ -962,7 +974,7 @@ class SupabaseService {
         .from('top_team_members')
         .stream(primaryKey: ['id'])
         .eq('top_id', topId)
-        .eq('team', team.dbKey!)
+        .eq('team', team.requiredDbKey)
         .map(
           (rows) => rows
               .where((r) => r['blocked'] == true)
