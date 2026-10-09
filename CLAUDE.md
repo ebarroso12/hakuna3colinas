@@ -116,12 +116,36 @@ de distribuição por Drive — mas não serve para Play Store. Se um dia
 criarem um keystore real, quem já tem o app vai precisar desinstalar antes
 de atualizar.
 
+## Regras de triagem
+
+Vivem na tabela `triage_rules` (editáveis pela tela de admin do app), não
+no código. As 8 ativas (ids 7-14, desde 09/10/2026) dão esta matriz:
+
+```
+idade |  0 comorb   1 comorb   2+ comorb
+------+---------------------------------
+ 0-25 |     azul      verde     vermelho
+26-40 |    verde    amarelo     vermelho
+  41+ |  amarelo   vermelho     vermelho
+```
+
+Faixas explícitas, sem sobreposição e sem buraco — `triage_service_test`
+verifica isso exaustivamente (0-110 anos × 0-8 comorbidades), além de
+garantir que a gravidade nunca diminui quando idade ou comorbidades
+aumentam.
+
+A configuração anterior (ids 1-6, hoje `active = false`) tinha uma regra
+`41+, 0..999 comorbidades -> vermelho` com `priority: 1` que atropelava
+todas as outras. Acima de 40 as comorbidades deixavam de importar e a
+triagem não discriminava nada justamente na faixa com mais participantes.
+**Não reintroduzir regras "pega-tudo" de prioridade alta.**
+
+Ao mudar as regras no banco, atualizar o fixture `_producao` em
+`test/services/triage_service_test.dart` junto — senão os testes passam
+validando uma configuração que não existe mais.
+
 ## Pendências conhecidas
 
-- **Sobreposição nas regras de triagem:** as regras 2 (`0-25`) e 3
-  (`25-40`) casam ambas em 25 anos. A prioridade decide. Efeito: 25 anos
-  com 1 comorbidade dá verde, 26 anos com a mesma dá amarelo. Fixado em
-  teste. **Decisão clínica do usuário**, não mexer sem ele pedir.
 - **Não existe biblioteca de mapa.** `geolocator` grava as posições e
   `stats_service` calcula distância, mas nada desenha os Hakunas num mapa.
 - **Schema à frente do app.** O banco tem tabelas que o app não usa:
