@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'package:flutter/foundation.dart';
 
 import 'package:flutter/services.dart';
 
@@ -20,7 +20,8 @@ class NfcHceService {
 
   static const _channel = MethodChannel('com.legendarios.hakuna_connect/hce');
 
-  bool get isSupported => Platform.isAndroid;
+  bool get isSupported =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
   /// Define os bytes que o serviço HCE deve responder quando um leitor
   /// aproximar o aparelho (ex: payload lido/gravado de um cartão real via

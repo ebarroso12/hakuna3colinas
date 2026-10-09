@@ -1,0 +1,79 @@
+name: Android APK
+
+# Gera o APK de release do Hakuna Connect com o nome padrao de distribuicao:
+# legendarios<versao>.apk (ex: legendarios1.0.6.apk). A versao sai do
+# pubspec.yaml, entao basta bumpar la que o nome do arquivo acompanha.
+#
+# O APK fica disponivel de duas formas:
+#   1. como artifact da execucao (aba Actions)
+#   2. como anexo de uma Release, quando a execucao e disparada por uma tag v*
+#
+# Assinatura: android/app/build.gradle usa signingConfig "debug" no release,
+# entao o APK sai assinado com a chave de debug. Instala normalmente num
+# aparelho com "fontes desconhecidas" liberado, que e o fluxo de distribuicao
+# por Drive. Nao serve para publicar na Play Store.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Le a versao do pubspec
+        id: versao
+        run: |
+          VERSAO=$(grep '^version:' pubspec.yaml | sed 's/version: *//' | cut -d'+' -f1)
+          echo "numero=$VERSAO" >> "$GITHUB_OUTPUT"
+          echo "arquivo=legendarios${VERSAO}.apk" >> "$GITHUB_OUTPUT"
+          echo "Versao detectada: $VERSAO -> legendarios${VERSAO}.apk"
+
+      - run: flutter pub get
+
+      - name: Analise estatica
+        run: flutter analyze
+
+      - name: Testes
+        run: flutter test
+
+      - name: Build do APK (release)
+        run: |
+          flutter build apk --release \
+            --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
+            --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+
+      - name: Renomeia para o padrao de distribuicao
+        run: |
+          mv build/app/outputs/flutter-apk/app-release.apk \
+             "build/app/outputs/flutter-apk/${{ steps.versao.outputs.arquivo }}"
+          ls -lh "build/app/outputs/flutter-apk/${{ steps.versao.outputs.arquivo }}"
+
+      - name: Publica o APK como artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.versao.outputs.arquivo }}
+          path: build/app/outputs/flutter-apk/${{ steps.versao.outputs.arquivo }}
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Anexa o APK a uma Release (so quando a execucao vem de uma tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/app/outputs/flutter-apk/${{ steps.versao.outputs.arquivo }}
+          generate_release_notes: true

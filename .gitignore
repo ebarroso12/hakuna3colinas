@@ -52,3 +52,6 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# credenciais locais (dart-define-from-file) - NUNCA commitar
+env.local.json
