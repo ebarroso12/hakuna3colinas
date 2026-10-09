@@ -130,4 +130,95 @@ void main() {
       );
     });
   });
+
+  _papeis();
+}
+
+// ---------------------------------------------------------------------------
+
+void _papeis() {
+  group('TeamRole espelha o enum team_role do Postgres', () {
+    const valoresNoBanco = ['coordenador', 'subcoordenador', 'membro'];
+
+    test('tem exatamente os mesmos valores', () {
+      expect(
+        TeamRole.values.map((r) => r.name).toSet(),
+        valoresNoBanco.toSet(),
+      );
+    });
+
+    test('papel desconhecido cai em membro — na dúvida, menos poder', () {
+      expect(teamRoleFromString('super_chefe'), TeamRole.membro);
+      expect(teamRoleFromString(null), TeamRole.membro);
+      expect(teamRoleFromString(''), TeamRole.membro);
+    });
+  });
+
+  group('poderes por papel (espelham a RLS de top_team_members)', () {
+    test('coordenador adiciona E remove', () {
+      expect(TeamRole.coordenador.podeAdicionar, isTrue);
+      expect(TeamRole.coordenador.podeRemover, isTrue);
+    });
+
+    test('subcoordenador adiciona mas NÃO remove', () {
+      expect(TeamRole.subcoordenador.podeAdicionar, isTrue);
+      expect(
+        TeamRole.subcoordenador.podeRemover,
+        isFalse,
+        reason: 'a policy de DELETE exige is_team_coordenador',
+      );
+    });
+
+    test('membro comum não adiciona nem remove', () {
+      expect(TeamRole.membro.podeAdicionar, isFalse);
+      expect(TeamRole.membro.podeRemover, isFalse);
+    });
+
+    test('só quem coordena pode mandar alerta', () {
+      expect(TeamRole.coordenador.podeAlertar, isTrue);
+      expect(TeamRole.subcoordenador.podeAlertar, isTrue);
+      expect(TeamRole.membro.podeAlertar, isFalse);
+    });
+  });
+
+  group('TeamMembership combina papel com liberado/bloqueado', () {
+    TeamMembership m(
+      String papel, {
+      bool released = true,
+      bool blocked = false,
+    }) => TeamMembership.fromMap({
+      'id': 1,
+      'top_id': 't1',
+      'team': 'voz',
+      'profile_id': 'u1',
+      'team_role': papel,
+      'released': released,
+      'blocked': blocked,
+    });
+
+    test('coordenador liberado tem os dois poderes', () {
+      expect(m('coordenador').podeAdicionarMembros, isTrue);
+      expect(m('coordenador').podeRemoverMembros, isTrue);
+      expect(m('coordenador').isTeamAdmin, isTrue);
+    });
+
+    test('subcoordenador liberado adiciona mas não remove', () {
+      expect(m('subcoordenador').podeAdicionarMembros, isTrue);
+      expect(m('subcoordenador').podeRemoverMembros, isFalse);
+    });
+
+    test('coordenador BLOQUEADO perde todos os poderes', () {
+      final bloqueado = m('coordenador', blocked: true);
+      expect(bloqueado.isActive, isFalse);
+      expect(bloqueado.podeAdicionarMembros, isFalse);
+      expect(bloqueado.podeRemoverMembros, isFalse);
+      expect(bloqueado.isTeamAdmin, isFalse);
+    });
+
+    test('coordenador NÃO liberado ainda não tem poderes', () {
+      final pendente = m('coordenador', released: false);
+      expect(pendente.podeAdicionarMembros, isFalse);
+      expect(pendente.podeRemoverMembros, isFalse);
+    });
+  });
 }
