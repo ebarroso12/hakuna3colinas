@@ -51,7 +51,9 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
   /// posições cai de volta pro id cru, então só tenta uma vez.
   Future<void> _loadHakunaProfiles() async {
     try {
-      final profiles = await SupabaseService.instance.fetchHakunaProfiles(widget.top.id);
+      final profiles = await SupabaseService.instance.fetchHakunaProfiles(
+        widget.top.id,
+      );
       if (mounted) setState(() => _hakunaProfiles = profiles);
     } catch (_) {
       // segue sem os nomes; a lista mostra o id cru como fallback
@@ -81,29 +83,42 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
       );
       if (!mounted) return;
       setState(() => _tracking = true);
+      await _ofereceLiberarSegundoPlano();
     } catch (e) {
       // Duas causas bem diferentes pro mesmo erro: GPS desligado no sistema
       // (resolve em Configurações > Localização) ou permissão do app negada
       // (resolve em Configurações > Apps > Hakuna Connect). Cada uma abre
       // uma tela do Android diferente — misturar as duas confunde o usuário.
-      final serviceDisabled = await LocationService.instance.isLocationServiceDisabled();
+      final serviceDisabled = await LocationService.instance
+          .isLocationServiceDisabled();
       if (!mounted) return;
       if (serviceDisabled) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Localização (GPS) está desligada no aparelho. Ative para compartilhar sua posição.'),
-            action: SnackBarAction(label: 'Abrir', onPressed: Geolocator.openLocationSettings),
+            content: const Text(
+              'Localização (GPS) está desligada no aparelho. Ative para compartilhar sua posição.',
+            ),
+            action: SnackBarAction(
+              label: 'Abrir',
+              onPressed: Geolocator.openLocationSettings,
+            ),
           ),
         );
         return;
       }
-      final deniedForever = await LocationService.instance.isPermissionDeniedForever();
+      final deniedForever = await LocationService.instance
+          .isPermissionDeniedForever();
       if (!mounted) return;
       if (deniedForever) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Permissão de localização negada. Abra as Configurações do app para liberar.'),
-            action: SnackBarAction(label: 'Abrir', onPressed: Geolocator.openAppSettings),
+            content: const Text(
+              'Permissão de localização negada. Abra as Configurações do app para liberar.',
+            ),
+            action: SnackBarAction(
+              label: 'Abrir',
+              onPressed: Geolocator.openAppSettings,
+            ),
           ),
         );
         return;
@@ -111,6 +126,48 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Não foi possível iniciar o rastreamento: $e')),
       );
+    }
+  }
+
+  /// Depois que o rastreamento já começou, oferece liberar "Permitir o
+  /// tempo todo".
+  ///
+  /// A ordem importa: o Android só mostra essa opção depois que a permissão
+  /// básica foi concedida, e pedir antes de o usuário ver o rastreamento
+  /// funcionando é o caminho mais curto para ele negar. Por isso é um
+  /// convite, não um bloqueio — sem essa permissão o rastreamento continua
+  /// funcionando pela notificação fixa; ela é a rede de segurança para
+  /// aparelhos com economia de bateria agressiva.
+  Future<void> _ofereceLiberarSegundoPlano() async {
+    if (await LocationService.instance.hasBackgroundPermission()) return;
+    if (!mounted) return;
+
+    final liberar = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Manter o rastreamento na trilha'),
+        content: const Text(
+          'Sua posição já está sendo compartilhada.\n\n'
+          'Alguns aparelhos cortam o GPS quando a tela fica muito tempo '
+          'bloqueada, e aí sua trilha fica congelada no último ponto.\n\n'
+          'Para evitar isso, marque "Permitir o tempo todo" na permissão de '
+          'localização do app.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Agora não'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Abrir Configurações'),
+          ),
+        ],
+      ),
+    );
+
+    if (liberar ?? false) {
+      await LocationService.instance.openSettingsForBackground();
     }
   }
 
@@ -127,18 +184,25 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Avisa todos os Hakunas liberados neste Top agora. Use só em acidente ou atendimento crítico.'),
+            const Text(
+              'Avisa todos os Hakunas liberados neste Top agora. Use só em acidente ou atendimento crítico.',
+            ),
             const SizedBox(height: 12),
             TextField(
               controller: messageController,
-              decoration: const InputDecoration(labelText: 'O que está acontecendo? (opcional)'),
+              decoration: const InputDecoration(
+                labelText: 'O que está acontecendo? (opcional)',
+              ),
               minLines: 1,
               maxLines: 3,
             ),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () => Navigator.of(context).pop(true),
@@ -162,7 +226,9 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
     try {
       await SupabaseService.instance.sendTopAlert(
         topId: widget.top.id,
-        message: messageController.text.trim().isEmpty ? null : messageController.text.trim(),
+        message: messageController.text.trim().isEmpty
+            ? null
+            : messageController.text.trim(),
         latitude: lat,
         longitude: lng,
       );
@@ -192,13 +258,17 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
     // não a flag local: se a tela for fechada enquanto startTracking()
     // ainda está em andamento, _tracking pode estar false mesmo com o
     // rastreamento já ativo no serviço.
-    if (LocationService.instance.isTracking) LocationService.instance.stopTracking();
+    if (LocationService.instance.isTracking) {
+      LocationService.instance.stopTracking();
+    }
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final isHakuna = _myProfile?.role == UserRole.hakuna || _myProfile?.role == UserRole.admin;
+    final isHakuna =
+        _myProfile?.role == UserRole.hakuna ||
+        _myProfile?.role == UserRole.admin;
 
     return Scaffold(
       appBar: AppBar(
@@ -210,7 +280,9 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
               icon: const Icon(Icons.monitor_heart),
               tooltip: 'Sinais vitais dos Senderistas',
               onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => TopSenderistasScreen(top: widget.top)),
+                MaterialPageRoute(
+                  builder: (_) => TopSenderistasScreen(top: widget.top),
+                ),
               ),
             ),
           if (isHakuna)
@@ -219,7 +291,10 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
               tooltip: 'Chat com os Hakunas',
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute(
-                  builder: (_) => TopChatScreen(top: widget.top, hakunaProfiles: _hakunaProfiles),
+                  builder: (_) => TopChatScreen(
+                    top: widget.top,
+                    hakunaProfiles: _hakunaProfiles,
+                  ),
                 ),
               ),
             ),
@@ -235,7 +310,9 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
                   const Icon(Icons.error_outline, color: Colors.red),
                   const SizedBox(width: 8),
                   const Expanded(
-                    child: Text('Não foi possível carregar seu perfil. Verifique a internet.'),
+                    child: Text(
+                      'Não foi possível carregar seu perfil. Verifique a internet.',
+                    ),
                   ),
                   TextButton(
                     onPressed: () {
@@ -247,27 +324,40 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
                 ],
               ),
             ),
-          if (isHakuna) _AlertBanner(topId: widget.top.id, hakunaProfiles: _hakunaProfiles),
+          if (isHakuna)
+            _AlertBanner(topId: widget.top.id, hakunaProfiles: _hakunaProfiles),
           if (isHakuna)
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
               child: FilledButton.icon(
-                style: FilledButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
                 onPressed: _sendAlert,
                 icon: const Icon(Icons.warning_amber),
-                label: const Text('EMERGÊNCIA — acidente / atendimento crítico'),
+                label: const Text(
+                  'EMERGÊNCIA — acidente / atendimento crítico',
+                ),
               ),
             ),
           if (isHakuna)
             Padding(
               padding: const EdgeInsets.all(12),
               child: FilledButton.icon(
-                onPressed: widget.top.status.name == 'active' ? _toggleTracking : null,
+                onPressed: widget.top.status.name == 'active'
+                    ? _toggleTracking
+                    : null,
                 icon: Icon(_tracking ? Icons.location_off : Icons.location_on),
-                label: Text(_tracking ? 'Parar de compartilhar posição' : 'Compartilhar minha posição'),
+                label: Text(
+                  _tracking
+                      ? 'Parar de compartilhar posição'
+                      : 'Compartilhar minha posição',
+                ),
               ),
             ),
-          if (isHakuna) _MyStatsCard(topId: widget.top.id, weightKg: _myProfile?.weightKg),
+          if (isHakuna)
+            _MyStatsCard(topId: widget.top.id, weightKg: _myProfile?.weightKg),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Row(
@@ -294,13 +384,17 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
               builder: (context, snapshot) {
                 final positions = snapshot.data ?? [];
                 if (positions.isEmpty) {
-                  return const Center(child: Text('Nenhuma posição de Hakuna disponível ainda.'));
+                  return const Center(
+                    child: Text('Nenhuma posição de Hakuna disponível ainda.'),
+                  );
                 }
                 return ListView.builder(
                   itemCount: positions.length,
                   itemBuilder: (context, index) {
                     final p = positions[index];
-                    final label = _hakunaProfiles[p.profileId]?.displayLabel ?? p.profileId;
+                    final label =
+                        _hakunaProfiles[p.profileId]?.displayLabel ??
+                        p.profileId;
                     return ListTile(
                       leading: const Icon(Icons.medical_services),
                       title: Text(label),
@@ -404,18 +498,24 @@ class _AlertBannerState extends State<_AlertBanner> {
       builder: (context, snapshot) {
         final cutoff = DateTime.now().subtract(const Duration(hours: 1));
         final alerts = (snapshot.data ?? [])
-            .where((a) => !_dismissed.contains(a.id) && a.createdAt.isAfter(cutoff))
+            .where(
+              (a) => !_dismissed.contains(a.id) && a.createdAt.isAfter(cutoff),
+            )
             .toList();
         if (alerts.isEmpty) return const SizedBox.shrink();
 
         return Column(
           children: alerts.map((alert) {
-            final senderLabel = widget.hakunaProfiles[alert.senderId]?.displayLabel ?? 'Hakuna';
+            final senderLabel =
+                widget.hakunaProfiles[alert.senderId]?.displayLabel ?? 'Hakuna';
             return Container(
               width: double.infinity,
               margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
               padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: Colors.red.shade700, borderRadius: BorderRadius.circular(8)),
+              decoration: BoxDecoration(
+                color: Colors.red.shade700,
+                borderRadius: BorderRadius.circular(8),
+              ),
               child: Row(
                 children: [
                   const Icon(Icons.warning_amber, color: Colors.white),
@@ -426,12 +526,22 @@ class _AlertBannerState extends State<_AlertBanner> {
                       children: [
                         Text(
                           'Alarme — $senderLabel',
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                        if (alert.message != null) Text(alert.message!, style: const TextStyle(color: Colors.white)),
+                        if (alert.message != null)
+                          Text(
+                            alert.message!,
+                            style: const TextStyle(color: Colors.white),
+                          ),
                         Text(
                           alert.createdAt.toLocal().toString(),
-                          style: const TextStyle(color: Colors.white70, fontSize: 11),
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 11,
+                          ),
                         ),
                       ],
                     ),
@@ -451,7 +561,11 @@ class _AlertBannerState extends State<_AlertBanner> {
 }
 
 class _StatItem extends StatelessWidget {
-  const _StatItem({required this.icon, required this.label, required this.value});
+  const _StatItem({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
 
   final IconData icon;
   final String label;

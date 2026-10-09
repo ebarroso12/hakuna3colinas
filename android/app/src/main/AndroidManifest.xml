@@ -3,6 +3,25 @@
     <uses-permission android:name="android.permission.NFC"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+
+    <!-- Rastreamento com a tela bloqueada / app em segundo plano.
+         Sem estas tres, o Android corta as atualizacoes de GPS poucos
+         minutos depois que o app sai da frente, e a trilha do Hakuna fica
+         congelada no ponto onde ele bloqueou a tela.
+
+         FOREGROUND_SERVICE_LOCATION e exigida a partir do Android 14. O
+         <service> em si ja vem declarado no manifest do geolocator_android
+         (GeolocatorLocationService, foregroundServiceType="location"), nao
+         precisa redeclarar aqui.
+
+         ACCESS_BACKGROUND_LOCATION ("Permitir o tempo todo") nao e dada no
+         mesmo dialogo das outras: o Android obriga o usuario a escolher ela
+         numa segunda tela, nas Configuracoes do app. Ver
+         LocationService.hasBackgroundPermission / openSettingsForBackground. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
+
     <uses-feature android:name="android.hardware.nfc" android:required="false"/>
 
     <application
