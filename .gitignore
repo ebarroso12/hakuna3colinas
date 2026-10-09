@@ -55,3 +55,9 @@ app.*.map.json
 
 # credenciais locais (dart-define-from-file) - NUNCA commitar
 env.local.json
+
+# Skills de Flutter/Dart: a fonte fica versionada em .agents/skills/ junto
+# com skills-lock.json. O .claude/skills/ e so um espelho de symlinks que o
+# `npx skills add` recria — com core.symlinks=false no Windows o git
+# duplicaria os arquivos.
+.claude/

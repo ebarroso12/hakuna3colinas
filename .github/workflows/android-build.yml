@@ -22,10 +22,15 @@ on:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
+    # Necessario pro passo de Release conseguir criar a release e anexar o
+    # APK. Sem isso o build passa e o artifact sai, mas a release falha com
+    # "Resource not accessible by integration".
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'

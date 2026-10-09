@@ -15,15 +15,27 @@ class StatsService {
   /// vez de travar o cálculo por falta de um dado opcional.
   static const double _defaultWeightKg = 70;
 
-  /// [positions] deve estar ordenado por recorded_at crescente e conter
-  /// apenas os pontos de um único Hakuna em um único Top.
+  /// [positions] deve conter apenas os pontos de um único Hakuna em um
+  /// único Top. A ordem não importa: o método ordena por `recordedAt` antes
+  /// de calcular.
+  ///
+  /// Essa ordenação é defensiva de propósito. Antes o método assumia ordem
+  /// crescente; com os pontos invertidos a distância saía certa, mas a
+  /// duração ficava negativa e velocidade e calorias zeravam em silêncio —
+  /// o relatório mostraria "8 km percorridos, 0 kcal". As duas consultas de
+  /// posição usam `.order('recorded_at')` hoje, mas `watchVitalSigns`, no
+  /// mesmo arquivo, usa ordem decrescente: o padrão não é consistente no
+  /// projeto, então o cálculo não deve depender dele.
   static TopStats compute(List<HakunaPosition> positions, {double? weightKg}) {
     if (positions.length < 2) return TopStats.zero;
 
+    final ordenadas = [...positions]
+      ..sort((a, b) => a.recordedAt.compareTo(b.recordedAt));
+
     double distanceMeters = 0;
-    for (var i = 1; i < positions.length; i++) {
-      final prev = positions[i - 1];
-      final cur = positions[i];
+    for (var i = 1; i < ordenadas.length; i++) {
+      final prev = ordenadas[i - 1];
+      final cur = ordenadas[i];
       distanceMeters += Geolocator.distanceBetween(
         prev.latitude,
         prev.longitude,
@@ -32,14 +44,20 @@ class StatsService {
       );
     }
 
-    final duration = positions.last.recordedAt.difference(positions.first.recordedAt);
+    final duration = ordenadas.last.recordedAt.difference(
+      ordenadas.first.recordedAt,
+    );
     final hours = duration.inSeconds / 3600;
     final avgSpeedKmh = hours > 0 ? (distanceMeters / 1000) / hours : 0.0;
 
     return TopStats(
       distanceMeters: distanceMeters,
       avgSpeedKmh: avgSpeedKmh,
-      calories: _estimateCalories(avgSpeedKmh: avgSpeedKmh, hours: hours, weightKg: weightKg ?? _defaultWeightKg),
+      calories: _estimateCalories(
+        avgSpeedKmh: avgSpeedKmh,
+        hours: hours,
+        weightKg: weightKg ?? _defaultWeightKg,
+      ),
       duration: duration,
       caloriesIsEstimate: weightKg == null,
     );
@@ -50,7 +68,11 @@ class StatsService {
   /// médica exata, é a mesma aproximação usada em relógios/apps de fitness.
   /// MET sobe com a velocidade média porque trilha em ritmo mais forte
   /// (subida, terreno irregular) consome mais energia por hora.
-  static double _estimateCalories({required double avgSpeedKmh, required double hours, required double weightKg}) {
+  static double _estimateCalories({
+    required double avgSpeedKmh,
+    required double hours,
+    required double weightKg,
+  }) {
     final met = switch (avgSpeedKmh) {
       <= 0 => 0.0,
       < 3 => 3.5, // caminhada leve

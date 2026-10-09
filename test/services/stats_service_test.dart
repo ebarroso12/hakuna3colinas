@@ -21,10 +21,7 @@ List<HakunaPosition> _trilha({
   required Duration duracao,
 }) {
   final deltaLat = metros / 111320.0;
-  return [
-    _pos(0, 0, Duration.zero),
-    _pos(deltaLat, 0, duracao),
-  ];
+  return [_pos(0, 0, Duration.zero), _pos(deltaLat, 0, duracao)];
 }
 
 void main() {
@@ -43,16 +40,19 @@ void main() {
       expect(stats.duration, Duration.zero);
     });
 
-    test('dois pontos no mesmo lugar: distância zero, sem dividir por zero', () {
-      final stats = StatsService.compute([
-        _pos(0, 0, Duration.zero),
-        _pos(0, 0, const Duration(hours: 1)),
-      ]);
-      expect(stats.distanceMeters, closeTo(0, 0.01));
-      expect(stats.avgSpeedKmh, 0);
-      expect(stats.calories, 0, reason: 'velocidade 0 cai no ramo MET <= 0');
-      expect(stats.duration, const Duration(hours: 1));
-    });
+    test(
+      'dois pontos no mesmo lugar: distância zero, sem dividir por zero',
+      () {
+        final stats = StatsService.compute([
+          _pos(0, 0, Duration.zero),
+          _pos(0, 0, const Duration(hours: 1)),
+        ]);
+        expect(stats.distanceMeters, closeTo(0, 0.01));
+        expect(stats.avgSpeedKmh, 0);
+        expect(stats.calories, 0, reason: 'velocidade 0 cai no ramo MET <= 0');
+        expect(stats.duration, const Duration(hours: 1));
+      },
+    );
 
     test('dois pontos no mesmo instante não estouram com divisão por zero', () {
       final stats = StatsService.compute([
@@ -60,7 +60,11 @@ void main() {
         _pos(0.001, 0, Duration.zero),
       ]);
       expect(stats.distanceMeters, greaterThan(0));
-      expect(stats.avgSpeedKmh, 0, reason: 'hours == 0 não pode virar Infinity');
+      expect(
+        stats.avgSpeedKmh,
+        0,
+        reason: 'hours == 0 não pode virar Infinity',
+      );
       expect(stats.calories, 0);
       expect(stats.avgSpeedKmh.isFinite, isTrue);
       expect(stats.calories.isFinite, isTrue);
@@ -76,38 +80,47 @@ void main() {
       expect(stats.distanceKm, closeTo(1.0, 0.005));
     });
 
-    test('acumula ao longo de vários trechos, não só do primeiro ao último', () {
-      final deltaLat = 1000 / 111320.0;
-      final stats = StatsService.compute([
-        _pos(0, 0, Duration.zero),
-        _pos(deltaLat, 0, const Duration(minutes: 20)),
-        _pos(deltaLat * 2, 0, const Duration(minutes: 40)),
-        _pos(deltaLat * 3, 0, const Duration(minutes: 60)),
-      ]);
-      expect(stats.distanceMeters, closeTo(3000, 15));
-    });
+    test(
+      'acumula ao longo de vários trechos, não só do primeiro ao último',
+      () {
+        final deltaLat = 1000 / 111320.0;
+        final stats = StatsService.compute([
+          _pos(0, 0, Duration.zero),
+          _pos(deltaLat, 0, const Duration(minutes: 20)),
+          _pos(deltaLat * 2, 0, const Duration(minutes: 40)),
+          _pos(deltaLat * 3, 0, const Duration(minutes: 60)),
+        ]);
+        expect(stats.distanceMeters, closeTo(3000, 15));
+      },
+    );
 
-    test('ida e volta conta o caminho percorrido, não o deslocamento final', () {
-      final deltaLat = 1000 / 111320.0;
-      final stats = StatsService.compute([
-        _pos(0, 0, Duration.zero),
-        _pos(deltaLat, 0, const Duration(minutes: 30)),
-        _pos(0, 0, const Duration(minutes: 60)),
-      ]);
-      expect(
-        stats.distanceMeters,
-        closeTo(2000, 10),
-        reason: 'voltou ao ponto inicial mas caminhou 2 km',
-      );
-    });
+    test(
+      'ida e volta conta o caminho percorrido, não o deslocamento final',
+      () {
+        final deltaLat = 1000 / 111320.0;
+        final stats = StatsService.compute([
+          _pos(0, 0, Duration.zero),
+          _pos(deltaLat, 0, const Duration(minutes: 30)),
+          _pos(0, 0, const Duration(minutes: 60)),
+        ]);
+        expect(
+          stats.distanceMeters,
+          closeTo(2000, 10),
+          reason: 'voltou ao ponto inicial mas caminhou 2 km',
+        );
+      },
+    );
 
-    test('velocidade média usa o intervalo entre o primeiro e o último ponto', () {
-      final stats = StatsService.compute(
-        _trilha(metros: 8000, duracao: const Duration(hours: 2)),
-      );
-      expect(stats.avgSpeedKmh, closeTo(4.0, 0.05));
-      expect(stats.duration, const Duration(hours: 2));
-    });
+    test(
+      'velocidade média usa o intervalo entre o primeiro e o último ponto',
+      () {
+        final stats = StatsService.compute(
+          _trilha(metros: 8000, duracao: const Duration(hours: 2)),
+        );
+        expect(stats.avgSpeedKmh, closeTo(4.0, 0.05));
+        expect(stats.duration, const Duration(hours: 2));
+      },
+    );
 
     test('paradas longas derrubam a velocidade média (é média geral, não de movimento)', () {
       final deltaLat = 4000 / 111320.0;
@@ -198,36 +211,49 @@ void main() {
     });
   });
 
-  group('StatsService.compute — contrato implícito de ordenação', () {
-    test(
-      'FRAGILIDADE: compute assume pontos em ordem crescente de recorded_at. '
-      'Em ordem decrescente a distância continua certa, mas duração fica '
-      'negativa e velocidade/calorias zeram silenciosamente',
-      () {
-        final crescente = _trilha(
-          metros: 8000,
-          duracao: const Duration(hours: 2),
-        );
-        final decrescente = crescente.reversed.toList();
+  group('StatsService.compute — ordena por recordedAt internamente', () {
+    test('pontos em ordem decrescente dão o mesmo resultado que em ordem', () {
+      final crescente = _trilha(
+        metros: 8000,
+        duracao: const Duration(hours: 2),
+      );
+      final decrescente = crescente.reversed.toList();
 
-        final ok = StatsService.compute(crescente, weightKg: 80);
-        final invertido = StatsService.compute(decrescente, weightKg: 80);
+      final ok = StatsService.compute(crescente, weightKg: 80);
+      final invertido = StatsService.compute(decrescente, weightKg: 80);
 
-        expect(invertido.distanceMeters, closeTo(ok.distanceMeters, 0.01));
-        expect(
-          invertido.duration.isNegative,
-          isTrue,
-          reason: 'duração negativa nunca deveria chegar à UI',
-        );
-        expect(invertido.avgSpeedKmh, 0);
-        expect(
-          invertido.calories,
-          0,
-          reason:
-              'relatório mostraria 8 km percorridos com 0 kcal — compute '
-              'deveria ordenar internamente ou rejeitar a entrada',
-        );
-      },
-    );
+      expect(invertido.distanceMeters, closeTo(ok.distanceMeters, 0.01));
+      expect(invertido.duration, ok.duration);
+      expect(invertido.duration.isNegative, isFalse);
+      expect(invertido.avgSpeedKmh, closeTo(ok.avgSpeedKmh, 0.001));
+      expect(
+        invertido.calories,
+        closeTo(ok.calories, 0.001),
+        reason: 'nao pode mais acontecer "8 km percorridos, 0 kcal"',
+      );
+    });
+
+    test('pontos totalmente embaralhados ainda dão a distância certa', () {
+      final deltaLat = 1000 / 111320.0;
+      final embaralhada = [
+        _pos(deltaLat * 2, 0, const Duration(minutes: 40)),
+        _pos(0, 0, Duration.zero),
+        _pos(deltaLat * 3, 0, const Duration(minutes: 60)),
+        _pos(deltaLat, 0, const Duration(minutes: 20)),
+      ];
+      final stats = StatsService.compute(embaralhada, weightKg: 80);
+      expect(stats.distanceMeters, closeTo(3000, 15));
+      expect(stats.duration, const Duration(minutes: 60));
+    });
+
+    test('não modifica a lista recebida (ordena numa cópia)', () {
+      final entrada = _trilha(
+        metros: 8000,
+        duracao: const Duration(hours: 2),
+      ).reversed.toList();
+      final antes = entrada.map((p) => p.recordedAt).toList();
+      StatsService.compute(entrada);
+      expect(entrada.map((p) => p.recordedAt).toList(), antes);
+    });
   });
 }

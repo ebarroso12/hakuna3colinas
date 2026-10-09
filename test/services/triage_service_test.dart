@@ -174,38 +174,44 @@ void main() {
     // Quem decide é a prioridade, e a regra 2 vem antes. Estes dois testes
     // fixam o comportamento REAL de hoje — não necessariamente o desejado.
     // Ver a inconsistência que eles expõem no teste logo abaixo.
-    test('25 anos sem comorbidade resolve como AZUL (regra 2 tem prioridade)', () {
-      expect(
-        TriageService.colorFor(_profile(age: 25), _producao),
-        TriageColor.blue,
-      );
-    });
-
-    test('25 anos com 1 comorbidade resolve como VERDE (regra 4 antes da 5)', () {
-      expect(
-        TriageService.colorFor(_profile(age: 25, comorbidities: 1), _producao),
-        TriageColor.green,
-      );
-    });
-
     test(
-      'INCONSISTÊNCIA DE BORDA: 25 anos com 1 comorbidade é verde, '
-      '26 anos com a mesma comorbidade é amarelo — um ano de diferença '
-      'muda a classificação em dois níveis',
+      '25 anos sem comorbidade resolve como AZUL (regra 2 tem prioridade)',
       () {
-        final aos25 = TriageService.colorFor(
-          _profile(age: 25, comorbidities: 1),
-          _producao,
+        expect(
+          TriageService.colorFor(_profile(age: 25), _producao),
+          TriageColor.blue,
         );
-        final aos26 = TriageService.colorFor(
-          _profile(age: 26, comorbidities: 1),
-          _producao,
-        );
-        expect(aos25, TriageColor.green);
-        expect(aos26, TriageColor.yellow);
-        expect(aos25, isNot(aos26));
       },
     );
+
+    test(
+      '25 anos com 1 comorbidade resolve como VERDE (regra 4 antes da 5)',
+      () {
+        expect(
+          TriageService.colorFor(
+            _profile(age: 25, comorbidities: 1),
+            _producao,
+          ),
+          TriageColor.green,
+        );
+      },
+    );
+
+    test('INCONSISTÊNCIA DE BORDA: 25 anos com 1 comorbidade é verde, '
+        '26 anos com a mesma comorbidade é amarelo — um ano de diferença '
+        'muda a classificação em dois níveis', () {
+      final aos25 = TriageService.colorFor(
+        _profile(age: 25, comorbidities: 1),
+        _producao,
+      );
+      final aos26 = TriageService.colorFor(
+        _profile(age: 26, comorbidities: 1),
+        _producao,
+      );
+      expect(aos25, TriageColor.green);
+      expect(aos26, TriageColor.yellow);
+      expect(aos25, isNot(aos26));
+    });
   });
 
   group('TriageService.colorFor — ausência de classificação', () {
@@ -225,41 +231,65 @@ void main() {
     });
   });
 
-  group('TriageService.colorFor — contrato implícito de ordenação', () {
+  group('TriageService.colorFor — ordena por priority internamente', () {
+    test('regra de priority alta no topo da lista NÃO vence as de priority '
+        'baixa: colorFor ordena antes de comparar', () {
+      final profile = _profile(age: 20, comorbidities: 0);
+
+      // Uma regra "pega-tudo" de priority 50, colocada antes de todas.
+      // Simula alguém que buscou as regras sem `.order('priority')`.
+      final foraDeOrdem = <TriageRule>[
+        _rule(
+          id: 99,
+          color: TriageColor.yellow,
+          minAge: 0,
+          maxAge: 120,
+          minComorbidities: 0,
+          maxComorbidities: 999,
+          priority: 50,
+        ),
+        ..._producao,
+      ];
+
+      expect(
+        TriageService.colorFor(profile, foraDeOrdem),
+        TriageColor.blue,
+        reason:
+            'a regra 2 (priority 2) tem que vencer a de priority 50, '
+            'independente da posição na lista',
+      );
+    });
+
     test(
-      'FRAGILIDADE: com regras fora de ordem de priority, um jovem sem '
-      'comorbidade deixa de ser azul — colorFor pega a primeira que casar, '
-      'não a de menor priority',
+      'lista totalmente invertida dá o mesmo resultado da ordem correta',
       () {
-        final profile = _profile(age: 20, comorbidities: 0);
-
-        // Ordem correta (como o banco devolve): azul.
-        expect(TriageService.colorFor(profile, _producao), TriageColor.blue);
-
-        // Mesmas regras, ordem trocada: a regra 6 (0-40, 2+ comorbidades)
-        // não casa, mas basta qualquer regra mais permissiva vir antes da 2
-        // pra mudar o resultado. Simula alguém que buscou as regras sem
-        // `.order('priority')`.
-        final foraDeOrdem = <TriageRule>[
-          _rule(
-            id: 99,
-            color: TriageColor.yellow,
-            minAge: 0,
-            maxAge: 120,
-            minComorbidities: 0,
-            maxComorbidities: 999,
-            priority: 50,
-          ),
-          ..._producao,
-        ];
-        expect(
-          TriageService.colorFor(profile, foraDeOrdem),
-          TriageColor.yellow,
-          reason:
-              'uma regra de priority 50 venceu as de priority 1-6 só por estar '
-              'primeiro na lista — colorFor deveria ordenar internamente',
-        );
+        for (final caso in [
+          (idade: 20, comorbidades: 0),
+          (idade: 20, comorbidades: 1),
+          (idade: 30, comorbidades: 1),
+          (idade: 30, comorbidades: 2),
+          (idade: 50, comorbidades: 0),
+        ]) {
+          final profile = _profile(
+            age: caso.idade,
+            comorbidities: caso.comorbidades,
+          );
+          expect(
+            TriageService.colorFor(profile, _producao.reversed.toList()),
+            TriageService.colorFor(profile, _producao),
+            reason: '${caso.idade} anos, ${caso.comorbidades} comorbidade(s)',
+          );
+        }
       },
     );
+
+    test('não modifica a lista recebida (ordena numa cópia)', () {
+      final original = [..._producao];
+      final entrada = _producao.reversed.toList();
+      final antes = [...entrada];
+      TriageService.colorFor(_profile(age: 30), entrada);
+      expect(entrada.map((r) => r.id), antes.map((r) => r.id));
+      expect(_producao.map((r) => r.id), original.map((r) => r.id));
+    });
   });
 }
