@@ -24,7 +24,8 @@ class _AdminTopsScreenState extends State<AdminTopsScreen> {
     _future = SupabaseService.instance.fetchMyTops();
   }
 
-  void _reload() => setState(() => _future = SupabaseService.instance.fetchMyTops());
+  void _reload() =>
+      setState(() => _future = SupabaseService.instance.fetchMyTops());
 
   @override
   Widget build(BuildContext context) {
@@ -35,9 +36,9 @@ class _AdminTopsScreenState extends State<AdminTopsScreen> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
-          await Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const AdminTopFormScreen()),
-          );
+          await Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const AdminTopFormScreen()));
           _reload();
         },
         child: const Icon(Icons.add),
@@ -61,11 +62,18 @@ class _AdminTopsScreenState extends State<AdminTopsScreen> {
               final top = tops[index];
               return ListTile(
                 title: Text(top.name),
-                subtitle: Text([if (top.topNumber != null) 'nº ${top.topNumber}', top.status.name].join(' · ')),
+                subtitle: Text(
+                  [
+                    if (top.topNumber != null) 'nº ${top.topNumber}',
+                    top.status.name,
+                  ].join(' · '),
+                ),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () async {
                   await Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => AdminTopFormScreen(top: top)),
+                    MaterialPageRoute(
+                      builder: (_) => AdminTopFormScreen(top: top),
+                    ),
                   );
                   _reload();
                 },

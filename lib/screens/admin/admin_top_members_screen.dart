@@ -27,21 +27,38 @@ class _AdminTopMembersScreenState extends State<AdminTopMembersScreen> {
 
   Future<_MembersData> _load() async {
     final profiles = await AdminService.instance.fetchAllProfiles();
-    final hakunaAssignments = await AdminService.instance.fetchTopHakunaAssignments(widget.top.id);
-    final senderistaIds = await AdminService.instance.fetchTopSenderistaIds(widget.top.id);
-    return _MembersData(profiles: profiles, hakunaAssignments: hakunaAssignments, senderistaIds: senderistaIds);
+    final hakunaAssignments = await AdminService.instance
+        .fetchTopHakunaAssignments(widget.top.id);
+    final senderistaIds = await AdminService.instance.fetchTopSenderistaIds(
+      widget.top.id,
+    );
+    return _MembersData(
+      profiles: profiles,
+      hakunaAssignments: hakunaAssignments,
+      senderistaIds: senderistaIds,
+    );
   }
 
   Future<void> _toggleHakuna(Profile profile, bool released) async {
-    await AdminService.instance.setHakunaReleased(topId: widget.top.id, profileId: profile.id, released: released);
+    await AdminService.instance.setHakunaReleased(
+      topId: widget.top.id,
+      profileId: profile.id,
+      released: released,
+    );
     setState(() => _future = _load());
   }
 
   Future<void> _toggleSenderista(Profile profile, bool registered) async {
     if (registered) {
-      await AdminService.instance.registerSenderista(topId: widget.top.id, profileId: profile.id);
+      await AdminService.instance.registerSenderista(
+        topId: widget.top.id,
+        profileId: profile.id,
+      );
     } else {
-      await AdminService.instance.removeSenderistaFromTop(topId: widget.top.id, profileId: profile.id);
+      await AdminService.instance.removeSenderistaFromTop(
+        topId: widget.top.id,
+        profileId: profile.id,
+      );
     }
     setState(() => _future = _load());
   }
@@ -67,7 +84,8 @@ class _AdminTopMembersScreenState extends State<AdminTopMembersScreen> {
             itemCount: data.profiles.length,
             itemBuilder: (context, index) {
               final profile = data.profiles[index];
-              final isHakunaReleased = data.hakunaAssignments[profile.id] ?? false;
+              final isHakunaReleased =
+                  data.hakunaAssignments[profile.id] ?? false;
               final isSenderista = data.senderistaIds.contains(profile.id);
               return ListTile(
                 title: Text(profile.displayLabel),
@@ -78,14 +96,23 @@ class _AdminTopMembersScreenState extends State<AdminTopMembersScreen> {
                     Column(
                       children: [
                         const Text('Hakuna', style: TextStyle(fontSize: 11)),
-                        Switch(value: isHakunaReleased, onChanged: (v) => _toggleHakuna(profile, v)),
+                        Switch(
+                          value: isHakunaReleased,
+                          onChanged: (v) => _toggleHakuna(profile, v),
+                        ),
                       ],
                     ),
                     const SizedBox(width: 8),
                     Column(
                       children: [
-                        const Text('Senderista', style: TextStyle(fontSize: 11)),
-                        Switch(value: isSenderista, onChanged: (v) => _toggleSenderista(profile, v)),
+                        const Text(
+                          'Senderista',
+                          style: TextStyle(fontSize: 11),
+                        ),
+                        Switch(
+                          value: isSenderista,
+                          onChanged: (v) => _toggleSenderista(profile, v),
+                        ),
                       ],
                     ),
                   ],
@@ -100,7 +127,11 @@ class _AdminTopMembersScreenState extends State<AdminTopMembersScreen> {
 }
 
 class _MembersData {
-  _MembersData({required this.profiles, required this.hakunaAssignments, required this.senderistaIds});
+  _MembersData({
+    required this.profiles,
+    required this.hakunaAssignments,
+    required this.senderistaIds,
+  });
 
   final List<Profile> profiles;
   final Map<String, bool> hakunaAssignments;

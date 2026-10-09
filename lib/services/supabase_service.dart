@@ -3,6 +3,8 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/chat_message.dart';
+import '../models/team.dart';
+import '../models/team_message.dart';
 import '../models/hakuna_position.dart';
 import '../models/profile.dart';
 import '../models/top.dart';
@@ -277,6 +279,98 @@ class SupabaseService {
         .eq('top_id', topId)
         .order('created_at')
         .map((rows) => rows.map((r) => ChatMessage.fromMap(r)).toList());
+  }
+
+  /// Chat de uma equipe dentro de um Top, em tempo real.
+  ///
+  /// [team] = [TeamKey.geral] é o chat geral, visível para todo usuário
+  /// aprovado enquanto o Top não estiver em `draft`. As outras equipes só
+  /// são visíveis para quem é membro ou admin daquela equipe naquele Top.
+  ///
+  /// Quem impõe isso é a RLS de `team_messages`, não este método: uma
+  /// equipe da qual o usuário não participa simplesmente devolve lista
+  /// vazia, sem erro.
+  Stream<List<TeamMessage>> watchTeamMessages({
+    required String topId,
+    required TeamKey team,
+  }) {
+    return _client
+        .from('team_messages')
+        .stream(primaryKey: ['id'])
+        .eq('top_id', topId)
+        .order('created_at')
+        .map(
+          (rows) => rows
+              .map((r) => TeamMessage.fromMap(r))
+              .where((m) => m.team == team)
+              .toList(),
+        );
+  }
+
+  /// Envia mensagem para o chat de uma equipe.
+  ///
+  /// [isAlert] só é aceito pela RLS se o remetente for admin da equipe ou
+  /// admin geral — para qualquer outro, o insert é rejeitado em vez de
+  /// gravar a mensagem sem o destaque.
+  Future<void> sendTeamMessage({
+    required String topId,
+    required TeamKey team,
+    required String body,
+    bool isAlert = false,
+  }) {
+    final uid = currentUser?.id;
+    if (uid == null) {
+      return Future.error(
+        StateError('Sessão expirada — não é possível enviar mensagem'),
+      );
+    }
+    return _client.from('team_messages').insert({
+      'top_id': topId,
+      'team': team.name,
+      'sender_id': uid,
+      'body': body,
+      'is_alert': isAlert,
+    });
+  }
+
+  /// Equipes em que o usuário logado participa neste Top.
+  ///
+  /// O chat geral não vem daqui: ele é aberto para todo aprovado, então a
+  /// UI o adiciona sempre, sem depender de vínculo.
+  Future<List<TeamMembership>> fetchMyTeams(String topId) async {
+    final uid = currentUser?.id;
+    if (uid == null) return const [];
+    final rows = await _client
+        .from('top_team_members')
+        .select()
+        .eq('top_id', topId)
+        .eq('profile_id', uid);
+    return rows
+        .map((r) => TeamMembership.fromMap(r))
+        .where((m) => m.isActive)
+        .toList();
+  }
+
+  /// Membros liberados de uma equipe, para identificar quem é quem no chat.
+  Future<Map<String, Profile>> fetchTeamProfiles({
+    required String topId,
+    required TeamKey team,
+  }) async {
+    final rows = await _client
+        .from('top_team_members')
+        .select('profile_id, profiles(*)')
+        .eq('top_id', topId)
+        .eq('team', team.name)
+        .eq('released', true);
+    final map = <String, Profile>{};
+    for (final row in rows) {
+      final p = row['profiles'] as Map<String, dynamic>?;
+      if (p != null) {
+        final profile = Profile.fromMap(p);
+        map[profile.id] = profile;
+      }
+    }
+    return map;
   }
 
   Future<void> sendTopMessage({required String topId, required String body}) {

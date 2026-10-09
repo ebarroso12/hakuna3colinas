@@ -49,11 +49,17 @@ class _AuthGateState extends State<AuthGate> {
           future: _approvalFuture,
           builder: (context, approvalSnapshot) {
             if (approvalSnapshot.connectionState == ConnectionState.waiting) {
-              return const Scaffold(body: Center(child: CircularProgressIndicator()));
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
             }
             if (approvalSnapshot.hasError) {
               return Scaffold(
-                body: Center(child: Text('Erro ao carregar perfil: ${approvalSnapshot.error}')),
+                body: Center(
+                  child: Text(
+                    'Erro ao carregar perfil: ${approvalSnapshot.error}',
+                  ),
+                ),
               );
             }
             final approved = approvalSnapshot.data ?? false;

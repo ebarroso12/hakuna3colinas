@@ -31,9 +31,8 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Não foi possível checar: $e')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Não foi possível checar: $e')));
     } finally {
       if (mounted) setState(() => _checking = false);
     }
@@ -65,7 +64,11 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
             FilledButton(
               onPressed: _checking ? null : _checkAgain,
               child: _checking
-                  ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
                   : const Text('Já fui aprovado? Verificar de novo'),
             ),
             TextButton(

@@ -58,7 +58,11 @@ class _SignupScreenState extends State<SignupScreen> {
       if (SupabaseService.instance.currentUser == null) {
         // Confirmação de e-mail está ligada no projeto: sem sessão ainda.
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Cadastro feito! Confirme seu e-mail antes de entrar.')),
+          const SnackBar(
+            content: Text(
+              'Cadastro feito! Confirme seu e-mail antes de entrar.',
+            ),
+          ),
         );
         Navigator.of(context).pop();
       }
@@ -98,12 +102,16 @@ class _SignupScreenState extends State<SignupScreen> {
             TextField(
               controller: _legendariosNumberController,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Número do Legendários'),
+              decoration: const InputDecoration(
+                labelText: 'Número do Legendários',
+              ),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _weightController,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               decoration: const InputDecoration(
                 labelText: 'Peso (kg) — opcional',
                 helperText: 'Usado só para estimar o gasto calórico na trilha.',

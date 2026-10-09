@@ -10,6 +10,7 @@ import '../services/nfc_service.dart';
 import '../services/stats_service.dart';
 import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
+import 'team_chats_screen.dart';
 import 'top_chat_screen.dart';
 import 'top_senderistas_screen.dart';
 
@@ -285,9 +286,22 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
                 ),
               ),
             ),
+          // Chat geral + chats das equipes. Fica disponível para todo
+          // participante, não só Hakuna: o chat geral é aberto a qualquer
+          // usuário aprovado do Top, e quais equipes aparecem depois disso
+          // quem decide é a RLS de `top_team_members`.
+          IconButton(
+            icon: const Icon(Icons.forum_outlined),
+            tooltip: 'Chats do Top',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => TeamChatsScreen(top: widget.top),
+              ),
+            ),
+          ),
           if (isHakuna)
             IconButton(
-              icon: const Icon(Icons.chat),
+              icon: const Icon(Icons.medical_services_outlined),
               tooltip: 'Chat com os Hakunas',
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute(

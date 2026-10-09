@@ -107,14 +107,22 @@ class _LoginWithCodeScreenState extends State<LoginWithCodeScreen> {
                 child: Text(_error!, style: const TextStyle(color: Colors.red)),
               ),
             FilledButton(
-              onPressed: _loading ? null : (_codeSent ? _verifyCode : _sendCode),
+              onPressed: _loading
+                  ? null
+                  : (_codeSent ? _verifyCode : _sendCode),
               child: _loading
-                  ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
                   : Text(_codeSent ? 'Confirmar código' : 'Enviar código'),
             ),
             if (_codeSent)
               TextButton(
-                onPressed: _loading ? null : () => setState(() => _codeSent = false),
+                onPressed: _loading
+                    ? null
+                    : () => setState(() => _codeSent = false),
                 child: const Text('Trocar e-mail / reenviar'),
               ),
           ],

@@ -36,9 +36,8 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
     try {
       await SupabaseService.instance.updateMyPassword(password);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Senha alterada.')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Senha alterada.')));
       Navigator.of(context).pop();
     } catch (e) {
       if (mounted) setState(() => _error = friendlyAuthError(e));
@@ -66,9 +65,15 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            PasswordField(controller: _passwordController, labelText: 'Nova senha'),
+            PasswordField(
+              controller: _passwordController,
+              labelText: 'Nova senha',
+            ),
             const SizedBox(height: 12),
-            PasswordField(controller: _confirmController, labelText: 'Confirmar nova senha'),
+            PasswordField(
+              controller: _confirmController,
+              labelText: 'Confirmar nova senha',
+            ),
             const SizedBox(height: 24),
             if (_error != null)
               Padding(
@@ -78,7 +83,11 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
             FilledButton(
               onPressed: _loading ? null : _save,
               child: _loading
-                  ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
                   : const Text('Salvar nova senha'),
             ),
           ],
