@@ -92,6 +92,53 @@ class TagService {
     );
   }
 
+  /// Emite uma tag nova para um participante.
+  ///
+  /// Gera o token, revoga a tag anterior (se houver) e devolve a URL que
+  /// deve ser GRAVADA na pulseira. O indice unico no banco garante uma tag
+  /// ativa por pessoa: sem revogar a antiga, o insert falha.
+  Future<ParticipantTag> emitir({
+    required String participantId,
+    required String topId,
+    String? tagUid,
+  }) async {
+    await revogarAtivaDe(
+      participantId,
+      motivo: 'substituida por tag nova',
+      silencioso: true,
+    );
+    final token = TagNdef.novoToken();
+    return SupabaseService.instance.criarTag(
+      token: token,
+      participantId: participantId,
+      topId: topId,
+      tagUid: tagUid,
+    );
+  }
+
+  /// Revoga a tag ativa de um participante — pulseira perdida, trocada ou
+  /// participante que saiu do Top.
+  ///
+  /// A tag nao e apagada: vira `revogada` e para de valer na hora. Apagar
+  /// perderia o rastro de que aquela pulseira existiu e de quem a portava.
+  Future<void> revogarAtivaDe(
+    String participantId, {
+    required String motivo,
+    bool silencioso = false,
+  }) async {
+    try {
+      await SupabaseService.instance.revogarTagDoParticipante(
+        participantId: participantId,
+        motivo: motivo,
+      );
+    } catch (e) {
+      if (!silencioso) rethrow;
+    }
+  }
+
+  Future<void> revogar(String tagId, {required String motivo}) =>
+      SupabaseService.instance.revogarTag(tagId: tagId, motivo: motivo);
+
   /// Guarda uma resolução no cache. Usado ao baixar as tags do Top antes
   /// de entrar no mato.
   void preencherCache(String token, LeituraTag leitura) {

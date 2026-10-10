@@ -129,4 +129,60 @@ void main() {
       expect(ResultadoLeitura.revogada.mensagem, contains('REVOGADA'));
     });
   });
+
+  _cicloDeVida();
+}
+
+// ---------------------------------------------------------------------------
+// Garantias verificadas tambem no banco real (09/10/2026):
+//   - indice unico parcial recusa uma segunda tag ATIVA por participante;
+//   - depois de revogar, a pessoa pode receber tag nova;
+//   - tag_leituras registra inclusive leitura de tag revogada.
+// Os testes abaixo travam o lado Dart dessas regras.
+
+void _cicloDeVida() {
+  ParticipantTag tag(String status, {String? substituta}) =>
+      ParticipantTag.fromMap({
+        'id': 'tag-1',
+        'token': 'a' * 32,
+        'participant_id': 'p1',
+        'top_id': 't1',
+        'status': status,
+        'issued_at': '2026-10-09T12:00:00Z',
+        'replaced_by_token': ?substituta,
+      });
+
+  group('ciclo de vida da pulseira', () {
+    test('so a ativa libera acesso', () {
+      expect(tag('ativa').valida, isTrue);
+      expect(tag('revogada').valida, isFalse);
+      expect(tag('substituida').valida, isFalse);
+    });
+
+    test('pulseira perdida e revogada, nao apagada — o rastro fica', () {
+      final perdida = ParticipantTag.fromMap({
+        'id': 'tag-1',
+        'token': 'a' * 32,
+        'participant_id': 'p1',
+        'top_id': 't1',
+        'status': 'revogada',
+        'issued_at': '2026-10-09T12:00:00Z',
+        'revoked_at': '2026-10-09T18:00:00Z',
+        'revoked_reason': 'perdida na trilha',
+      });
+      expect(perdida.valida, isFalse);
+      expect(perdida.revokedReason, 'perdida na trilha');
+      expect(
+        perdida.revokedAt,
+        isNotNull,
+        reason: 'quando foi revogada faz parte da auditoria',
+      );
+    });
+
+    test('tag substituida aponta para a que a substituiu', () {
+      final velha = tag('substituida', substituta: 'b' * 32);
+      expect(velha.valida, isFalse);
+      expect(velha.replacedByToken, 'b' * 32);
+    });
+  });
 }

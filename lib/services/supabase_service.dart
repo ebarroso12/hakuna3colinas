@@ -362,6 +362,66 @@ class SupabaseService {
     return ParticipantTag.fromMap(rows.first);
   }
 
+  /// Cria o vinculo tag <-> participante.
+  Future<ParticipantTag> criarTag({
+    required String token,
+    required String participantId,
+    required String topId,
+    String? tagUid,
+  }) async {
+    final uid = currentUser?.id;
+    final linhas = await _client.from('participant_tags').insert({
+      'token': token,
+      'participant_id': participantId,
+      'top_id': topId,
+      'tag_uid': tagUid,
+      'issued_by': uid,
+    }).select();
+    return ParticipantTag.fromMap(linhas.first);
+  }
+
+  Future<void> revogarTag({
+    required String tagId,
+    required String motivo,
+  }) async {
+    await _client
+        .from('participant_tags')
+        .update({
+          'status': 'revogada',
+          'revoked_by': currentUser?.id,
+          'revoked_at': DateTime.now().toUtc().toIso8601String(),
+          'revoked_reason': motivo,
+        })
+        .eq('id', tagId);
+  }
+
+  Future<void> revogarTagDoParticipante({
+    required String participantId,
+    required String motivo,
+  }) async {
+    await _client
+        .from('participant_tags')
+        .update({
+          'status': 'revogada',
+          'revoked_by': currentUser?.id,
+          'revoked_at': DateTime.now().toUtc().toIso8601String(),
+          'revoked_reason': motivo,
+        })
+        .eq('participant_id', participantId)
+        .eq('status', 'ativa');
+  }
+
+  /// Historico de leituras de uma tag — a auditoria LGPD do item 4.
+  Future<List<Map<String, dynamic>>> fetchLeiturasTag(String token) async {
+    final linhas = await _client
+        .from('tag_leituras')
+        .select()
+        .eq('token', token)
+        .order('lida_em', ascending: false)
+        .limit(100);
+    return linhas.cast<Map<String, dynamic>>();
+  }
+
   /// Registra a leitura para auditoria LGPD. Toda leitura entra, inclusive
   /// as que falham: tentativa com tag revogada e exatamente o que a
   /// auditoria precisa mostrar.

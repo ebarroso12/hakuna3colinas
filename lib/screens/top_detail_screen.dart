@@ -12,6 +12,7 @@ import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
 import '../widgets/barra_inferior.dart';
 import 'admin/admin_equipes_screen.dart';
+import 'admin/admin_tags_screen.dart';
 import 'admin/admin_top_form_screen.dart';
 import 'mapa_top_screen.dart';
 import 'participants_list_screen.dart';
@@ -339,6 +340,16 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
                     top: widget.top,
                     hakunaProfiles: _hakunaProfiles,
                   ),
+                ),
+              ),
+            ),
+          if (podeEditarTop)
+            IconButton(
+              icon: const Icon(Icons.nfc),
+              tooltip: 'Pulseiras NFC',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => AdminTagsScreen(top: widget.top),
                 ),
               ),
             ),
