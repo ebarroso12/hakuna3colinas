@@ -101,3 +101,94 @@ grant  execute on function public.is_in_top_community(uuid, uuid) to authenticat
 -- liberado como Hakuna no Top. Mexer nisso por conta propria seria decidir
 -- quem atende — e isso e do usuario.
 -- ----------------------------------------------------------------------------
+
+-- ============================================================================
+-- BUG 4 (CRITICO) — encontrado testando o BUG 2, e pior que ele
+--
+-- INDICE UNICO PARCIAL NAO E INFERIDO POR `ON CONFLICT (coluna)`.
+--
+-- Criei os indices de client_id como PARCIAIS (`where client_id is not null`)
+-- achando que era a forma cuidadosa. O Postgres so infere indice parcial se a
+-- instrucao REPETIR o predicado:
+--     ON CONFLICT (client_id) WHERE client_id IS NOT NULL
+--
+-- O `upsert(onConflict: 'client_id')` do supabase_flutter gera a forma SEM
+-- predicado, entao o banco respondia:
+--     42P10: there is no unique or exclusion constraint matching the
+--            ON CONFLICT specification
+--
+-- E `42xxx` e classificado como PERMANENTE em
+-- SupabaseService._motivoPermanente. Logo, CADA escrita da fila iria para a
+-- QUARENTENA, em silencio:
+--     atendimento, posicao, mensagem de equipe, mensagem do Top,
+--     leitura de tag, auditoria
+--
+-- Seis dos sete indices estavam assim. So `atendimento_fotos_client_id_key`
+-- escapou, porque e uma CONSTRAINT antiga e nao um indice parcial meu.
+--
+-- Era o pior bug do dia, introduzido por mim na v1.0.18, e so apareceria no
+-- primeiro teste em aparelho - como "o app grava tudo e nada sobe".
+--
+-- CORRECAO: indice unico SIMPLES. Comportamento identico para as linhas
+-- antigas (o Postgres trata NULLs como distintos entre si, entao varias
+-- linhas sem client_id continuam permitidas) e passa a ser inferivel.
+-- ============================================================================
+
+drop index if exists public.idx_atendimentos_client_id;
+create unique index idx_atendimentos_client_id on public.atendimentos (client_id);
+
+drop index if exists public.idx_positions_client_id;
+create unique index idx_positions_client_id on public.hakuna_positions (client_id);
+
+drop index if exists public.idx_team_messages_client_id;
+create unique index idx_team_messages_client_id on public.team_messages (client_id);
+
+drop index if exists public.idx_top_hakuna_messages_client_id;
+create unique index idx_top_hakuna_messages_client_id on public.top_hakuna_messages (client_id);
+
+drop index if exists public.idx_tag_leituras_client_id;
+create unique index idx_tag_leituras_client_id on public.tag_leituras (client_id);
+
+drop index if exists public.idx_audit_log_client_id;
+create unique index idx_audit_log_client_id on public.audit_log (client_id);
+
+-- ----------------------------------------------------------------------------
+-- PROVADO com a sessao do admin simulada (role authenticated + JWT), gravando
+-- de verdade e desfazendo no fim:
+--
+--   atendimento SEM fix de GPS ....... GRAVOU
+--   posicao enviada 2x ............... gravou 1 linha   <- idempotencia ok
+--   chat dos Hakunas ................. GRAVOU
+--   auditoria de leitura de tag ...... GRAVOU
+--   leitura: atendimentos 1, posicoes 1, mensagens 1, participantes 216
+--
+-- Confirmado depois: todas as tabelas de volta a zero.
+-- ----------------------------------------------------------------------------
+
+-- ----------------------------------------------------------------------------
+-- DIVIDA REGISTRADA, nao corrigida: `client_id` tem tipo diferente por tabela
+--
+--   atendimentos, atendimento_fotos  -> text
+--   demais                           -> uuid
+--
+-- Funciona nos dois: o app manda UUID canonico em minusculo e o Postgres
+-- converte para as colunas uuid. A diferenca so apareceria se o mesmo id
+-- fosse enviado em formatos distintos (maiuscula, chaves) - `uuid` normaliza,
+-- `text` nao. O app gera um formato so.
+--
+-- Nao unificado porque mudar tipo de coluna com dado dentro e risco maior que
+-- o ganho. Se um dia `atendimentos` for migrada, fazer junto com fotos.
+-- ----------------------------------------------------------------------------
+
+-- ----------------------------------------------------------------------------
+-- RESOLVIDO: top_hakunas deixou de estar vazia
+--
+-- O admin master foi liberado como Hakuna no Top 1782. Sem isso, oito
+-- policies o bloqueavam - nao registrava nem lia atendimento, nao via posicao
+-- de ninguem, nao usava o chat dos Hakunas e nao disparava alarme.
+--
+--   insert into public.top_hakunas (top_id, profile_id, released)
+--   select t.id, p.id, true from public.tops t cross join public.profiles p
+--    where t.top_number = '1782' and p.is_master_admin = true
+--   on conflict (top_id, profile_id) do update set released = true;
+-- ----------------------------------------------------------------------------
