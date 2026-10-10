@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'screens/auth_gate.dart';
+import 'offline/chat_repositorio.dart';
 import 'offline/sync_service.dart';
 import 'services/atendimento_service.dart';
+import 'services/auditoria_service.dart';
 import 'services/location_service.dart';
 import 'services/supabase_service.dart';
 
@@ -25,6 +27,8 @@ Future<void> main() async {
   // sozinhos quando a conexao volta.
   AtendimentoService.instance.registrarUploaders();
   LocationService.instance.registrarUploader();
+  AuditoriaService.instance.registrarUploaders();
+  ChatRepositorio.instance.registrarUploaders();
   unawaited(SyncService.instance.start());
 
   // Religa o rastreamento se o app deveria estar rastreando e foi morto

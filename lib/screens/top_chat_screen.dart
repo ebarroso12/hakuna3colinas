@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/chat_message.dart';
 import '../models/profile.dart';
 import '../models/top.dart';
+import '../offline/chat_repositorio.dart';
 import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
 
@@ -38,13 +39,16 @@ class _TopChatScreenState extends State<TopChatScreen> {
       _sendError = null;
     });
     try {
-      await SupabaseService.instance.sendTopMessage(
+      // Fila local, não rede. Ver `ChatRepositorio`.
+      await ChatRepositorio.instance.enviarParaTop(
         topId: widget.top.id,
         body: text,
       );
       _messageController.clear();
     } catch (e) {
-      if (mounted) setState(() => _sendError = 'Não foi possível enviar: $e');
+      if (mounted) {
+        setState(() => _sendError = 'Não foi possível guardar no aparelho: $e');
+      }
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -69,13 +73,24 @@ class _TopChatScreenState extends State<TopChatScreen> {
       body: Column(
         children: [
           Expanded(
-            child: StreamBuilder<List<ChatMessage>>(
-              stream: SupabaseService.instance.watchTopMessages(widget.top.id),
+            child: StreamBuilder<ChatNaTela<ChatMessage>>(
+              stream: ChatRepositorio.instance.observarTop(widget.top.id),
               builder: (context, snapshot) {
-                final messages = snapshot.data ?? [];
+                final chat = snapshot.data;
+                final messages = chat?.mensagens ?? const <ChatMessage>[];
                 if (messages.isEmpty) {
-                  return const Center(
-                    child: Text('Nenhuma mensagem ainda. Comece a conversa.'),
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        (chat?.offline ?? false)
+                            ? 'Sem conexão com o chat. O que você enviar '
+                                  'agora fica guardado no aparelho e sobe '
+                                  'quando o sinal voltar.'
+                            : 'Nenhuma mensagem ainda. Comece a conversa.',
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
                   );
                 }
                 WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -126,6 +141,26 @@ class _TopChatScreenState extends State<TopChatScreen> {
                                     ?.copyWith(fontWeight: FontWeight.bold),
                               ),
                             Text(m.body),
+                            // Relógio enquanto não entregue: no mato o
+                            // Hakuna precisa saber que a mensagem ainda
+                            // não saiu do aparelho.
+                            if (m.pendente)
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.schedule, size: 12),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    'aguardando sinal',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelSmall
+                                        ?.copyWith(
+                                          fontStyle: FontStyle.italic,
+                                        ),
+                                  ),
+                                ],
+                              ),
                           ],
                         ),
                       ),

@@ -1,6 +1,7 @@
 import '../models/participant.dart';
 import '../models/participant_tag.dart';
 import '../offline/dados_do_top.dart';
+import 'auditoria_service.dart';
 import 'supabase_service.dart';
 
 /// O que a leitura de uma tag produziu.
@@ -46,6 +47,9 @@ class TagService {
   }) async {
     final token = TagNdef.tokenDe(conteudo);
     if (token == null) {
+      // Não audita: não há token para registrar, e qualquer crachá de
+      // prédio ou cartão de transporte encostado no celular cairia aqui.
+      // Auditar isso encheria o log de linhas sem assunto.
       return const LeituraTag(ResultadoLeitura.formatoInvalido);
     }
 
@@ -61,20 +65,25 @@ class TagService {
 
     final leitura = daRede ?? await _buscarNoDisco(token);
 
-    // Auditoria não pode derrubar o atendimento: se falhar, a
-    // identificação segue valendo.
-    try {
-      await SupabaseService.instance.registrarLeituraTag(
-        token: token,
-        topId: topId,
-        participantId: leitura.participante?.id,
-        resultado: leitura.resultado.paraAuditoria,
-        latitude: latitude,
-        longitude: longitude,
-      );
-    } catch (_) {
-      // TODO: enfileirar no outbox — hoje leitura offline não é auditada.
-    }
+    // Auditoria vai para a FILA LOCAL, sempre — online e offline.
+    //
+    // Antes isto chamava o Supabase direto dentro de um `try/catch` vazio:
+    // com sinal gravava, sem sinal o catch engolia e a leitura feita no
+    // mato não deixava rastro nenhum. Era a leitura que mais importava
+    // auditar e era exatamente a que se perdia.
+    //
+    // `tinhaRede` registra se o resultado veio do servidor ou do disco. Sem
+    // isso, uma tag emitida depois do último download apareceria no log
+    // como "desconhecida" e indistinguível de tag falsificada.
+    await AuditoriaService.instance.registrarLeituraTag(
+      token: token,
+      topId: topId,
+      resultado: leitura.resultado,
+      tinhaRede: daRede != null,
+      participantId: leitura.participante?.id,
+      latitude: latitude,
+      longitude: longitude,
+    );
     return leitura;
   }
 
@@ -143,12 +152,21 @@ class TagService {
       silencioso: true,
     );
     final token = TagNdef.novoToken();
-    return SupabaseService.instance.criarTag(
+    final tag = await SupabaseService.instance.criarTag(
       token: token,
       participantId: participantId,
       topId: topId,
       tagUid: tagUid,
     );
+    // Emissão é evento de segurança: quem emitiu para quem, e quando.
+    await AuditoriaService.instance.registrar(
+      acao: AcaoAuditada.tagEmitida,
+      entityType: 'participant_tag',
+      entityId: token,
+      topId: topId,
+      metadata: {'participant_id': participantId, 'tag_uid': tagUid},
+    );
+    return tag;
   }
 
   /// Revoga a tag ativa de um participante — pulseira perdida, trocada ou
@@ -166,13 +184,26 @@ class TagService {
         participantId: participantId,
         motivo: motivo,
       );
+      await AuditoriaService.instance.registrar(
+        acao: AcaoAuditada.tagRevogada,
+        entityType: 'participant',
+        entityId: participantId,
+        metadata: {'motivo': motivo},
+      );
     } catch (e) {
       if (!silencioso) rethrow;
     }
   }
 
-  Future<void> revogar(String tagId, {required String motivo}) =>
-      SupabaseService.instance.revogarTag(tagId: tagId, motivo: motivo);
+  Future<void> revogar(String tagId, {required String motivo}) async {
+    await SupabaseService.instance.revogarTag(tagId: tagId, motivo: motivo);
+    await AuditoriaService.instance.registrar(
+      acao: AcaoAuditada.tagRevogada,
+      entityType: 'participant_tag',
+      entityId: tagId,
+      metadata: {'motivo': motivo},
+    );
+  }
 
   /// Baixa tags e participantes do Top para o disco.
   ///

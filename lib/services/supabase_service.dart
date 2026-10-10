@@ -63,6 +63,34 @@ class SupabaseService {
 
   User? get currentUser => _client.auth.currentUser;
 
+  /// Id de quem está logado, ou null.
+  ///
+  /// Existe separado de [currentUser] por dois motivos concretos:
+  ///
+  /// 1. É o único dado que a camada offline (`Outbox`, `ChatRepositorio`,
+  ///    `AuditoriaService`) precisa da sessão — pedir o `User` inteiro para
+  ///    ler o id acopla a fila ao pacote do Supabase sem necessidade.
+  /// 2. `Supabase.instance` **lança** quando `initialize` não rodou. Isso
+  ///    acontece nos testes de unidade da fila, que exercitam o SQLite de
+  ///    verdade sem subir o app. Aqui vira null em vez de exceção, e null
+  ///    já é o caminho tratado ("sem sessão, não enfileira").
+  ///
+  /// Em produção `main()` inicializa antes do `runApp`, então o `catch`
+  /// nunca é atingido no app rodando.
+  String? get currentUserId {
+    final forcado = idDeUsuarioParaTestes;
+    if (forcado != null) return forcado;
+    try {
+      return _client.auth.currentUser?.id;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Finge uma sessão nos testes da camada offline. Null em produção.
+  @visibleForTesting
+  static String? idDeUsuarioParaTestes;
+
   Stream<AuthState> get authStateChanges => _client.auth.onAuthStateChange;
 
   Future<AuthResponse> signIn({
@@ -320,30 +348,23 @@ class SupabaseService {
         );
   }
 
-  /// Envia mensagem para o chat de uma equipe.
+  /// Sobe uma mensagem de equipe que saiu da fila offline.
   ///
-  /// [isAlert] só é aceito pela RLS se o remetente for admin da equipe ou
-  /// admin geral — para qualquer outro, o insert é rejeitado em vez de
-  /// gravar a mensagem sem o destaque.
-  Future<void> sendTeamMessage({
-    required String topId,
-    required TeamKey team,
-    required String body,
-    bool isAlert = false,
-  }) {
-    final uid = currentUser?.id;
-    if (uid == null) {
-      return Future.error(
-        StateError('Sessão expirada — não é possível enviar mensagem'),
-      );
-    }
-    return _client.from('team_messages').insert({
-      'top_id': topId,
-      'team': team.name,
-      'sender_id': uid,
-      'body': body,
-      'is_alert': isAlert,
-    });
+  /// `upsert onConflict: client_id` e não `insert`: o outbox reenvia quando
+  /// o envio anterior falhou, e isso inclui o caso em que o insert chegou e
+  /// só a resposta se perdeu. Com `insert`, a mesma mensagem apareceria
+  /// duas vezes no chat — e duas vezes um alerta.
+  ///
+  /// [isAlert] só é aceito pela RLS se o remetente for admin da equipe. Um
+  /// `is_alert = true` de quem não é tem a escrita **rejeitada**, e a
+  /// entrada fica na fila com o erro em vez de gravar sem o destaque.
+  ///
+  /// Chamado pelo [SyncService], não pelas telas — quem envia é o
+  /// `ChatRepositorio`.
+  Future<void> enviarMensagemEquipe(Map<String, dynamic> payload) async {
+    await _client
+        .from('team_messages')
+        .upsert(payload, onConflict: 'client_id', ignoreDuplicates: true);
   }
 
   /// Busca a tag pelo token. Null quando o token nao existe.
@@ -425,25 +446,27 @@ class SupabaseService {
   /// Registra a leitura para auditoria LGPD. Toda leitura entra, inclusive
   /// as que falham: tentativa com tag revogada e exatamente o que a
   /// auditoria precisa mostrar.
-  Future<void> registrarLeituraTag({
-    required String token,
-    required String topId,
-    required String resultado,
-    String? participantId,
-    double? latitude,
-    double? longitude,
-  }) async {
-    final uid = currentUser?.id;
-    if (uid == null) return;
-    await _client.from('tag_leituras').insert({
-      'token': token,
-      'top_id': topId,
-      'participant_id': participantId,
-      'lida_por': uid,
-      'resultado': resultado,
-      'latitude': latitude,
-      'longitude': longitude,
-    });
+  /// Sobe uma leitura de tag que saiu da fila offline.
+  ///
+  /// `upsert` com `onConflict: client_id` e não `insert`: o outbox reenvia
+  /// quando o envio anterior falhou, e "falhou" inclui o caso em que o
+  /// insert foi aplicado e só a resposta se perdeu. Com `insert` isso
+  /// gravaria a mesma leitura duas vezes, e auditoria duplicada deixa de
+  /// servir para contar quantas vezes uma pulseira revogada foi apresentada.
+  ///
+  /// Chamado pelo [SyncService], não pelas telas — quem audita é o
+  /// `AuditoriaService`, que enfileira.
+  Future<void> enviarLeituraTag(Map<String, dynamic> payload) async {
+    await _client
+        .from('tag_leituras')
+        .upsert(payload, onConflict: 'client_id', ignoreDuplicates: true);
+  }
+
+  /// Sobe um evento de `audit_log` que saiu da fila offline.
+  Future<void> enviarAuditoria(Map<String, dynamic> payload) async {
+    await _client
+        .from('audit_log')
+        .upsert(payload, onConflict: 'client_id', ignoreDuplicates: true);
   }
 
   /// Tags de um Top, para o admin gerenciar e para o app cachear antes de
@@ -652,18 +675,12 @@ class SupabaseService {
     return map;
   }
 
-  Future<void> sendTopMessage({required String topId, required String body}) {
-    final uid = currentUser?.id;
-    if (uid == null) {
-      return Future.error(
-        StateError('Sessão expirada — não é possível enviar mensagem'),
-      );
-    }
-    return _client.from('top_hakuna_messages').insert({
-      'top_id': topId,
-      'sender_id': uid,
-      'body': body,
-    });
+  /// Sobe uma mensagem do chat do Top que saiu da fila offline.
+  /// Mesma razão do `upsert` em [enviarMensagemEquipe].
+  Future<void> enviarMensagemTop(Map<String, dynamic> payload) async {
+    await _client
+        .from('top_hakuna_messages')
+        .upsert(payload, onConflict: 'client_id', ignoreDuplicates: true);
   }
 
   /// Sinal de alarme do Top (acidente/atendimento crítico), em tempo real.

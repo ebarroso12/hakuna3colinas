@@ -7,7 +7,9 @@ import '../models/top.dart';
 import '../models/triage_rule.dart';
 import '../offline/dados_do_top.dart';
 import '../services/nfc_service.dart';
+import '../services/qr_token_service.dart';
 import '../services/tag_service.dart';
+import 'ler_qr_screen.dart';
 import 'participant_file_screen.dart';
 
 /// LER TAG — encosta o celular na pulseira e abre a ficha de quem é.
@@ -79,6 +81,17 @@ class _LerTagScreenState extends State<LerTagScreen> {
     }
   }
 
+  /// `pushReplacement` e não `push`: voltar do QR para esta tela não serve
+  /// para nada — as duas fazem a mesma coisa por sensores diferentes, e o
+  /// botão "Buscar pelo nome" do QR já devolve o Hakuna para a lista.
+  void _abrirQr() {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => LerQrScreen(top: widget.top, regras: widget.regras),
+      ),
+    );
+  }
+
   void _abrirFicha(LeituraTag leitura) {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
@@ -113,9 +126,21 @@ class _LerTagScreenState extends State<LerTagScreen> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Busque o participante pelo nome na lista.',
+                  'Use o QR da pulseira, ou busque pelo nome na lista.',
                   textAlign: TextAlign.center,
                 ),
+                const SizedBox(height: 16),
+                // Aparelho sem NFC: aqui o QR é o caminho principal, não
+                // alternativa. Por isso botão preenchido e grande.
+                if (QrTokenService.suportado)
+                  FilledButton.icon(
+                    onPressed: () => _abrirQr(),
+                    icon: const Icon(Icons.qr_code_scanner),
+                    label: const Text('LER QR DA PULSEIRA'),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(52),
+                    ),
+                  ),
               ] else ...[
                 GestureDetector(
                   onTap: _lendo ? null : _ler,
@@ -148,6 +173,18 @@ class _LerTagScreenState extends State<LerTagScreen> {
                 const SizedBox(height: 24),
                 if (_resultado != null && !_resultado!.identificou)
                   _Aviso(resultado: _resultado!.resultado),
+                // Com NFC disponível o QR é contingência: o chip da
+                // pulseira pode ter parado de responder mesmo com o sensor
+                // do celular funcionando. Botão discreto, mas presente —
+                // descobrir isso no mato com a pessoa esperando é tarde.
+                if (QrTokenService.suportado) ...[
+                  const SizedBox(height: 16),
+                  TextButton.icon(
+                    onPressed: _lendo ? null : _abrirQr,
+                    icon: const Icon(Icons.qr_code_scanner),
+                    label: const Text('A pulseira não responde? Ler o QR'),
+                  ),
+                ],
               ],
               const SizedBox(height: 32),
               OutlinedButton.icon(

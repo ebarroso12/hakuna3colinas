@@ -81,6 +81,32 @@ Nomes de coluna no SQLite são **idênticos** aos do Postgres, para o mesmo
 gravadas por `TextoBusca` no momento do cache. Não compare contra
 `full_name` ou `familia` crus: `"joao"` não acha `"JOÃO"`.
 
+### Nada escreve direto no Supabase — tudo passa pela fila
+Atendimento, foto, posição, **chat** e **auditoria** entram no `outbox` e
+sobem depois. Tela nenhuma chama `insert` no Supabase.
+
+Toda entidade que passa pela fila precisa de **`client_id` no payload** e
+de `upsert(onConflict: 'client_id', ignoreDuplicates: true)` no envio. O
+motivo: "falhou" inclui o caso em que o insert chegou e a resposta se
+perdeu, e com `insert` o reenvio duplica a linha. Ver
+`supabase/fila_offline_chat_e_auditoria.sql`.
+
+Hora dos eventos vem **do aparelho** (`created_at`, `lida_em`,
+`occurred_at`), nunca de `now()` no Postgres: offline a coisa acontece
+horas antes do upload.
+
+### Auditoria vai para duas tabelas, e não é redundância
+`tag_leituras` recebe **toda** leitura de pulseira, inclusive as que falham.
+`audit_log` recebe só o subconjunto de segurança (tag revogada apresentada,
+tag desconhecida, emissão, revogação, ficha alterada). Mandar tudo para as
+duas dobraria a escrita sem responder nada novo. Ver `AuditoriaService`.
+
+### QR Code carrega o MESMO token da pulseira
+`QrTokenService.conteudoPara` devolve exatamente `TagNdef.urlPara`. Não
+inventar formato próprio para o QR: revogar a pulseira revoga o QR no mesmo
+ato porque é o mesmo token, e a resolução reaproveita `TagService.resolver`
+inteiro (cache em disco, fallback, auditoria). Há teste travando isso.
+
 ### Triagem tem dois níveis, e eles não se misturam
 `TriageService` dá a cor de **cadastro** — `f(idade, comorbidades)`, das
 regras do banco. `TriageDinamica` **escala** essa cor para vermelho quando
@@ -178,16 +204,22 @@ validando uma configuração que não existe mais.
 
 ## Pendências conhecidas
 
-- **Não existe biblioteca de mapa.** `geolocator` grava as posições e
-  `stats_service` calcula distância, mas nada desenha os Hakunas num mapa.
-- **Schema à frente do app.** O banco tem tabelas que o app não usa:
-  `direct_messages`, `team_messages`, `notifications`, `audit_log`,
-  `attendance_members`, `top_participants`, `top_team_members`,
-  `nfc_tags`, `atendimentos`.
+- **Schema à frente do app.** O banco ainda tem tabelas que o app não usa:
+  `direct_messages`, `notifications`, `attendance_members`, `nfc_tags`.
 - **AID de exemplo.** `android/app/src/main/res/xml/apduservice.xml` usa
   `F0010203040506`. Trocar pelo AID real quando definido.
-- **Chat ainda não tem fila offline.** GPS, atendimentos e fotos passam
-  pelo outbox; `top_chat` e `team_chat` escrevem direto no Supabase.
-- **Nada escreve em `audit_log`.** A tabela existe e está vazia.
-- **`listUsers()` na Edge Function `acesso` pagina em 50** — quebra a
-  partir do 51º Legendário cadastrado.
+- **Triagem não usa os sinais vitais de `vital_signs`.** `TriageDinamica` lê
+  só a última aferição vinda de `atendimentos` (cache local). A tela de
+  `vital_signs` grava numa tabela separada que nada reclassifica.
+- **Despacho de atendimento.** 9 estados no schema, o app grava `aberto`.
+- **Lógica de proximidade.** Nada cruza GPS com atendimento: ninguém
+  responde "quem está mais perto?".
+- **Nenhum teste de hardware.** Os 240 testes cobrem lógica. NFC, câmera,
+  GPS com tela bloqueada e permissões só se verificam em aparelho físico.
+- **`occurred_at` em `audit_log` não tem backfill.** As linhas antigas (não
+  há nenhuma hoje) ficariam com null; ler sempre
+  `coalesce(occurred_at, created_at)`.
+- **Troca de usuário no mesmo aparelho.** Se o Hakuna A registrar offline e
+  o B logar antes do sync, a fila de A trava com erro de RLS (`sender_id` /
+  `lida_por` / `actor_id` presos a `auth.uid()`). Hoje isso é evitado por
+  convenção, não por código.

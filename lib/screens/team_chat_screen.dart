@@ -4,6 +4,7 @@ import '../models/profile.dart';
 import '../models/team.dart';
 import '../models/team_message.dart';
 import '../models/top.dart';
+import '../offline/chat_repositorio.dart';
 import '../services/supabase_service.dart';
 
 /// Chat de uma equipe dentro de um Top. [TeamKey.geral] é o chat geral.
@@ -60,6 +61,16 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
     }
   }
 
+  /// Enfileira a mensagem. **Não espera rede.**
+  ///
+  /// Antes isto chamava o Supabase direto: sem sinal o envio falhava, o
+  /// texto ficava no campo e o Hakuna tinha de lembrar de reenviar. Agora
+  /// a mensagem entra na fila do aparelho, limpa o campo e aparece na lista
+  /// marcada como pendente.
+  ///
+  /// O `catch` aqui só pega falha de gravação no **próprio aparelho** —
+  /// disco cheio ou banco corrompido. Falta de rede não é erro: é o estado
+  /// normal de operação.
   Future<void> _send() async {
     final text = _controller.text.trim();
     if (text.isEmpty || _sending) return;
@@ -68,7 +79,7 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
       _sendError = null;
     });
     try {
-      await SupabaseService.instance.sendTeamMessage(
+      await ChatRepositorio.instance.enviarParaEquipe(
         topId: widget.top.id,
         team: widget.team,
         body: text,
@@ -77,7 +88,9 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
       _controller.clear();
       if (mounted) setState(() => _comoAlerta = false);
     } catch (e) {
-      if (mounted) setState(() => _sendError = 'Não foi possível enviar: $e');
+      if (mounted) {
+        setState(() => _sendError = 'Não foi possível guardar no aparelho: $e');
+      }
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -104,33 +117,28 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
       body: Column(
         children: [
           Expanded(
-            child: StreamBuilder<List<TeamMessage>>(
-              stream: SupabaseService.instance.watchTeamMessages(
+            child: StreamBuilder<ChatNaTela<TeamMessage>>(
+              stream: ChatRepositorio.instance.observarEquipe(
                 topId: widget.top.id,
                 team: widget.team,
               ),
               builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Text(
-                        'Não foi possível carregar o chat.\n${snapshot.error}',
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  );
-                }
                 if (!snapshot.hasData) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                final mensagens = snapshot.data!;
+                final chat = snapshot.data!;
+                final mensagens = chat.mensagens;
+
                 if (mensagens.isEmpty) {
                   return Center(
                     child: Padding(
                       padding: const EdgeInsets.all(24),
                       child: Text(
-                        widget.team.isGeral
+                        chat.offline
+                            ? 'Sem conexão com o chat. Mensagens enviadas '
+                                  'agora ficam guardadas no aparelho e sobem '
+                                  'quando o sinal voltar.'
+                            : widget.team.isGeral
                             ? 'Nenhuma mensagem no chat geral ainda.'
                             : 'Nenhuma mensagem da equipe ${widget.team.label} ainda.',
                         textAlign: TextAlign.center,
@@ -138,18 +146,30 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
                     ),
                   );
                 }
-                return ListView.builder(
-                  padding: const EdgeInsets.all(12),
-                  itemCount: mensagens.length,
-                  itemBuilder: (context, i) {
-                    final m = mensagens[i];
-                    return _Bolha(
-                      mensagem: m,
-                      isMine: m.senderId == myId,
-                      remetente:
-                          _profiles[m.senderId]?.displayLabel ?? m.senderId,
-                    );
-                  },
+
+                return Column(
+                  children: [
+                    // Aviso em vez de tela de erro: o histórico continua
+                    // visível. Trocar a lista por uma mensagem de erro
+                    // tirava do Hakuna o acesso ao que já havia sido dito.
+                    if (chat.offline) _AvisoOffline(pendentes: chat.pendentes),
+                    Expanded(
+                      child: ListView.builder(
+                        padding: const EdgeInsets.all(12),
+                        itemCount: mensagens.length,
+                        itemBuilder: (context, i) {
+                          final m = mensagens[i];
+                          return _Bolha(
+                            mensagem: m,
+                            isMine: m.senderId == myId,
+                            remetente:
+                                _profiles[m.senderId]?.displayLabel ??
+                                m.senderId,
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                 );
               },
             ),
@@ -222,6 +242,41 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
   }
 }
 
+/// Faixa de "chat sem conexão". Compartilhada com o chat do Top.
+class _AvisoOffline extends StatelessWidget {
+  const _AvisoOffline({required this.pendentes});
+
+  final int pendentes;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.secondaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            const Icon(Icons.cloud_off, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                pendentes == 0
+                    ? 'Sem conexão. O chat não está recebendo mensagens novas.'
+                    : pendentes == 1
+                    ? 'Sem conexão. 1 mensagem guardada no aparelho.'
+                    : 'Sem conexão. $pendentes mensagens guardadas no '
+                          'aparelho.',
+                style: Theme.of(context).textTheme.labelMedium,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _Bolha extends StatelessWidget {
   const _Bolha({
     required this.mensagem,
@@ -238,6 +293,8 @@ class _Bolha extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final hora = TimeOfDay.fromDateTime(mensagem.createdAt.toLocal())
         .format(context);
+
+    final pendente = mensagem.pendente;
 
     final fundo = mensagem.isAlert
         ? scheme.errorContainer
@@ -283,10 +340,32 @@ class _Bolha extends StatelessWidget {
                     ?.copyWith(color: texto),
               ),
             Text(mensagem.body, style: TextStyle(color: texto)),
-            Text(
-              mensagem.editedAt != null ? '$hora · editada' : hora,
-              style: Theme.of(context).textTheme.labelSmall
-                  ?.copyWith(color: texto.withValues(alpha: 0.7)),
+            // Relógio enquanto não entregue. É a informação que falta no
+            // mato: sem isso o Hakuna acredita que avisou a equipe e
+            // ninguém recebeu.
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (pendente) ...[
+                  Icon(
+                    Icons.schedule,
+                    size: 12,
+                    color: texto.withValues(alpha: 0.7),
+                  ),
+                  const SizedBox(width: 3),
+                ],
+                Text(
+                  pendente
+                      ? 'aguardando sinal'
+                      : mensagem.editedAt != null
+                      ? '$hora · editada'
+                      : hora,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: texto.withValues(alpha: 0.7),
+                    fontStyle: pendente ? FontStyle.italic : null,
+                  ),
+                ),
+              ],
             ),
           ],
         ),

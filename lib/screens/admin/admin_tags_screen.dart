@@ -1,11 +1,13 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../models/participant.dart';
 import '../../models/participant_tag.dart';
 import '../../models/top.dart';
 import '../../services/nfc_service.dart';
+import '../../services/qr_token_service.dart';
 import '../../services/supabase_service.dart';
 import '../../services/tag_service.dart';
 import '../../widgets/app_logo.dart';
@@ -140,6 +142,43 @@ class _AdminTagsScreenState extends State<AdminTagsScreen> {
               'Só o token vai na pulseira — nenhum dado pessoal. Encoste a '
               'tag no celular para gravar.',
               style: TextStyle(fontSize: 12),
+            ),
+            const Divider(height: 24),
+            const Text(
+              'QR de contingência',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Mesmo token da pulseira. Imprima e prenda junto: serve '
+              'quando o chip não responde ou o celular não tem NFC.',
+              style: TextStyle(fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+            Center(
+              child: Container(
+                // Fundo branco fixo e não `surface`: em tema escuro o QR
+                // sairia claro sobre escuro e muitos leitores não invertem
+                // o contraste. Impresso ou na tela, o QR tem de ser escuro
+                // sobre claro.
+                color: Colors.white,
+                padding: const EdgeInsets.all(8),
+                child: QrImageView(
+                  data: QrTokenService.conteudoPara(tag.token),
+                  size: 160,
+                  backgroundColor: Colors.white,
+                  // Nível de correção alto: a pulseira vive em trilha, com
+                  // suor, lama e dobra. Um QR que para de ler quando
+                  // amassa não é contingência.
+                  errorCorrectionLevel: QrErrorCorrectLevel.H,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Atenção: QR se copia com uma foto. Revogar a pulseira '
+              'invalida o QR no mesmo ato, porque é o mesmo token.',
+              style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic),
             ),
           ],
         ),

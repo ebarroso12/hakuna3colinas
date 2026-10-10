@@ -3,7 +3,17 @@ import 'team.dart';
 /// Mensagem de um chat de equipe (ou do chat geral, que é a equipe
 /// [TeamKey.geral]). Tabela `team_messages`.
 class TeamMessage {
-  final int id;
+  /// Null enquanto a mensagem só existe na fila do aparelho — o id é
+  /// atribuído pelo Postgres no insert. Ver [pendente].
+  final int? id;
+
+  /// Gerado no aparelho antes de existir no servidor. É o que torna o
+  /// reenvio idempotente (`upsert onConflict: client_id`) e o que permite
+  /// casar a mensagem pendente na tela com a que volta pelo realtime.
+  ///
+  /// Null nas mensagens enviadas antes da v1.0.18, que não tinham a coluna.
+  final String? clientId;
+
   final String topId;
   final TeamKey team;
   final String senderId;
@@ -19,19 +29,28 @@ class TeamMessage {
   final DateTime? editedAt;
 
   TeamMessage({
-    required this.id,
     required this.topId,
     required this.team,
     required this.senderId,
     required this.body,
     required this.createdAt,
     required this.isAlert,
+    this.id,
+    this.clientId,
     this.editedAt,
   });
 
+  /// Ainda não chegou ao servidor: está na fila do aparelho.
+  ///
+  /// A tela usa isto para mostrar o relógio em vez do horário — no mato o
+  /// Hakuna precisa saber que a mensagem **não foi entregue ainda**, senão
+  /// ele acredita que avisou a equipe e ninguém recebeu.
+  bool get pendente => id == null;
+
   factory TeamMessage.fromMap(Map<String, dynamic> map) {
     return TeamMessage(
-      id: map['id'] as int,
+      id: map['id'] as int?,
+      clientId: map['client_id'] as String?,
       topId: map['top_id'] as String,
       // Um valor de `team` que o app não conhece (equipe nova criada no
       // banco antes de o app ser atualizado) cai em geral em vez de
