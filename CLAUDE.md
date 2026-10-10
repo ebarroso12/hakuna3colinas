@@ -88,9 +88,11 @@ incompatível) vai para **quarentena** e a sincronização **segue**.
 
 Sem isso, uma entrada recusada bloqueia tudo que está atrás dela para
 sempre: a próxima rodada relê a fila na mesma ordem e trava na mesma
-entrada. Cenário vivo: o Top 1782 está em `draft`, e a RLS de
-`team_messages` recusa mensagem no chat geral enquanto for draft — uma
-mensagem prenderia atendimento, GPS, foto e auditoria.
+entrada. O cenário que motivou isso: enquanto o Top 1782 estava em
+`draft`, a RLS de `team_messages` recusava mensagem no chat geral, e uma
+mensagem prendia atendimento, GPS, foto e auditoria atrás dela. O Top foi
+ativado (conferido em 10/10/2026, `status = active`), mas o mecanismo
+continua necessário — qualquer Top novo nasce em `draft`.
 
 Quem classifica é `SupabaseService._envioDaFila`, porque é lá que os tipos
 do Postgrest existem. **Na dúvida, classifica como transitória**: descartar
@@ -310,6 +312,19 @@ validando uma configuração que não existe mais.
 - **APK com 76 MB.** O modelo do ML Kit vai embutido para o QR funcionar
   sem rede (ver `android/gradle.properties`). Se virar problema, o caminho
   é `--split-per-abi`, não desligar o bundling.
-- **Top 1782 está em `draft`.** A RLS do chat geral recusa mensagem
-  enquanto for draft — toda mensagem vai para quarentena. Ativar o Top
-  resolve.
+- **144 dos 216 senderistas do Top 1782 estão sem `participant_code`.**
+  Conferido em 10/10/2026: 72 têm número do Legendários, 144 não. O
+  autocadastro exige número **na lista do Top** (`participante_elegivel`,
+  chamado por `validarConvite`), então essas 144 pessoas recebem a recusa
+  genérica "número ou senha do Top incorretos" e vão achar que a senha
+  está errada. Elas não ficam trancadas — sobra o caminho de "pedir código
+  ao administrador" (`solicitar` -> `liberar`), um a um —, mas é exatamente
+  o gargalo que a senha compartilhada existia para eliminar. A correção é
+  preencher os números na tabela; o campo existe na tela de admin
+  (`participante_form_screen`, "Nº Legendários"). **Não inventar número.**
+- **Só 1 Hakuna liberado no Top 1782** (o admin). As 8 policies que
+  dependem de `top_hakunas` passam a valer para cada médico só depois que
+  ele for liberado naquele Top.
+- **`diretor_responsavel` do Top 1782 está nulo** de propósito: eu havia
+  preenchido um nome inventado e apaguei. Quem define o responsável por um
+  evento médico é o dono do evento.
