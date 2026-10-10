@@ -38,7 +38,7 @@ class _SignupScreenState extends State<SignupScreen> {
     }
 
     // Mesma validação de `AcessoService.numeroValido` e da Edge Function
-    // `acesso` (^[0-9]{4,10}$). Antes a tela aceitava qualquer coisa não
+    // `acesso` (^[0-9]{1,12}$). Antes a tela aceitava qualquer coisa não
     // vazia: dava para se cadastrar com "12" ou "abc", e aí o admin nunca
     // conseguiria liberar o acesso dessa pessoa — a Edge Function recusaria
     // o número com "numero invalido" e ninguém saberia por quê.
@@ -46,7 +46,7 @@ class _SignupScreenState extends State<SignupScreen> {
       setState(
         () => _error =
             'Número do Legendários inválido. '
-            'Use só dígitos, de 4 a 10 (ex.: 203460).',
+            'Use só dígitos, até 12 (ex.: 203460).',
       );
       return;
     }

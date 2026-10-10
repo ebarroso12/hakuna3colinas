@@ -53,9 +53,28 @@ class AcessoService {
   /// Identificador interno a partir do número. Só dígitos entram.
   static String emailPara(String numero) => '${numero.trim()}@$dominioInterno';
 
-  /// Número do Legendários tem 4 a 10 dígitos.
+  /// Número do Legendários: só dígitos, de 1 a 12.
+  ///
+  /// Era `{4,10}`. Mudou porque ninguém sabe até onde a numeração vai
+  /// chegar, e um teto apertado quebraria o cadastro de gente real no dia
+  /// do evento — sem ninguém entender por quê, já que a mensagem só diria
+  /// "número inválido".
+  ///
+  /// O mínimo caiu para 1 pelo motivo inverso: Legendários antigos podem
+  /// ter número curto, e barrar "7" seria inventar uma regra que o
+  /// movimento não tem.
+  ///
+  /// Isto é validação de **formato**, não de segurança. Quem decide se o
+  /// número vale é a lista do Top (`participante_elegivel`), conferida no
+  /// servidor. Aqui só se evita mandar letra e espaço para a API.
+  ///
+  /// **Esta regra existe em dois lugares e eles têm de andar juntos:** aqui
+  /// e em `numeroValido` na Edge Function `acesso`. TypeScript não importa
+  /// Dart; se um mudar sem o outro, o app aceita e o servidor recusa.
+  static const regexNumero = r'^[0-9]{1,12}$';
+
   static bool numeroValido(String numero) =>
-      RegExp(r'^[0-9]{4,10}$').hasMatch(numero.trim());
+      RegExp(regexNumero).hasMatch(numero.trim());
 
   /// O Legendário pede acesso. Não exige estar logado.
   ///

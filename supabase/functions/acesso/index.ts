@@ -48,9 +48,117 @@ async function hash(texto: string): Promise<string> {
     .join('')
 }
 
-/** So digito, 4 a 10 - evita lixo e injecao no campo do numero. */
+/**
+ * Numero do Legendarios: so digito, de 1 a 12.
+ *
+ * Era {4,10}. Mudou porque ninguem sabe ate onde a numeracao vai chegar,
+ * e um teto apertado quebraria o cadastro de gente real no dia do evento.
+ * O minimo caiu para 1 pelo motivo inverso: Legendario antigo pode ter
+ * numero curto, e barrar "7" seria inventar regra que o movimento nao tem.
+ *
+ * Validacao de FORMATO, nao de seguranca - quem decide se o numero vale e
+ * a lista do Top, conferida em participante_elegivel.
+ *
+ * ESTA REGRA EXISTE EM DOIS LUGARES: aqui e em
+ * AcessoService.regexNumero no app. TypeScript nao importa Dart; se um
+ * mudar sem o outro, o app aceita e o servidor recusa.
+ */
 function numeroValido(n: unknown): n is string {
-  return typeof n === 'string' && /^[0-9]{4,10}$/.test(n.trim())
+  return typeof n === 'string' && /^[0-9]{1,12}$/.test(n.trim())
+}
+
+/**
+ * Senha de convite do Top: 8 caracteres do mesmo alfabeto sem 0/O/1/I/L.
+ *
+ * Oito e nao seis como o codigo individual porque esta aqui e
+ * COMPARTILHADA e vale pelo evento inteiro - fica exposta por muito mais
+ * tempo e em muito mais telas (grupo de WhatsApp, cartaz, voz). 31^8 e
+ * cerca de 850 bilhoes de combinacoes.
+ */
+function gerarSenhaDoTop(): string {
+  const alfabeto = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
+  const bytes = crypto.getRandomValues(new Uint8Array(8))
+  return Array.from(bytes, (b) => alfabeto[b % alfabeto.length]).join('')
+}
+
+/** Senha pessoal minima. O padrao do Supabase e 6; aqui tem prontuario. */
+const MIN_SENHA = 8
+
+interface ConviteOk {
+  topId: string
+  topNome: string
+  participanteId: string
+  nome: string
+  familia: string | null
+}
+
+/**
+ * Confere a senha do Top e se o numero pertence aquele Top.
+ *
+ * A senha IDENTIFICA o Top: nao e preciso o Legendario escolher evento
+ * numa lista. Ele digita numero + senha e o sistema descobre o resto.
+ * Listar Tops para quem nao esta logado vazaria quais eventos existem.
+ *
+ * DUAS CONDICOES, e as duas importam:
+ *
+ *   - senha certa  -> prova que a pessoa recebeu o convite
+ *   - numero na lista do Top -> prova que ELA e daquele Top
+ *
+ * So a senha nao basta: ela e compartilhada, entao quem a recebesse no
+ * grupo poderia se cadastrar com o numero de outro Legendario e tomar o
+ * lugar dele. So o numero tambem nao basta: numero nao e segredo.
+ */
+async function validarConvite(
+  admin: Admin,
+  numero: string,
+  senhaDoTop: string,
+): Promise<{ erro: string } | ConviteOk> {
+  const hashDaSenha = await hash(senhaDoTop.trim().toUpperCase())
+
+  const { data: top, error: erroTop } = await admin
+    .from('tops')
+    .select('id, name, status')
+    .eq('access_code_hash', hashDaSenha)
+    .maybeSingle()
+
+  if (erroTop) return { erro: 'falha ao verificar a senha' }
+
+  // Mensagem IDENTICA para senha errada e para numero fora da lista. Sao
+  // causas diferentes, mas distingui-las na resposta transformaria isto
+  // num oraculo: daria para descobrir quem esta inscrito num Top testando
+  // numeros com uma senha qualquer.
+  const recusa = { erro: 'numero ou senha do Top incorretos' }
+  if (!top) return recusa
+
+  if (top.status === 'draft') {
+    // Esta o admin ainda nao abriu o evento. Aqui a mensagem PODE ser
+    // especifica: quem chegou ate aqui ja provou ter a senha.
+    return { erro: 'este Top ainda nao foi aberto pelo administrador' }
+  }
+
+  const { data: elegiveis, error: erroEleg } = await admin.rpc(
+    'participante_elegivel',
+    { p_top_id: top.id, p_numero: numero },
+  )
+  if (erroEleg) return { erro: 'falha ao verificar o numero' }
+
+  const p = Array.isArray(elegiveis) ? elegiveis[0] : elegiveis
+  if (!p) return recusa
+
+  if (p.ja_tem_conta) {
+    return {
+      erro: 'este numero ja tem conta. Entre com numero e senha, ou peca '
+        + 'uma senha nova ao administrador.',
+    }
+  }
+
+  return {
+    topId: top.id,
+    topNome: top.name,
+    participanteId: p.participante_id,
+    nome: p.nome,
+    familia: p.familia ?? null,
+  }
 }
 
 // deno-lint-ignore no-explicit-any
@@ -202,6 +310,153 @@ Deno.serve(async (req) => {
   }
 
   // ---------------------------------------------------------------
+  // VALIDAR_CONVITE - publico
+  //
+  // Passo 1 do autocadastro: confere numero + senha do Top e devolve o
+  // que a tela precisa preencher. NAO cria nada e NAO loga ninguem.
+  // ---------------------------------------------------------------
+  if (acao === 'validar_convite') {
+    const numero = String(corpo.numero ?? '').trim()
+    const senhaDoTop = String(corpo.senha_top ?? '')
+    if (!numeroValido(numero) || senhaDoTop.trim().length === 0) {
+      return json({ error: 'numero ou senha do Top incorretos' }, 400)
+    }
+
+    const r = await validarConvite(admin, numero, senhaDoTop)
+    if ('erro' in r) return json({ error: r.erro }, 403)
+
+    // So o necessario para a tela de cadastro. Nada de dado clinico: quem
+    // chamou ainda nao e ninguem no sistema.
+    return json({
+      ok: true,
+      top_id: r.topId,
+      top_nome: r.topNome,
+      nome: r.nome,
+      familia: r.familia,
+    })
+  }
+
+  // ---------------------------------------------------------------
+  // CADASTRAR - publico
+  //
+  // Passo 2: cria a conta com a senha PESSOAL e vincula a ficha que ja
+  // existe. A senha do Top e revalidada aqui - o passo 1 serviu para a
+  // tela, nao como permissao. Confiar na validacao do cliente deixaria
+  // qualquer um pular direto para ca.
+  // ---------------------------------------------------------------
+  if (acao === 'cadastrar') {
+    const numero = String(corpo.numero ?? '').trim()
+    const senhaDoTop = String(corpo.senha_top ?? '')
+    const senha = String(corpo.senha ?? '')
+
+    if (!numeroValido(numero)) return json({ error: 'numero invalido' }, 400)
+    if (senha.length < MIN_SENHA) {
+      return json(
+        { error: `a senha precisa ter pelo menos ${MIN_SENHA} caracteres` },
+        400,
+      )
+    }
+    // A senha pessoal NAO pode ser a do Top: seria entregar a conta a
+    // todo mundo que recebeu o convite.
+    if (senha.trim().toUpperCase() === senhaDoTop.trim().toUpperCase()) {
+      return json(
+        { error: 'escolha uma senha diferente da senha do Top' },
+        400,
+      )
+    }
+
+    const r = await validarConvite(admin, numero, senhaDoTop)
+    if ('erro' in r) return json({ error: r.erro }, 403)
+
+    const ficha = (corpo.ficha ?? {}) as Record<string, unknown>
+    const email = `${numero}@${DOMINIO}`
+
+    // 1. Cria a conta de autenticacao.
+    const { data: criado, error: erroCriar } = await admin.auth.admin
+      .createUser({
+        email,
+        password: senha,
+        email_confirm: true,
+        user_metadata: {
+          legendarios_number: numero,
+          full_name: ficha.full_name ?? r.nome,
+        },
+      })
+    if (erroCriar || !criado?.user) {
+      return json({ error: erroCriar?.message ?? 'falha ao criar conta' }, 400)
+    }
+    const perfilId = criado.user.id
+
+    // 2. Completa o perfil. O trigger handle_new_user ja criou a linha com
+    //    nome e numero; aqui entra o resto e a APROVACAO.
+    //
+    //    Aprovar aqui elimina a aprovacao dupla: antes a pessoa entrava
+    //    com o codigo e caia numa tela de "aguardando aprovacao", porque
+    //    profiles.approved nasce false e nada o mudava. Quem tem a senha
+    //    do Top e esta na lista dele ja foi aprovado - pelo admin, quando
+    //    distribuiu a senha.
+    const { error: erroPerfil } = await admin
+      .from('profiles')
+      .update({
+        full_name: ficha.full_name ?? r.nome,
+        phone: ficha.phone ?? null,
+        birth_date: ficha.birth_date ?? null,
+        weight_kg: ficha.weight_kg ?? null,
+        comorbidities: ficha.comorbidades ?? [],
+        approved: true,
+      })
+      .eq('id', perfilId)
+
+    if (erroPerfil) {
+      // Conta criada mas perfil pela metade deixaria a pessoa logando sem
+      // aprovacao e sem ficha. Desfaz para ela poder tentar de novo.
+      await admin.auth.admin.deleteUser(perfilId)
+      return json({ error: `falha ao salvar o perfil: ${erroPerfil.message}` }, 400)
+    }
+
+    // 3. Vincula a ficha que JA existe e completa os dados medicos.
+    //    Nao cria participante novo: os Legendarios do Top ja estao
+    //    cadastrados (hoje 71 dos 215), so sem conta.
+    const { error: erroFicha } = await admin
+      .from('top_participants')
+      .update({
+        linked_profile_id: perfilId,
+        full_name: ficha.full_name ?? r.nome,
+        nickname: ficha.nickname ?? null,
+        phone: ficha.phone ?? null,
+        birth_date: ficha.birth_date ?? null,
+        cidade: ficha.cidade ?? null,
+        estado: ficha.estado ?? null,
+        emergency_contact: ficha.emergency_contact ?? null,
+        height_cm: ficha.height_cm ?? null,
+        weight_kg: ficha.weight_kg ?? null,
+        blood_type: ficha.blood_type ?? null,
+        biotipo: ficha.biotipo ?? null,
+        cirurgias: ficha.cirurgias ?? null,
+        atividade_fisica_semanal: ficha.atividade_fisica_semanal ?? null,
+        comorbidades: ficha.comorbidades ?? [],
+        alergias: ficha.alergias ?? null,
+        plano_saude: ficha.plano_saude ?? null,
+        medicamentos_continuos: ficha.medicamentos_continuos ?? null,
+        restricoes_fisicas: ficha.restricoes_fisicas ?? null,
+      })
+      .eq('id', r.participanteId)
+
+    if (erroFicha) {
+      await admin.auth.admin.deleteUser(perfilId)
+      return json({ error: `falha ao salvar a ficha: ${erroFicha.message}` }, 400)
+    }
+
+    // A senha em claro nao volta: quem cadastrou acabou de escolher ela.
+    return json({
+      ok: true,
+      numero,
+      top_id: r.topId,
+      mensagem: 'Cadastro concluido. Entre com seu numero e a senha que voce criou.',
+    })
+  }
+
+  // ---------------------------------------------------------------
   // Daqui pra baixo exige admin autenticado.
   // ---------------------------------------------------------------
   const auth = req.headers.get('Authorization')
@@ -323,6 +578,52 @@ Deno.serve(async (req) => {
       codigo,
       expira_em: expira.toISOString(),
       mensagem: `Entregue este codigo ao Legendario ${numero}.`,
+    })
+  }
+
+  // ---------------------------------------------------------------
+  // GERAR_SENHA_DO_TOP - so admin
+  //
+  // Uma senha por Top, anunciada ao grupo. Ela libera o CADASTRO, nunca o
+  // login: depois de cadastrar, cada Legendario entra com a senha dele.
+  //
+  // Gerar de novo INVALIDA a anterior na hora - e assim que se corta o
+  // acesso se a senha vazar para fora do grupo.
+  // ---------------------------------------------------------------
+  if (acao === 'gerar_senha_top') {
+    const topId = String(corpo.top_id ?? '').trim()
+    if (!topId) return json({ error: 'top_id obrigatorio' }, 400)
+
+    const senha = gerarSenhaDoTop()
+    const { data: top, error } = await admin
+      .from('tops')
+      .update({
+        access_code_hash: await hash(senha),
+        access_code_set_at: new Date().toISOString(),
+        access_code_set_by: user.id,
+      })
+      .eq('id', topId)
+      .select('id, name, top_number, status')
+      .maybeSingle()
+
+    if (error) return json({ error: error.message }, 400)
+    if (!top) return json({ error: 'Top nao encontrado' }, 404)
+
+    // A senha em claro volta UMA vez, so para o admin que pediu. O banco
+    // guarda apenas o hash: se o admin perder, gera outra (e a anterior
+    // para de valer).
+    return json({
+      ok: true,
+      senha,
+      top_id: top.id,
+      top_nome: top.name,
+      top_numero: top.top_number,
+      // O cadastro e recusado enquanto o Top estiver em draft. Avisar
+      // aqui evita o admin distribuir a senha e so descobrir depois que
+      // ninguem consegue entrar.
+      aviso: top.status === 'draft'
+        ? 'Este Top esta em RASCUNHO. Ninguem consegue se cadastrar ate voce ativa-lo.'
+        : null,
     })
   }
 
