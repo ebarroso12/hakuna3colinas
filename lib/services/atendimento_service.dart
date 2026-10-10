@@ -5,7 +5,9 @@ import 'dart:async';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../models/afericao.dart';
 import '../models/atendimento.dart';
+import '../offline/dados_do_top.dart';
 import '../offline/outbox.dart';
 import '../offline/sync_service.dart';
 import 'supabase_service.dart';
@@ -75,6 +77,26 @@ class AtendimentoService {
       topId: atendimento.topId,
       clientId: atendimento.clientId,
     );
+
+    // Alimenta a triagem dinâmica no mesmo instante em que o atendimento
+    // entra na fila — não quando ele chega ao servidor. Um SpO₂ 88% aferido
+    // no mato tem de mudar a cor na lista na hora; esperar sinal para isso
+    // é o bug que esta linha corrige.
+    //
+    // Fora do caminho crítico: se o cache falhar, o atendimento já está na
+    // fila e o dado clínico está salvo. Só a cor fica velha.
+    try {
+      await DadosDoTop.instance.registrarAfericao(
+        atendimento.participantId,
+        atendimento.topId,
+        Afericao(
+          medidoEm: atendimento.openedAt,
+          systolicBp: atendimento.systolicBp,
+          diastolicBp: atendimento.diastolicBp,
+          spo2: atendimento.spo2,
+        ),
+      );
+    } catch (_) {}
 
     for (final caminho in atendimento.fotosLocais) {
       await Outbox.instance.enqueue(

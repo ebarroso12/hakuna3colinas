@@ -4,6 +4,8 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
+import 'tabelas.dart';
+
 /// Banco SQLite local do aparelho.
 ///
 /// Em campo o app roda sem cobertura: este banco é a fonte da verdade
@@ -22,7 +24,7 @@ class LocalDb {
 
   /// Subir este número roda as migrações em [_upgrade]. Nunca editar uma
   /// migração já publicada: adicionar a próxima.
-  static const _schemaVersion = 1;
+  static const _schemaVersion = 2;
 
   Database? _db;
 
@@ -100,12 +102,43 @@ class LocalDb {
         last_pushed_at  INTEGER
       )
     ''');
+
+    await _criarCacheDeLeitura(db);
   }
 
-  /// Migrações futuras entram aqui, uma por versão. Exemplo da próxima:
-  /// `if (from < 2) await db.execute('ALTER TABLE ...');`
+  /// Cache de leitura: o que o app precisa enxergar SEM rede.
+  ///
+  /// A v1 cobria só escrita (a fila). Faltava leitura, e por isso, em cold
+  /// start no mato, a lista de participantes vinha vazia e a tag NFC não
+  /// resolvia — justamente onde as duas coisas servem.
+  Future<void> _criarCacheDeLeitura(Database db) async {
+    await db.execute(ColunasParticipante.criar);
+    for (final idx in ColunasParticipante.indices) {
+      await db.execute(idx);
+    }
+
+    await db.execute(ColunasTag.criar);
+    for (final idx in ColunasTag.indices) {
+      await db.execute(idx);
+    }
+
+    await db.execute(ColunasRegraTriagem.criar);
+    for (final idx in ColunasRegraTriagem.indices) {
+      await db.execute(idx);
+    }
+
+    await db.execute(ColunasAfericao.criar);
+    for (final idx in ColunasAfericao.indices) {
+      await db.execute(idx);
+    }
+
+    await db.execute(ColunasEstado.criar);
+  }
+
+  /// Migrações, uma por versão. Nunca editar uma já publicada — aparelho
+  /// que já rodou a versão antiga não roda de novo.
   Future<void> _upgrade(Database db, int from, int to) async {
-    // Ainda não há migração: o esquema está na versão 1.
+    if (from < 2) await _criarCacheDeLeitura(db);
   }
 
   /// Fecha o banco. Usado nos testes entre casos.

@@ -8,10 +8,28 @@ name: Android APK
 #   1. como artifact da execucao (aba Actions)
 #   2. como anexo de uma Release, quando a execucao e disparada por uma tag v*
 #
-# Assinatura: android/app/build.gradle usa signingConfig "debug" no release,
-# entao o APK sai assinado com a chave de debug. Instala normalmente num
-# aparelho com "fontes desconhecidas" liberado, que e o fluxo de distribuicao
-# por Drive. Nao serve para publicar na Play Store.
+# ASSINATURA
+#
+# build.gradle.kts procura chave de producao em key.properties ou nas
+# variaveis de ambiente abaixo. Enquanto os secrets nao existirem, o APK
+# continua saindo assinado com a chave de DEBUG: instala num aparelho com
+# "fontes desconhecidas" liberado (o fluxo de distribuicao por Drive) e nao
+# serve para a Play Store.
+#
+# Para assinar de verdade, criar estes 4 secrets no repositorio:
+#   ANDROID_KEYSTORE_BASE64   o .jks inteiro em base64
+#   ANDROID_KEYSTORE_PASSWORD
+#   ANDROID_KEY_ALIAS
+#   ANDROID_KEY_PASSWORD
+#
+# Gerar o keystore (uma vez, e guardar o arquivo em lugar seguro — perder e
+# irreversivel):
+#   keytool -genkey -v -keystore legendarios.jks -keyalg RSA \
+#           -keysize 2048 -validity 10000 -alias legendarios
+#   base64 -w0 legendarios.jks        # o valor do secret
+#
+# AVISO: trocar a chave muda a identidade do app para o Android. Quem ja tem
+# o legendarios1.0.x instalado precisara DESINSTALAR antes de atualizar.
 
 on:
   push:
@@ -56,11 +74,47 @@ jobs:
       - name: Testes
         run: flutter test
 
+      - name: Prepara o keystore de producao (se o secret existir)
+        id: assinatura
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/legendarios.jks"
+            echo "caminho=$RUNNER_TEMP/legendarios.jks" >> "$GITHUB_OUTPUT"
+            echo "Keystore de PRODUCAO preparado."
+          else
+            echo "caminho=" >> "$GITHUB_OUTPUT"
+            echo "Sem keystore: o APK sai assinado com a chave de DEBUG."
+          fi
+
       - name: Build do APK (release)
+        env:
+          # Vazios quando os secrets nao existem — e o build.gradle.kts cai
+          # no fallback de debug. Config pela metade nao assina: ele exige
+          # os quatro valores E o arquivo no lugar.
+          LEGENDARIOS_KEYSTORE_PATH: ${{ steps.assinatura.outputs.caminho }}
+          LEGENDARIOS_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          LEGENDARIOS_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          LEGENDARIOS_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           flutter build apk --release \
             --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
             --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+
+      - name: Diz com qual chave o APK foi assinado
+        run: |
+          APK=build/app/outputs/flutter-apk/app-release.apk
+          # Confere no arquivo, nao na configuracao: e o unico jeito de
+          # saber o que realmente saiu. "Android Debug" no DN = chave de
+          # debug.
+          DN=$(keytool -printcert -jarfile "$APK" 2>/dev/null \
+               | grep -m1 'Owner:' || echo 'Owner: desconhecido')
+          echo "$DN"
+          if echo "$DN" | grep -q 'Android Debug'; then
+            echo "::warning::APK assinado com CHAVE DE DEBUG. Instala por \
+          fontes desconhecidas; nao serve para Play Store."
+          fi
 
       - name: Renomeia para o padrao de distribuicao
         run: |

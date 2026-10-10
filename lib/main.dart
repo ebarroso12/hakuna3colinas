@@ -27,6 +27,16 @@ Future<void> main() async {
   LocationService.instance.registrarUploader();
   unawaited(SyncService.instance.start());
 
+  // Religa o rastreamento se o app deveria estar rastreando e foi morto
+  // pelo sistema. Não somos donos do Foreground Service (ele é do plugin
+  // geolocator), então não há `START_STICKY` para o Android recriá-lo: é o
+  // app, ao abrir, que retoma. Fica um buraco na trilha do tamanho do tempo
+  // em que o processo esteve morto — isso é limite da arquitetura, não bug.
+  //
+  // Depois do runApp seria tarde para a notificação voltar antes da
+  // primeira tela; antes dele atrasaria a abertura. Fica solto aqui.
+  unawaited(LocationService.instance.retomarSeDevia());
+
   runApp(const HakunaConnectApp());
 }
 

@@ -1,5 +1,6 @@
 import '../models/participant.dart';
 import '../models/participant_tag.dart';
+import '../offline/dados_do_top.dart';
 import 'supabase_service.dart';
 
 /// O que a leitura de uma tag produziu.
@@ -25,12 +26,12 @@ class TagService {
 
   static final TagService instance = TagService._();
 
-  /// Cache em memória do que já foi resolvido nesta sessão.
+  /// Quanto esperar a rede antes de desistir e ir ao disco.
   ///
-  /// Serve para a segunda leitura da mesma pulseira funcionar mesmo depois
-  /// de o sinal cair — o cenário real de uma trilha, onde o Hakuna lê a
-  /// mesma pessoa mais de uma vez.
-  final Map<String, LeituraTag> _cache = {};
+  /// Sem isto, sinal fraco (que é diferente de sinal nenhum) deixava o
+  /// Hakuna olhando um spinner por 30 s com a pulseira na mão. A resposta
+  /// local chega em milissegundos; não vale a pena esperar muito mais.
+  static const _timeoutRede = Duration(seconds: 4);
 
   /// Resolve o conteúdo lido do NDEF.
   ///
@@ -48,28 +49,62 @@ class TagService {
       return const LeituraTag(ResultadoLeitura.formatoInvalido);
     }
 
+    // Rede primeiro quando ela responde rápido: o servidor é a autoridade
+    // sobre revogação, e uma pulseira revogada há dez minutos ainda consta
+    // como válida no cache do aparelho.
+    LeituraTag? daRede;
     try {
-      final leitura = await _buscarNoServidor(token, topId);
-      _cache[token] = leitura;
-      // Auditoria não pode derrubar o atendimento: se falhar, a
-      // identificação segue valendo.
-      try {
-        await SupabaseService.instance.registrarLeituraTag(
-          token: token,
-          topId: topId,
-          participantId: leitura.participante?.id,
-          resultado: leitura.resultado.paraAuditoria,
-          latitude: latitude,
-          longitude: longitude,
-        );
-      } catch (_) {}
-      return leitura;
+      daRede = await _buscarNoServidor(token, topId).timeout(_timeoutRede);
     } catch (_) {
-      // Sem rede: vale o que já foi lido nesta sessão.
-      final emCache = _cache[token];
-      if (emCache != null) return emCache;
+      daRede = null;
+    }
+
+    final leitura = daRede ?? await _buscarNoDisco(token);
+
+    // Auditoria não pode derrubar o atendimento: se falhar, a
+    // identificação segue valendo.
+    try {
+      await SupabaseService.instance.registrarLeituraTag(
+        token: token,
+        topId: topId,
+        participantId: leitura.participante?.id,
+        resultado: leitura.resultado.paraAuditoria,
+        latitude: latitude,
+        longitude: longitude,
+      );
+    } catch (_) {
+      // TODO: enfileirar no outbox — hoje leitura offline não é auditada.
+    }
+    return leitura;
+  }
+
+  /// Resolve o token no SQLite do aparelho.
+  ///
+  /// É este caminho que faz a leitura NFC funcionar **em cold start no
+  /// mato**: o app foi morto pelo sistema, reabriu sem rede, e a resposta
+  /// vem do disco. Antes o fallback era um `Map` em memória, que morria
+  /// junto com o processo — ou seja, não existia fallback nenhum.
+  Future<LeituraTag> _buscarNoDisco(String token) async {
+    final tag = await DadosDoTop.instance.tagPorToken(token);
+    if (tag == null) {
+      // Desconhecida no disco não é o mesmo que inexistente: pode ser tag
+      // emitida depois do último download. `semDados` diz a verdade — o
+      // aparelho não sabe — e manda conferir pelo nome.
       return const LeituraTag(ResultadoLeitura.semDados);
     }
+    if (!tag.valida) return LeituraTag(ResultadoLeitura.revogada, tag: tag);
+
+    final participante = await DadosDoTop.instance.participante(
+      tag.participantId,
+    );
+    if (participante == null) {
+      return LeituraTag(ResultadoLeitura.semDados, tag: tag);
+    }
+    return LeituraTag(
+      ResultadoLeitura.ok,
+      participante: participante,
+      tag: tag,
+    );
   }
 
   Future<LeituraTag> _buscarNoServidor(String token, String topId) async {
@@ -139,11 +174,10 @@ class TagService {
   Future<void> revogar(String tagId, {required String motivo}) =>
       SupabaseService.instance.revogarTag(tagId: tagId, motivo: motivo);
 
-  /// Guarda uma resolução no cache. Usado ao baixar as tags do Top antes
-  /// de entrar no mato.
-  void preencherCache(String token, LeituraTag leitura) {
-    _cache[token] = leitura;
-  }
-
-  void limparCache() => _cache.clear();
+  /// Baixa tags e participantes do Top para o disco.
+  ///
+  /// Substitui o antigo `preencherCache`, que populava um `Map` em memória
+  /// — inútil depois de o app ser morto.
+  Future<void> prepararParaOMato(String topId) =>
+      DadosDoTop.instance.baixar(topId);
 }

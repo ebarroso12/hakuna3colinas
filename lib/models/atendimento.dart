@@ -146,6 +146,23 @@ class Atendimento {
 /// número que merece um segundo olhar. Os cortes são os usados em triagem
 /// de adulto; criança tem outros, e por isso nada aqui bloqueia nem decide
 /// conduta.
+/// Marca valor **fora da faixa normal** — para pintar o campo de amarelo no
+/// formulário e no prontuário.
+///
+/// Não confundir com `LimiaresVitais` em `triage_dinamica.dart`: lá estão os
+/// limiares **críticos**, mais estreitos, que reclassificam a triagem para
+/// vermelho. São dois níveis de propósito:
+///
+/// ```
+///              alterado (aqui)        crítico (TriageDinamica)
+/// SpO₂         < 94%                  < 90%
+/// sistólica    >= 140 ou < 90         > 180
+/// diastólica   >= 90  ou < 60         > 110
+/// ```
+///
+/// Se "alterado" também mudasse a cor, metade dos participantes de uma
+/// trilha ficaria vermelha — PA 145x92 depois de subir serra é comum — e a
+/// cor pararia de significar prioridade.
 abstract final class AlertaVital {
   static bool pressaoAlterada(int? sistolica, int? diastolica) {
     if (sistolica == null || diastolica == null) return false;

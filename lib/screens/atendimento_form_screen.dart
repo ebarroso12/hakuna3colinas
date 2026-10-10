@@ -6,12 +6,14 @@ import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../models/afericao.dart';
 import '../models/atendimento.dart';
 import '../models/participant.dart';
 import '../models/top.dart';
 import '../offline/outbox.dart';
 import '../services/atendimento_service.dart';
 import '../services/supabase_service.dart';
+import '../services/triage_dinamica.dart';
 
 /// REGISTRO DE ATENDIMENTO.
 ///
@@ -158,6 +160,50 @@ class _AtendimentoFormScreenState extends State<AtendimentoFormScreen> {
     }
   }
 
+  /// Avisa, **durante a digitação**, que os valores vão marcar o
+  /// participante como vermelho na lista.
+  ///
+  /// Aparece antes de salvar de propósito: se o Hakuna errou um dígito
+  /// (190 em vez de 130), ele corrige agora. O atendimento é append-only —
+  /// depois de salvo não tem edição, só um registro novo.
+  Widget _avisoCritico() {
+    final gravidade = TriageDinamica.avaliar(
+      corDeCadastro: null,
+      afericao: Afericao(
+        medidoEm: DateTime.now(),
+        systolicBp: _inteiro(_sistolica),
+        diastolicBp: _inteiro(_diastolica),
+        spo2: _inteiro(_spo2),
+      ),
+    );
+    if (!gravidade.escalada) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: scheme.errorContainer,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.monitor_heart, color: scheme.onErrorContainer),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Valor crítico: ${gravidade.motivos.join(" · ")}. '
+              'Ao salvar, este participante passa a VERMELHO na lista.',
+              style: TextStyle(
+                color: scheme.onErrorContainer,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   int? _inteiro(TextEditingController c) {
     final t = c.text.trim();
     return t.isEmpty ? null : int.tryParse(t);
@@ -266,6 +312,7 @@ class _AtendimentoFormScreenState extends State<AtendimentoFormScreen> {
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 12),
+            _avisoCritico(),
 
             Row(
               children: [

@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../models/afericao.dart';
 import '../models/participant.dart';
 import '../models/profile.dart';
 import '../models/top.dart';
 import '../models/triage_rule.dart';
+import '../offline/dados_do_top.dart';
+import '../offline/texto_busca.dart';
 import '../services/supabase_service.dart';
+import '../services/triage_dinamica.dart';
 import '../services/triage_service.dart';
 import '../widgets/app_logo.dart';
 import '../widgets/barra_inferior.dart';
@@ -17,10 +21,14 @@ import 'participant_file_screen.dart';
 /// Lista de participantes do Top, com as duas buscas do app oficial:
 /// uma por nome e outra por família.
 ///
-/// Carrega tudo de uma vez e filtra na memória de propósito. A lista é
-/// usada no mato, sem sinal — uma busca que depende de rede falharia
-/// justamente onde o app precisa funcionar. 215 registros filtram
-/// instantaneamente.
+/// **Lê do SQLite do aparelho**, não da rede. Até a v1.0.16 esta tela
+/// chamava o Supabase direto, então em cold start sem sinal ela vinha
+/// vazia — justamente no mato, onde é o plano B de quando a pulseira
+/// falha. Agora a rede só alimenta o disco (ver [DadosDoTop]).
+///
+/// Os 215 registros vêm do disco de uma vez e os filtros rodam em memória,
+/// com a mesma normalização de acento da coluna `busca_normalizada` — assim
+/// digitar não dispara consulta e o resultado não chega fora de ordem.
 class ParticipantsListScreen extends StatefulWidget {
   const ParticipantsListScreen({super.key, required this.top});
 
@@ -36,9 +44,21 @@ class _ParticipantsListScreenState extends State<ParticipantsListScreen> {
 
   List<Participant> _todos = [];
   List<TriageRule> _regras = [];
+
+  /// Última aferição de cada participante, por id. É o que faz a cor
+  /// reagir a PA e SpO₂ em vez de ficar travada no cadastro.
+  Map<String, Afericao> _afericoes = const {};
+
   Profile? _meuPerfil;
   bool _carregando = true;
   String? _erro;
+
+  /// Quando os dados deste Top foram baixados. Null = nunca.
+  ///
+  /// Aparece na tela de propósito: no mato a idade do dado é informação
+  /// clínica, e fingir que a lista está atualizada é pior que admitir que
+  /// ela tem três horas.
+  DateTime? _baixadoEm;
 
   @override
   void initState() {
@@ -61,26 +81,22 @@ class _ParticipantsListScreenState extends State<ParticipantsListScreen> {
       _erro = null;
     });
     try {
-      final participantes = await SupabaseService.instance.fetchParticipants(
-        widget.top.id,
-      );
+      final dados = DadosDoTop.instance;
+      final participantes = await dados.participantes(widget.top.id);
+      final regras = await dados.regras();
+      final afericoes = await dados.afericoes(widget.top.id);
+      final baixadoEm = await dados.baixadoEm(widget.top.id);
       // O cabecalho mostra quem esta logado naquele aparelho — falhar aqui
       // nao impede a lista de aparecer.
       try {
         _meuPerfil = await SupabaseService.instance.fetchMyProfile();
       } catch (_) {}
-      // As regras de triagem vêm junto pra pintar a cor de cada linha sem
-      // uma consulta por participante.
-      List<TriageRule> regras = const [];
-      try {
-        regras = await SupabaseService.instance.fetchActiveTriageRules();
-      } catch (_) {
-        // Sem regras a lista ainda funciona, só não mostra cor.
-      }
       if (!mounted) return;
       setState(() {
         _todos = participantes;
         _regras = regras;
+        _afericoes = afericoes;
+        _baixadoEm = baixadoEm;
         _carregando = false;
       });
     } catch (e) {
@@ -92,23 +108,62 @@ class _ParticipantsListScreenState extends State<ParticipantsListScreen> {
     }
   }
 
+  /// Baixa os dados do Top para o aparelho. Precisa de sinal.
+  ///
+  /// É o botão que o Hakuna aperta antes de subir a trilha. Depois dele a
+  /// lista e a leitura de tag funcionam sem rede, inclusive se o sistema
+  /// matar o app e ele reabrir no meio do mato.
+  Future<void> _baixar() async {
+    setState(() => _carregando = true);
+    try {
+      final resumo = await DadosDoTop.instance.baixar(widget.top.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Baixado para o aparelho: ${resumo.participantes} participantes, '
+            '${resumo.tags} pulseiras, ${resumo.regras} regras de triagem.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não deu para baixar agora: $e')),
+      );
+    }
+    await _carregar();
+  }
+
   /// Os dois filtros se somam: digitar nos dois campos restringe aos dois
   /// critérios ao mesmo tempo.
+  ///
+  /// Normaliza acento com [TextoBusca] — a mesma função que gera a coluna
+  /// `busca_normalizada` no cache, para que os dois caminhos devolvam o
+  /// mesmo resultado. Sem isso, `"joao"` não encontrava `"JOÃO"`.
   List<Participant> get _filtrados {
-    final nome = _buscaNome.text.trim().toLowerCase();
-    final familia = _buscaFamilia.text.trim().toLowerCase();
+    final nome = TextoBusca.normalizar(_buscaNome.text);
+    final familia = TextoBusca.normalizar(_buscaFamilia.text);
+    if (nome.isEmpty && familia.isEmpty) return _todos;
     return _todos.where((p) {
       final casaNome =
           nome.isEmpty ||
-          p.fullName.toLowerCase().contains(nome) ||
-          (p.nickname?.toLowerCase().contains(nome) ?? false) ||
-          (p.participantCode?.toLowerCase().contains(nome) ?? false);
+          TextoBusca.chaveDe(
+            nome: p.fullName,
+            apelido: p.nickname,
+            codigo: p.participantCode,
+          ).contains(nome);
       final casaFamilia =
-          familia.isEmpty ||
-          (p.familia?.toLowerCase().contains(familia) ?? false);
+          familia.isEmpty || TextoBusca.normalizar(p.familia).contains(familia);
       return casaNome && casaFamilia;
     }).toList();
   }
+
+  /// Gravidade atual: cadastro escalado pela última aferição.
+  Gravidade _gravidadeDe(Participant p) => TriageDinamica.avaliar(
+    corDeCadastro: TriageService.colorForParticipant(p, _regras),
+    afericao: _afericoes[p.id],
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -148,6 +203,8 @@ class _ParticipantsListScreenState extends State<ParticipantsListScreen> {
       ),
       body: Column(
         children: [
+          _avisoDados(),
+          _avisoCriticos(),
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
             child: Row(
@@ -252,8 +309,84 @@ class _ParticipantsListScreenState extends State<ParticipantsListScreen> {
       itemCount: lista.length,
       itemBuilder: (context, i) => _LinhaParticipante(
         participante: lista[i],
+        gravidade: _gravidadeDe(lista[i]),
         regras: _regras,
         top: widget.top,
+      ),
+    );
+  }
+
+  /// Aviso de quem está com sinal vital crítico aferido.
+  ///
+  /// A lista segue em ordem alfabética — é assim que o Hakuna está
+  /// acostumado a procurar no app oficial, e reordenar faria ele perder a
+  /// pessoa que estava buscando. O aviso resolve o outro lado: ninguém
+  /// descobre um SpO₂ 88% por acidente, rolando a lista.
+  Widget _avisoCriticos() {
+    final criticos = _todos.where((p) => _gravidadeDe(p).escalada).toList();
+    if (criticos.isEmpty) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.errorContainer,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          children: [
+            Icon(Icons.priority_high, color: scheme.onErrorContainer),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                criticos.length == 1
+                    ? '1 participante com sinal vital crítico aferido: '
+                          '${criticos.first.fullName.toUpperCase()}'
+                    : '${criticos.length} participantes com sinal vital '
+                          'crítico aferido',
+                style: TextStyle(
+                  color: scheme.onErrorContainer,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Idade dos dados em disco. No mato isso é informação clínica.
+  Widget _avisoDados() {
+    final quando = _baixadoEm;
+    final estilo = Theme.of(context).textTheme.labelMedium;
+    if (quando == null) {
+      return Material(
+        color: Theme.of(context).colorScheme.secondaryContainer,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            children: [
+              const Icon(Icons.cloud_off, size: 18),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Dados não baixados para este aparelho. Sem sinal, a lista '
+                  'e a leitura de pulseira não vão funcionar.',
+                ),
+              ),
+              TextButton(onPressed: _baixar, child: const Text('Baixar')),
+            ],
+          ),
+        ),
+      );
+    }
+    final horas = DateTime.now().difference(quando);
+    final idade = horas.inMinutes < 60
+        ? '${horas.inMinutes} min'
+        : '${horas.inHours} h';
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Text('Dados do aparelho · baixados há $idade', style: estilo),
       ),
     );
   }
@@ -282,11 +415,13 @@ class _ParticipantsListScreenState extends State<ParticipantsListScreen> {
 class _LinhaParticipante extends StatelessWidget {
   const _LinhaParticipante({
     required this.participante,
+    required this.gravidade,
     required this.regras,
     required this.top,
   });
 
   final Participant participante;
+  final Gravidade gravidade;
   final List<TriageRule> regras;
   final Top top;
 
@@ -298,7 +433,7 @@ class _LinhaParticipante extends StatelessWidget {
         participante.participantCode != null &&
         participante.participantCode!.trim().isNotEmpty;
 
-    final cor = TriageService.colorForParticipant(participante, regras);
+    final cor = gravidade.cor;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 6),
@@ -322,8 +457,18 @@ class _LinhaParticipante extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Tooltip(
-                  message: 'Triagem: ${cor.label}',
-                  child: const Icon(Icons.flag, color: Colors.white, size: 20),
+                  message: gravidade.escalada
+                      ? 'CRÍTICO · ${gravidade.motivos.join(" · ")}'
+                      : 'Triagem: ${cor.label}',
+                  child: Icon(
+                    // Ícone diferente quando a cor veio do sinal vital e
+                    // não do cadastro: cor sozinha não distingue "é idoso
+                    // com comorbidade" de "está com SpO₂ 88% agora", e são
+                    // prioridades diferentes para quem decide a fila.
+                    gravidade.escalada ? Icons.monitor_heart : Icons.flag,
+                    color: Colors.white,
+                    size: 20,
+                  ),
                 ),
               ),
         onTap: () => Navigator.of(context).push(

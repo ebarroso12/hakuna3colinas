@@ -66,6 +66,32 @@ dependiam de quem chamava ter feito `.order(...)` na query, e uma
 consulta nova sem isso mudava o resultado clínico em silêncio. Mantenha
 assim — não "otimize" removendo a ordenação.
 
+### Leitura vem do SQLite, não da rede
+`lib/offline/` tem o banco local, no padrão do **opentracksapp/opentracks**:
+`tabelas.dart` descreve só o esquema, `cache_local.dart` só o acesso,
+`dados_do_top.dart` é a fachada que as telas usam. Tela nenhuma deve
+chamar `SupabaseService.fetchParticipants` direto — a rede alimenta o
+disco e o disco alimenta a tela. Em cold start no mato é a única ordem que
+funciona.
+
+Nomes de coluna no SQLite são **idênticos** aos do Postgres, para o mesmo
+`fromMap` servir às duas origens. Ao adicionar campo, adicione nos dois.
+
+`busca_normalizada` e `familia_normalizada` são colunas derivadas,
+gravadas por `TextoBusca` no momento do cache. Não compare contra
+`full_name` ou `familia` crus: `"joao"` não acha `"JOÃO"`.
+
+### Triagem tem dois níveis, e eles não se misturam
+`TriageService` dá a cor de **cadastro** — `f(idade, comorbidades)`, das
+regras do banco. `TriageDinamica` **escala** essa cor para vermelho quando
+a última aferição tem SpO₂ < 90, sistólica > 180 ou diastólica > 110.
+
+Só escala, nunca rebaixa, e **não sobrescreve o cadastro** — sobrepõe na
+leitura. `AlertaVital` (em `atendimento.dart`) é um terceiro conjunto de
+limiares, mais largos, que só pinta o campo de amarelo. Não unifique os
+três: se "alterado" mudasse a cor, metade da trilha ficaria vermelha e a
+cor pararia de significar prioridade.
+
 ### Models usam `fromMap`, não geração de código
 Os 7 models em `lib/models/` seguem o mesmo padrão manual
 `factory X.fromMap(Map<String, dynamic> map)`. Não há `json_serializable`
@@ -110,11 +136,17 @@ Fluxo obrigatório, nesta ordem:
    e anexa à Release
 5. Avisar o usuário para baixar o APK e subir no Google Drive
 
-**Assinatura:** `android/app/build.gradle` usa `signingConfig debug` no
-release. O APK instala com "fontes desconhecidas" liberado — que é o fluxo
-de distribuição por Drive — mas não serve para Play Store. Se um dia
-criarem um keystore real, quem já tem o app vai precisar desinstalar antes
-de atualizar.
+**Assinatura:** `android/app/build.gradle.kts` procura chave de produção em
+`android/key.properties` (local) ou nas variáveis `LEGENDARIOS_KEYSTORE_*`
+(CI). Exige os **quatro** valores e o arquivo no lugar — config pela metade
+não assina, cai no fallback. Sem nada disso, o release sai com a chave de
+**debug**: instala por "fontes desconhecidas" (fluxo do Drive), não serve
+para Play Store.
+
+O workflow imprime no log, lendo do próprio APK, com qual chave ele saiu.
+Keystore e `key.properties` estão no `.gitignore` — perder o `.jks` é
+irreversível. **Trocar a chave obriga quem já tem o app a desinstalar
+antes de atualizar.**
 
 ## Regras de triagem
 
@@ -154,5 +186,8 @@ validando uma configuração que não existe mais.
   `nfc_tags`, `atendimentos`.
 - **AID de exemplo.** `android/app/src/main/res/xml/apduservice.xml` usa
   `F0010203040506`. Trocar pelo AID real quando definido.
-- **Sem estratégia offline.** Evento de trilha tem conectividade ruim;
-  GPS, chat e sinais vitais escrevem direto no Supabase, sem fila local.
+- **Chat ainda não tem fila offline.** GPS, atendimentos e fotos passam
+  pelo outbox; `top_chat` e `team_chat` escrevem direto no Supabase.
+- **Nada escreve em `audit_log`.** A tabela existe e está vazia.
+- **`listUsers()` na Edge Function `acesso` pagina em 50** — quebra a
+  partir do 51º Legendário cadastrado.

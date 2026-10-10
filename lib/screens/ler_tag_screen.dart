@@ -5,8 +5,8 @@ import 'package:nfc_manager/nfc_manager.dart';
 import '../models/participant_tag.dart';
 import '../models/top.dart';
 import '../models/triage_rule.dart';
+import '../offline/dados_do_top.dart';
 import '../services/nfc_service.dart';
-import '../services/supabase_service.dart';
 import '../services/tag_service.dart';
 import 'participant_file_screen.dart';
 
@@ -197,20 +197,12 @@ class _Aviso extends StatelessWidget {
   }
 }
 
-/// Carrega as tags do Top para o cache, antes de entrar em área sem sinal.
-Future<int> aquecerCacheDeTags(Top top) async {
-  final tags = await SupabaseService.instance.fetchTags(top.id);
-  var carregadas = 0;
-  for (final tag in tags.where((t) => t.valida)) {
-    final participante = await SupabaseService.instance.fetchParticipant(
-      tag.participantId,
-    );
-    if (participante == null) continue;
-    TagService.instance.preencherCache(
-      tag.token,
-      LeituraTag(ResultadoLeitura.ok, participante: participante, tag: tag),
-    );
-    carregadas++;
-  }
-  return carregadas;
-}
+/// Baixa participantes, tags e regras do Top para o SQLite do aparelho,
+/// antes de entrar em área sem sinal.
+///
+/// Substitui a versão anterior, que tinha dois problemas: gravava num `Map`
+/// em memória (perdido quando o sistema matava o app) e fazia **uma
+/// consulta de rede por tag** — 215 ida-e-voltas. Agora são três consultas
+/// em bloco e o resultado fica em disco.
+Future<ResumoDownload> baixarDadosDoTop(Top top) =>
+    DadosDoTop.instance.baixar(top.id);

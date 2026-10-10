@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../models/afericao.dart';
 import '../models/participant.dart';
 import '../models/top.dart';
 import '../models/triage_rule.dart';
+import '../offline/dados_do_top.dart';
+import '../services/triage_dinamica.dart';
 import '../services/triage_service.dart';
 import '../widgets/app_logo.dart';
 import '../widgets/barra_inferior.dart';
@@ -33,7 +36,10 @@ class ParticipantFileScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cor = TriageService.colorForParticipant(participante, regras);
+    final corDeCadastro = TriageService.colorForParticipant(
+      participante,
+      regras,
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -51,7 +57,21 @@ class ParticipantFileScreen extends StatelessWidget {
           const SizedBox(height: 12),
           _Medidas(participante: participante),
           const SizedBox(height: 12),
-          _Clinico(participante: participante, cor: cor),
+          // A cor vem do disco, não da rede: esta ficha é lida no mato,
+          // depois de a pulseira identificar alguém. Enquanto a aferição
+          // não chega, mostra a cor de cadastro em vez de um spinner —
+          // informação incompleta é melhor que tela vazia na frente de um
+          // paciente.
+          FutureBuilder<Afericao?>(
+            future: DadosDoTop.instance.afericaoDe(participante.id),
+            builder: (context, snap) => _Clinico(
+              participante: participante,
+              gravidade: TriageDinamica.avaliar(
+                corDeCadastro: corDeCadastro,
+                afericao: snap.data,
+              ),
+            ),
+          ),
           const SizedBox(height: 12),
           _Emergencia(participante: participante),
           const SizedBox(height: 16),
@@ -374,11 +394,73 @@ class _PonteiroImc extends StatelessWidget {
   }
 }
 
+/// Explica por que a cor não é a do cadastro.
+///
+/// Sem isto o Hakuna vê vermelho e não sabe se é por idade e comorbidade ou
+/// por uma aferição de agora — e essas duas coisas pedem conduta diferente.
+/// Mostra também a cor de base, para deixar claro que o cadastro não foi
+/// apagado: ele volta a valer quando uma aferição normal chegar.
+class _MotivoEscalada extends StatelessWidget {
+  const _MotivoEscalada({required this.gravidade});
+
+  final Gravidade gravidade;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final base = gravidade.corDeCadastro;
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: scheme.errorContainer,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.monitor_heart, color: scheme.onErrorContainer),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'VERMELHO por sinal vital aferido',
+                  style: TextStyle(
+                    color: scheme.onErrorContainer,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  gravidade.motivos.join(' · '),
+                  style: TextStyle(color: scheme.onErrorContainer),
+                ),
+                if (base != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Triagem de cadastro: ${base.label}',
+                    style: TextStyle(
+                      color: scheme.onErrorContainer,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _Clinico extends StatelessWidget {
-  const _Clinico({required this.participante, required this.cor});
+  const _Clinico({required this.participante, required this.gravidade});
 
   final Participant participante;
-  final TriageColor? cor;
+  final Gravidade gravidade;
 
   @override
   Widget build(BuildContext context) {
@@ -387,7 +469,8 @@ class _Clinico extends StatelessWidget {
       children: [
         _Campo('Biotipo', p.biotipo),
         _Campo('Tipo sanguíneo', p.bloodType, destaque: true),
-        _IndicativoSaude(cor: cor),
+        _IndicativoSaude(cor: gravidade.cor),
+        if (gravidade.escalada) _MotivoEscalada(gravidade: gravidade),
         _Campo('Cirurgias', p.cirurgias),
         _Campo('Observação Hakuna', p.observacaoHakuna),
         _Campo('Atividade física semanal', p.atividadeFisicaSemanal),

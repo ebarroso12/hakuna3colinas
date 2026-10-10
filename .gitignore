@@ -62,3 +62,9 @@ env.local.json
 # duplicaria os arquivos.
 .claude/
 devtools_options.yaml
+
+# Assinatura Android — NUNCA commitar.
+# Perder o keystore e irreversivel; quem o tiver publica em nome do app.
+android/key.properties
+*.jks
+*.keystore
