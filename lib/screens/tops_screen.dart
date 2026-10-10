@@ -5,6 +5,7 @@ import '../models/top.dart';
 import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
 import '../widgets/barra_inferior.dart';
+import '../widgets/cabecalho_usuario.dart';
 import 'admin/admin_home_screen.dart';
 import 'change_password_screen.dart';
 import 'top_detail_screen.dart';
@@ -41,7 +42,16 @@ class _TopsScreenState extends State<TopsScreen> {
     return Scaffold(
       appBar: AppBar(
         leading: const AppLogoAppBarLeading(),
-        title: const Text('Meus Tops'),
+        title: CabecalhoUsuario(
+          perfil: _myProfile,
+          aoEditar: _myProfile == null
+              ? null
+              : () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const ChangePasswordScreen(),
+                  ),
+                ),
+        ),
         actions: [
           if (_myProfile?.role == UserRole.admin ||
               _myProfile?.isMasterAdmin == true)

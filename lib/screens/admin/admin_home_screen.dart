@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../widgets/app_logo.dart';
 import 'admin_tops_screen.dart';
 import 'admin_triage_rules_screen.dart';
+import 'admin_acessos_screen.dart';
 import 'admin_users_screen.dart';
 
 /// Painel do admin/admin master: usuários, Tops e regras de triagem.
@@ -20,6 +21,16 @@ class AdminHomeScreen extends StatelessWidget {
       ),
       body: ListView(
         children: [
+          ListTile(
+            leading: const Icon(Icons.vpn_key_outlined),
+            title: const Text('Pedidos de acesso'),
+            subtitle: const Text('Liberar entrada por número do Legendários'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AdminAcessosScreen()),
+            ),
+          ),
+          const Divider(height: 1),
           ListTile(
             leading: const Icon(Icons.people),
             title: const Text('Usuários'),

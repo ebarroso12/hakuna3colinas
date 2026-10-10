@@ -1,6 +1,8 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/profile.dart';
+import '../models/team.dart';
+import '../models/team_message.dart';
 import '../models/top.dart';
 import '../models/triage_rule.dart';
 
@@ -181,6 +183,83 @@ class AdminService {
   /// Todas as regras de triagem (inclusive inativas) — usado na tela de
   /// edição do admin master. Leitores comuns usam
   /// SupabaseService.fetchActiveTriageRules().
+  // --- Equipes do Top ------------------------------------------------
+
+  /// Todos os vinculos de equipe de um Top.
+  ///
+  /// Quem pode ver o que e decidido pela RLS: admin ve tudo, coordenador ve
+  /// a propria equipe. Esta consulta nao filtra - deixa o banco filtrar.
+  Future<List<TeamMembership>> fetchTeamMembers(String topId) async {
+    final rows = await _client
+        .from('top_team_members')
+        .select()
+        .eq('top_id', topId);
+    return rows.map((r) => TeamMembership.fromMap(r)).toList();
+  }
+
+  /// Inclui alguem numa equipe.
+  ///
+  /// [papel] diferente de `membro` so passa se quem chama for admin - a
+  /// policy de INSERT exige isso. Coordenador inclui membro, nao cria
+  /// outro coordenador.
+  Future<void> addTeamMember({
+    required String topId,
+    required TeamKey team,
+    required String profileId,
+    TeamRole papel = TeamRole.membro,
+    bool released = true,
+  }) {
+    return _client.from('top_team_members').insert({
+      'top_id': topId,
+      'team': team.name,
+      'profile_id': profileId,
+      'team_role': papel.name,
+      'released': released,
+      'blocked': false,
+    });
+  }
+
+  /// Muda o papel de alguem dentro da equipe.
+  ///
+  /// Promover a coordenador/subcoordenador e exclusivo do admin: a policy
+  /// de UPDATE recusa de qualquer outro, mesmo do coordenador da equipe.
+  Future<void> setTeamRole({
+    required int membershipId,
+    required TeamRole papel,
+  }) {
+    return _client
+        .from('top_team_members')
+        .update({'team_role': papel.name})
+        .eq('id', membershipId);
+  }
+
+  Future<void> setTeamReleased({
+    required int membershipId,
+    required bool released,
+  }) {
+    return _client
+        .from('top_team_members')
+        .update({'released': released})
+        .eq('id', membershipId);
+  }
+
+  /// Bloqueia sem remover: o historico de quem passou pela equipe fica, e
+  /// o bloqueado perde acesso ao chat na hora.
+  Future<void> setTeamBlocked({
+    required int membershipId,
+    required bool blocked,
+  }) {
+    return _client
+        .from('top_team_members')
+        .update({'blocked': blocked})
+        .eq('id', membershipId);
+  }
+
+  /// Remove de vez. So coordenador ou admin - subcoordenador nao remove.
+  Future<void> removeTeamMember(int membershipId) {
+    return _client.from('top_team_members').delete().eq('id', membershipId);
+  }
+
   Future<List<TriageRule>> fetchAllTriageRules() async {
     final rows = await _client.from('triage_rules').select().order('priority');
     return rows.map((r) => TriageRule.fromMap(r)).toList();

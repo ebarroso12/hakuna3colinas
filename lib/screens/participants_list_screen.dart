@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../models/participant.dart';
+import '../models/profile.dart';
 import '../models/top.dart';
 import '../models/triage_rule.dart';
 import '../services/supabase_service.dart';
 import '../services/triage_service.dart';
 import '../widgets/app_logo.dart';
 import '../widgets/barra_inferior.dart';
+import '../widgets/cabecalho_usuario.dart';
 import '../widgets/emblemas.dart';
 import 'ler_tag_screen.dart';
 import 'participant_file_screen.dart';
@@ -33,6 +35,7 @@ class _ParticipantsListScreenState extends State<ParticipantsListScreen> {
 
   List<Participant> _todos = [];
   List<TriageRule> _regras = [];
+  Profile? _meuPerfil;
   bool _carregando = true;
   String? _erro;
 
@@ -60,6 +63,11 @@ class _ParticipantsListScreenState extends State<ParticipantsListScreen> {
       final participantes = await SupabaseService.instance.fetchParticipants(
         widget.top.id,
       );
+      // O cabecalho mostra quem esta logado naquele aparelho — falhar aqui
+      // nao impede a lista de aparecer.
+      try {
+        _meuPerfil = await SupabaseService.instance.fetchMyProfile();
+      } catch (_) {}
       // As regras de triagem vêm junto pra pintar a cor de cada linha sem
       // uma consulta por participante.
       List<TriageRule> regras = const [];
@@ -106,19 +114,10 @@ class _ParticipantsListScreenState extends State<ParticipantsListScreen> {
     final lista = _filtrados;
     return Scaffold(
       appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Participantes'),
-            Text(
-              widget.top.topNumber != null
-                  ? 'TOP# ${widget.top.topNumber}'
-                  : widget.top.name,
-              style: Theme.of(context).textTheme.labelSmall,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
+        titleSpacing: 0,
+        title: CabecalhoUsuario(
+          perfil: _meuPerfil,
+          numeroTop: widget.top.topNumber,
         ),
         actions: [
           IconButton(

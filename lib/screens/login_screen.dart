@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
 import '../widgets/password_field.dart';
+import 'login_numero_screen.dart';
 import 'login_with_code_screen.dart';
 import 'signup_screen.dart';
 
@@ -136,6 +137,16 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
                 child: const Text('Esqueci minha senha / entrar com código'),
+              ),
+              // Entrada principal para a equipe: so Legendario usa o app, e
+              // ele sabe o proprio numero de cor. E-mail/senha fica como
+              // alternativa para quem ja tem conta.
+              FilledButton.tonalIcon(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const LoginNumeroScreen()),
+                ),
+                icon: const Icon(Icons.badge_outlined),
+                label: const Text('Entrar com número do Legendários'),
               ),
             ],
           ),

@@ -11,6 +11,7 @@ import '../services/stats_service.dart';
 import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
 import '../widgets/barra_inferior.dart';
+import 'admin/admin_equipes_screen.dart';
 import 'admin/admin_top_form_screen.dart';
 import 'participants_list_screen.dart';
 import 'team_chats_screen.dart';
@@ -325,6 +326,17 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
                     top: widget.top,
                     hakunaProfiles: _hakunaProfiles,
                   ),
+                ),
+              ),
+            ),
+          if (podeEditarTop)
+            IconButton(
+              icon: const Icon(Icons.groups_2_outlined),
+              tooltip: 'Equipes do Top',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) =>
+                      AdminEquipesScreen(top: widget.top, souAdmin: true),
                 ),
               ),
             ),
