@@ -99,7 +99,7 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
     } catch (e) {
       // Duas causas bem diferentes pro mesmo erro: GPS desligado no sistema
       // (resolve em Configurações > Localização) ou permissão do app negada
-      // (resolve em Configurações > Apps > Hakuna Connect). Cada uma abre
+      // (resolve em Configurações > Apps > Legendario Connect). Cada uma abre
       // uma tela do Android diferente — misturar as duas confunde o usuário.
       final serviceDisabled = await LocationService.instance
           .isLocationServiceDisabled();

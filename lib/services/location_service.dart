@@ -96,7 +96,7 @@ class LocationService {
         accuracy: LocationAccuracy.high,
         distanceFilter: _distanceFilterMeters,
         foregroundNotificationConfig: const ForegroundNotificationConfig(
-          notificationTitle: 'Legendários Connect',
+          notificationTitle: 'Legendario Connect',
           notificationText: 'Rastreando sua posição neste Top',
           notificationChannelName: 'Rastreamento de posição',
           enableWakeLock: true,

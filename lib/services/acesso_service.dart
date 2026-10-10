@@ -53,6 +53,41 @@ class AcessoService {
   /// Identificador interno a partir do número. Só dígitos entram.
   static String emailPara(String numero) => '${numero.trim()}@$dominioInterno';
 
+  /// Converte o que a pessoa digitou no e-mail que o Supabase Auth espera.
+  ///
+  /// Um campo só para as duas formas de entrar, em vez de obrigar a
+  /// escolher "modo número" ou "modo e-mail" antes de digitar:
+  ///
+  /// ```
+  ///   203460                  ->  203460@legendarios.app
+  ///   edson.barroso@gmail.com ->  edson.barroso@gmail.com
+  /// ```
+  ///
+  /// A regra é a presença do `@`. Número do Legendários é só dígito (ver
+  /// [regexNumero]), então nunca contém arroba — não há ambiguidade.
+  ///
+  /// **Os dois caminhos existem porque servem a gente diferente.** O
+  /// Legendário entra por número: é a identidade dele no movimento, e
+  /// `203460@legendarios.app` não é caixa de entrada nenhuma — ninguém
+  /// nunca digita isso. Admin e equipe entram por e-mail real, porque
+  /// foram cadastrados assim e precisam de recuperação por e-mail.
+  ///
+  /// Quem libera e-mail é o admin, pelo `approved` em `profiles`: conta
+  /// criada sem aprovação autentica mas para na tela de espera do
+  /// `AuthGate`. Autenticar e ter acesso são coisas separadas aqui.
+  ///
+  /// **Armadilha conhecida:** quem tem número E e-mail próprio precisa
+  /// entrar pelo e-mail. O admin master, por exemplo, tem
+  /// `legendarios_number = 203460` mas conta no Gmail; digitar 203460
+  /// procuraria `203460@legendarios.app`, que não existe. São contas
+  /// diferentes para o Supabase, e unificá-las custaria a recuperação por
+  /// e-mail dele.
+  static String identificadorParaEmail(String digitado) {
+    final texto = digitado.trim();
+    if (texto.contains('@')) return texto;
+    return emailPara(texto);
+  }
+
   /// Número do Legendários: só dígitos, de 1 a 12.
   ///
   /// Era `{4,10}`. Mudou porque ninguém sabe até onde a numeração vai

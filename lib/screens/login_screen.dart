@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../services/acesso_service.dart';
 import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
 import '../widgets/password_field.dart';
@@ -15,7 +16,9 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _emailController = TextEditingController();
+  /// Aceita numero do Legendarios OU e-mail. Ver
+  /// `AcessoService.identificadorParaEmail`.
+  final _identificador = TextEditingController();
   final _passwordController = TextEditingController();
   bool _loading = false;
   bool _loadingGoogle = false;
@@ -29,8 +32,11 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       // Não navega manualmente: o AuthGate, na raiz do app, escuta
       // authStateChanges e troca para a TopsScreen sozinho.
+      // Um campo so: numero vira `numero@legendarios.app`, e-mail passa
+      // direto. O Legendario entra pelo numero dele; admin e equipe, pelo
+      // e-mail que o admin liberou.
       await SupabaseService.instance.signIn(
-        email: _emailController.text.trim(),
+        email: AcessoService.identificadorParaEmail(_identificador.text),
         password: _passwordController.text,
       );
     } catch (e) {
@@ -65,7 +71,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Hakuna Connect')),
+      appBar: AppBar(title: const Text('Legendario Connect')),
       // Rola quando não cabe (tela baixa, teclado aberto, mensagem de erro
       // longa) em vez de estourar o layout; continua centralizado quando cabe.
       body: Center(
@@ -78,9 +84,17 @@ class _LoginScreenState extends State<LoginScreen> {
               const Center(child: AppLogo(size: 140)),
               const SizedBox(height: 24),
               TextField(
-                controller: _emailController,
+                controller: _identificador,
+                // `emailAddress` e nao `number`: o teclado precisa ter
+                // arroba para quem entra por e-mail, e digito para quem
+                // entra por numero. Um teclado numerico esconderia o @.
                 keyboardType: TextInputType.emailAddress,
-                decoration: const InputDecoration(labelText: 'E-mail'),
+                autocorrect: false,
+                decoration: const InputDecoration(
+                  labelText: 'Número do Legendários ou e-mail',
+                  helperText: 'Legendário entra com o número. '
+                      'Admin e equipe, com o e-mail.',
+                ),
               ),
               const SizedBox(height: 12),
               PasswordField(
@@ -144,15 +158,16 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 child: const Text('Esqueci minha senha / entrar com código'),
               ),
-              // Entrada principal para a equipe: so Legendario usa o app, e
-              // ele sabe o proprio numero de cor. E-mail/senha fica como
-              // alternativa para quem ja tem conta.
+              // O campo la de cima ja aceita o numero de quem JA TEM
+              // conta. Este botao e outra coisa: quem ainda nao tem, pede
+              // acesso e entra com o codigo do admin. Rotulo separado para
+              // os dois nao se confundirem na mesma tela.
               FilledButton.tonalIcon(
                 onPressed: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const LoginNumeroScreen()),
                 ),
                 icon: const Icon(Icons.badge_outlined),
-                label: const Text('Entrar com número do Legendários'),
+                label: const Text('Primeiro acesso / pedir código'),
               ),
             ],
           ),
