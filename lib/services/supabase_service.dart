@@ -16,6 +16,7 @@ import '../models/top.dart';
 import '../models/top_alert.dart';
 import '../models/triage_rule.dart';
 import '../models/vital_signs.dart';
+import '../offline/falha_de_envio.dart';
 
 /// Traduz os erros mais comuns de autenticação do Supabase pra mensagens
 /// que fazem sentido pro usuário — sem isso ele via a exceção crua (em
@@ -90,6 +91,69 @@ class SupabaseService {
   /// Finge uma sessão nos testes da camada offline. Null em produção.
   @visibleForTesting
   static String? idDeUsuarioParaTestes;
+
+  /// Envolve um envio da fila e classifica a falha.
+  ///
+  /// Sem isto, uma recusa definitiva da RLS é tratada como queda de rede e
+  /// **bloqueia a fila inteira para sempre** — o [SyncService] para na
+  /// primeira falha, relê a fila na mesma ordem e trava na mesma entrada.
+  /// Ver [FalhaPermanente].
+  ///
+  /// Na dúvida, classifica como TRANSITÓRIA. Errar para "permanente"
+  /// descarta dado clínico de verdade; errar para "transitória" só atrasa,
+  /// e o teto de tentativas do [SyncService] é a rede de segurança para
+  /// esse caso.
+  Future<void> _envioDaFila(
+    String oQue,
+    Future<void> Function() acao,
+  ) async {
+    try {
+      await acao();
+    } on PostgrestException catch (e) {
+      final motivo = _motivoPermanente(e);
+      if (motivo != null) throw FalhaPermanente('$oQue: $motivo', e);
+      rethrow;
+    }
+  }
+
+  /// Devolve a explicação se o erro for definitivo, ou null se vale
+  /// insistir.
+  ///
+  /// `PostgrestException.code` chega de dois jeitos: SQLSTATE do Postgres
+  /// (`42501`) quando o banco recusou, ou status HTTP em texto (`403`)
+  /// quando o PostgREST recusou antes. Trata os dois.
+  static String? _motivoPermanente(PostgrestException e) {
+    final code = e.code ?? '';
+
+    // SQLSTATE 42501 = insufficient_privilege. É o código da RLS: a linha
+    // não passou no `with check` da policy.
+    if (code == '42501') {
+      return 'recusado pelas permissões do servidor (RLS)';
+    }
+    // Classe 23 = violação de integridade. 23505 é unicidade, que no nosso
+    // caso quer dizer "já subiu" — e isso é sucesso disfarçado de erro.
+    if (code == '23505') return 'registro já existe no servidor';
+    if (code.startsWith('23')) return 'dado recusado pelo banco ($code)';
+    // Classe 22 = dado fora de domínio (texto longo demais, data inválida).
+    if (code.startsWith('22')) return 'dado inválido ($code)';
+    // 42xxx restante = coluna/tabela que não existe. App mais novo que o
+    // banco, ou o contrário. Insistir não resolve.
+    if (code.startsWith('42')) return 'esquema incompatível ($code)';
+
+    final status = int.tryParse(code) ?? 0;
+    // 408 e 429 ficam de fora: timeout e limite de taxa passam.
+    if (status == 400 ||
+        status == 401 ||
+        status == 403 ||
+        status == 404 ||
+        status == 409 ||
+        status == 422) {
+      return 'servidor recusou ($status)';
+    }
+
+    // 5xx, rede, timeout e qualquer coisa não reconhecida: transitória.
+    return null;
+  }
 
   Stream<AuthState> get authStateChanges => _client.auth.onAuthStateChange;
 
@@ -361,10 +425,12 @@ class SupabaseService {
   ///
   /// Chamado pelo [SyncService], não pelas telas — quem envia é o
   /// `ChatRepositorio`.
-  Future<void> enviarMensagemEquipe(Map<String, dynamic> payload) async {
-    await _client
-        .from('team_messages')
-        .upsert(payload, onConflict: 'client_id', ignoreDuplicates: true);
+  Future<void> enviarMensagemEquipe(Map<String, dynamic> payload) {
+    return _envioDaFila('mensagem de equipe', () async {
+      await _client
+          .from('team_messages')
+          .upsert(payload, onConflict: 'client_id', ignoreDuplicates: true);
+    });
   }
 
   /// Busca a tag pelo token. Null quando o token nao existe.
@@ -456,17 +522,21 @@ class SupabaseService {
   ///
   /// Chamado pelo [SyncService], não pelas telas — quem audita é o
   /// `AuditoriaService`, que enfileira.
-  Future<void> enviarLeituraTag(Map<String, dynamic> payload) async {
-    await _client
-        .from('tag_leituras')
-        .upsert(payload, onConflict: 'client_id', ignoreDuplicates: true);
+  Future<void> enviarLeituraTag(Map<String, dynamic> payload) {
+    return _envioDaFila('leitura de pulseira', () async {
+      await _client
+          .from('tag_leituras')
+          .upsert(payload, onConflict: 'client_id', ignoreDuplicates: true);
+    });
   }
 
   /// Sobe um evento de `audit_log` que saiu da fila offline.
-  Future<void> enviarAuditoria(Map<String, dynamic> payload) async {
-    await _client
-        .from('audit_log')
-        .upsert(payload, onConflict: 'client_id', ignoreDuplicates: true);
+  Future<void> enviarAuditoria(Map<String, dynamic> payload) {
+    return _envioDaFila('registro de auditoria', () async {
+      await _client
+          .from('audit_log')
+          .upsert(payload, onConflict: 'client_id', ignoreDuplicates: true);
+    });
   }
 
   /// Tags de um Top, para o admin gerenciar e para o app cachear antes de
@@ -485,10 +555,12 @@ class SupabaseService {
   /// `upsert` por `client_id` e nao `insert`: se a rede caiu depois de o
   /// servidor ja ter gravado, reenviar nao pode criar um segundo registro
   /// no historico clinico da pessoa.
-  Future<void> enviarAtendimento(Map<String, dynamic> payload) async {
-    await _client
-        .from('atendimentos')
-        .upsert(payload, onConflict: 'client_id', ignoreDuplicates: true);
+  Future<void> enviarAtendimento(Map<String, dynamic> payload) {
+    return _envioDaFila('atendimento', () async {
+      await _client
+          .from('atendimentos')
+          .upsert(payload, onConflict: 'client_id', ignoreDuplicates: true);
+    });
   }
 
   /// Sobe uma foto de atendimento: primeiro o arquivo para o Storage,
@@ -677,10 +749,12 @@ class SupabaseService {
 
   /// Sobe uma mensagem do chat do Top que saiu da fila offline.
   /// Mesma razão do `upsert` em [enviarMensagemEquipe].
-  Future<void> enviarMensagemTop(Map<String, dynamic> payload) async {
-    await _client
-        .from('top_hakuna_messages')
-        .upsert(payload, onConflict: 'client_id', ignoreDuplicates: true);
+  Future<void> enviarMensagemTop(Map<String, dynamic> payload) {
+    return _envioDaFila('mensagem do Top', () async {
+      await _client
+          .from('top_hakuna_messages')
+          .upsert(payload, onConflict: 'client_id', ignoreDuplicates: true);
+    });
   }
 
   /// Sinal de alarme do Top (acidente/atendimento crítico), em tempo real.

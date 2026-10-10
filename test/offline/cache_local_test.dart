@@ -417,12 +417,13 @@ void main() {
     });
   });
 
-  group('migração da v1 para a v2', () {
-    test('banco antigo ganha as tabelas de cache sem perder a fila', () async {
+  group('migrações do esquema local', () {
+    test('banco novo nasce na versão atual com todas as tabelas', () async {
       // Abre, grava na fila (que existe desde a v1) e confirma que as
       // tabelas novas estão acessíveis no mesmo banco.
       final db = await LocalDb.instance.database;
-      expect(db.getVersion(), completion(2));
+      // v1 fila · v2 cache de leitura · v3 quarentena
+      expect(db.getVersion(), completion(3));
 
       final tabelas =
           (await db.rawQuery(
@@ -440,8 +441,17 @@ void main() {
           'cache_tags',
           'cache_regras_triagem',
           'cache_ultima_afericao',
+          'estado_local',
         ]),
       );
+    });
+
+    test('outbox tem as colunas de quarentena (v3)', () async {
+      final db = await LocalDb.instance.database;
+      final colunas = (await db.rawQuery('PRAGMA table_info(outbox)'))
+          .map((l) => l['name'] as String)
+          .toSet();
+      expect(colunas, containsAll(['quarantined_at', 'quarantine_reason']));
     });
   });
 }

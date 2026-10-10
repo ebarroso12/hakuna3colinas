@@ -24,7 +24,7 @@ class LocalDb {
 
   /// Subir este número roda as migrações em [_upgrade]. Nunca editar uma
   /// migração já publicada: adicionar a próxima.
-  static const _schemaVersion = 2;
+  static const _schemaVersion = 3;
 
   Database? _db;
 
@@ -78,13 +78,24 @@ class LocalDb {
         attempts        INTEGER NOT NULL DEFAULT 0,
         last_attempt_at INTEGER,
         last_error      TEXT,
-        synced_at       INTEGER
+        synced_at       INTEGER,
+        -- QUARENTENA: entrada recusada de forma definitiva pelo servidor.
+        --
+        -- Sai da fila de envio mas NAO e apagada: e dado clinico ou
+        -- mensagem de equipe que alguem escreveu e precisa saber que nao
+        -- chegou. Sem isto, uma entrada recusada pela RLS travava a fila
+        -- inteira para sempre, porque o sync para no primeiro erro e rele
+        -- a fila na mesma ordem.
+        quarantined_at     INTEGER,
+        quarantine_reason  TEXT
       )
     ''');
 
-    // Busca a fila pendente na ordem em que foi criada.
+    // Busca a fila pendente na ordem em que foi criada. `quarantined_at`
+    // entra no indice porque a consulta de pendentes exclui quarentena.
     await db.execute(
-      'CREATE INDEX idx_outbox_pendente ON outbox (synced_at, created_at)',
+      'CREATE INDEX idx_outbox_pendente '
+      'ON outbox (synced_at, quarantined_at, created_at)',
     );
     // Barra duplicata da mesma escrita, mesmo se a tela chamar duas vezes.
     await db.execute(
@@ -139,6 +150,22 @@ class LocalDb {
   /// que já rodou a versão antiga não roda de novo.
   Future<void> _upgrade(Database db, int from, int to) async {
     if (from < 2) await _criarCacheDeLeitura(db);
+    if (from < 3) await _criarQuarentena(db);
+  }
+
+  /// v3: quarentena de entradas recusadas em definitivo pelo servidor.
+  ///
+  /// Ver o comentario em `outbox` no [_criarEsquema]. Em aparelho que ja
+  /// rodou a v2 as colunas sao adicionadas e o indice de pendentes e
+  /// refeito para incluir `quarantined_at`.
+  Future<void> _criarQuarentena(Database db) async {
+    await db.execute('ALTER TABLE outbox ADD COLUMN quarantined_at INTEGER');
+    await db.execute('ALTER TABLE outbox ADD COLUMN quarantine_reason TEXT');
+    await db.execute('DROP INDEX IF EXISTS idx_outbox_pendente');
+    await db.execute(
+      'CREATE INDEX idx_outbox_pendente '
+      'ON outbox (synced_at, quarantined_at, created_at)',
+    );
   }
 
   /// Fecha o banco. Usado nos testes entre casos.

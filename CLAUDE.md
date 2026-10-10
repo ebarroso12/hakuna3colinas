@@ -81,6 +81,27 @@ Nomes de coluna no SQLite são **idênticos** aos do Postgres, para o mesmo
 gravadas por `TextoBusca` no momento do cache. Não compare contra
 `full_name` ou `familia` crus: `"joao"` não acha `"JOÃO"`.
 
+### A fila nunca pode travar
+`SyncService` para no primeiro erro **transitório** — certo para queda de
+rede. Mas recusa definitiva do servidor (RLS, dado inválido, esquema
+incompatível) vai para **quarentena** e a sincronização **segue**.
+
+Sem isso, uma entrada recusada bloqueia tudo que está atrás dela para
+sempre: a próxima rodada relê a fila na mesma ordem e trava na mesma
+entrada. Cenário vivo: o Top 1782 está em `draft`, e a RLS de
+`team_messages` recusa mensagem no chat geral enquanto for draft — uma
+mensagem prenderia atendimento, GPS, foto e auditoria.
+
+Quem classifica é `SupabaseService._envioDaFila`, porque é lá que os tipos
+do Postgrest existem. **Na dúvida, classifica como transitória**: descartar
+dado clínico é pior que atrasar. `SyncService.maxTentativas` é a rede de
+segurança para o erro mal classificado.
+
+Quarentena **não apaga** e é visível em `FilaOfflineScreen` (ícone de nuvem
+na tela do Top, com badge). Entrada que sai da fila sem ninguém saber é
+perda silenciosa — pior que fila travada, porque na travada alguém percebe.
+Resolvida a causa, "Devolver à fila" reenvia.
+
 ### Nada escreve direto no Supabase — tudo passa pela fila
 Atendimento, foto, posição, **chat** e **auditoria** entram no `outbox` e
 sobem depois. Tela nenhuma chama `insert` no Supabase.
@@ -220,6 +241,13 @@ validando uma configuração que não existe mais.
   há nenhuma hoje) ficariam com null; ler sempre
   `coalesce(occurred_at, created_at)`.
 - **Troca de usuário no mesmo aparelho.** Se o Hakuna A registrar offline e
-  o B logar antes do sync, a fila de A trava com erro de RLS (`sender_id` /
-  `lida_por` / `actor_id` presos a `auth.uid()`). Hoje isso é evitado por
-  convenção, não por código.
+  o B logar antes do sync, a fila de A é recusada pela RLS (`sender_id` /
+  `lida_por` / `actor_id` presos a `auth.uid()`). Desde a v1.0.19 isso vai
+  para quarentena em vez de travar a fila, mas **o registro de A não sobe** —
+  precisaria ser reatribuído, e nada faz isso.
+- **APK com 76 MB.** O modelo do ML Kit vai embutido para o QR funcionar
+  sem rede (ver `android/gradle.properties`). Se virar problema, o caminho
+  é `--split-per-abi`, não desligar o bundling.
+- **Top 1782 está em `draft`.** A RLS do chat geral recusa mensagem
+  enquanto for draft — toda mensagem vai para quarentena. Ativar o Top
+  resolve.

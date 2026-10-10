@@ -29,6 +29,12 @@ class OutboxEntry {
   final String? lastError;
   final DateTime? syncedAt;
 
+  /// Quando o servidor recusou isto em definitivo. Null = nunca.
+  final DateTime? quarantinedAt;
+
+  /// Por que foi recusado, em português. Vai para a tela de quem resolve.
+  final String? quarantineReason;
+
   OutboxEntry({
     required this.id,
     required this.entity,
@@ -41,9 +47,14 @@ class OutboxEntry {
     this.lastAttemptAt,
     this.lastError,
     this.syncedAt,
+    this.quarantinedAt,
+    this.quarantineReason,
   });
 
-  bool get isPending => syncedAt == null;
+  bool get isQuarantined => quarantinedAt != null;
+
+  /// Esperando envio: nem subiu, nem foi recusada em definitivo.
+  bool get isPending => syncedAt == null && quarantinedAt == null;
 
   factory OutboxEntry.fromMap(Map<String, dynamic> map) {
     return OutboxEntry(
@@ -65,6 +76,10 @@ class OutboxEntry {
       syncedAt: map['synced_at'] != null
           ? DateTime.fromMillisecondsSinceEpoch(map['synced_at'] as int)
           : null,
+      quarantinedAt: map['quarantined_at'] != null
+          ? DateTime.fromMillisecondsSinceEpoch(map['quarantined_at'] as int)
+          : null,
+      quarantineReason: map['quarantine_reason'] as String?,
     );
   }
 }
@@ -121,13 +136,14 @@ class Outbox {
   ///
   /// A ordem importa: a posição registrada às 9h tem que chegar antes da
   /// registrada às 10h, senão a trilha sobe embaralhada.
+  /// Entradas em quarentena NÃO entram aqui: é o que impede uma recusa
+  /// definitiva de travar tudo que está atrás dela na fila.
   Future<List<OutboxEntry>> pending({int limit = 200, String? entity}) async {
     final db = await LocalDb.instance.database;
+    final base = 'synced_at IS NULL AND quarantined_at IS NULL';
     final rows = await db.query(
       'outbox',
-      where: entity == null
-          ? 'synced_at IS NULL'
-          : 'synced_at IS NULL AND entity = ?',
+      where: entity == null ? base : '$base AND entity = ?',
       whereArgs: entity == null ? null : [entity],
       orderBy: 'created_at ASC, id ASC',
       limit: limit,
@@ -137,11 +153,111 @@ class Outbox {
 
   Future<int> pendingCount({String? entity}) async {
     final db = await LocalDb.instance.database;
+    const base =
+        'SELECT COUNT(*) c FROM outbox '
+        'WHERE synced_at IS NULL AND quarantined_at IS NULL';
     final rows = await db.rawQuery(
-      entity == null ? 'SELECT COUNT(*) c FROM outbox WHERE synced_at IS NULL' : 'SELECT COUNT(*) c FROM outbox WHERE synced_at IS NULL AND entity = ?',
+      entity == null ? base : '$base AND entity = ?',
       entity == null ? null : [entity],
     );
     return (rows.first['c'] as int?) ?? 0;
+  }
+
+  // =====================================================================
+  // QUARENTENA
+  // =====================================================================
+
+  /// Tira a entrada da fila de envio, sem apagar.
+  ///
+  /// Chamada quando o servidor recusa em definitivo — RLS, dado inválido,
+  /// esquema incompatível. Antes disto o [SyncService] parava na entrada
+  /// recusada e **relia a fila na mesma ordem**, travando atendimento, GPS,
+  /// foto e auditoria atrás dela para sempre.
+  ///
+  /// Não apaga porque é dado que alguém escreveu: atendimento clínico ou
+  /// mensagem de equipe. Quem escreveu precisa saber que não chegou.
+  Future<void> quarantine(int id, String motivo) async {
+    final db = await LocalDb.instance.database;
+    await db.update(
+      'outbox',
+      {
+        'quarantined_at': DateTime.now().millisecondsSinceEpoch,
+        'quarantine_reason': motivo,
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// Entradas recusadas, mais recentes primeiro. Para a tela de diagnóstico.
+  Future<List<OutboxEntry>> quarantined({int limit = 200}) async {
+    final db = await LocalDb.instance.database;
+    final rows = await db.query(
+      'outbox',
+      where: 'quarantined_at IS NOT NULL AND synced_at IS NULL',
+      orderBy: 'quarantined_at DESC',
+      limit: limit,
+    );
+    return rows.map(OutboxEntry.fromMap).toList();
+  }
+
+  Future<int> quarantinedCount() async {
+    final db = await LocalDb.instance.database;
+    final rows = await db.rawQuery(
+      'SELECT COUNT(*) c FROM outbox '
+      'WHERE quarantined_at IS NOT NULL AND synced_at IS NULL',
+    );
+    return (rows.first['c'] as int?) ?? 0;
+  }
+
+  /// Devolve à fila. Usado depois de a causa ser resolvida — o admin ativou
+  /// o Top, liberou o Hakuna, devolveu a coordenação da equipe.
+  ///
+  /// Zera `attempts`: a contagem antiga não diz nada sobre a tentativa nova,
+  /// e manter o número alto faria o teto do [SyncService] mandar para a
+  /// quarentena de novo no primeiro tropeço de rede.
+  Future<void> requeue(int id) async {
+    final db = await LocalDb.instance.database;
+    await db.update(
+      'outbox',
+      {
+        'quarantined_at': null,
+        'quarantine_reason': null,
+        'attempts': 0,
+        'last_error': null,
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// Devolve tudo à fila de uma vez. Devolve quantas voltaram.
+  Future<int> requeueAll() async {
+    final db = await LocalDb.instance.database;
+    return db.update(
+      'outbox',
+      {
+        'quarantined_at': null,
+        'quarantine_reason': null,
+        'attempts': 0,
+        'last_error': null,
+      },
+      where: 'quarantined_at IS NOT NULL AND synced_at IS NULL',
+    );
+  }
+
+  /// Apaga uma entrada em quarentena. **Perde o dado.**
+  ///
+  /// Só por ação explícita de quem está olhando o registro: a mensagem
+  /// pode ser descartável, mas um atendimento não. Por isso não existe
+  /// "limpar quarentena" automático.
+  Future<void> descartar(int id) async {
+    final db = await LocalDb.instance.database;
+    await db.delete(
+      'outbox',
+      where: 'id = ? AND quarantined_at IS NOT NULL',
+      whereArgs: [id],
+    );
   }
 
   /// Marca como enviada. Não apaga a linha: o histórico permite auditar o

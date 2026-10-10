@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
@@ -5,6 +7,8 @@ import '../models/hakuna_position.dart';
 import '../models/profile.dart';
 import '../models/top.dart';
 import '../models/top_alert.dart';
+import '../offline/outbox.dart';
+import '../offline/sync_service.dart';
 import '../services/location_service.dart';
 import '../services/nfc_service.dart';
 import '../services/stats_service.dart';
@@ -14,6 +18,7 @@ import '../widgets/barra_inferior.dart';
 import 'admin/admin_equipes_screen.dart';
 import 'admin/admin_tags_screen.dart';
 import 'admin/admin_top_form_screen.dart';
+import 'fila_offline_screen.dart';
 import 'mapa_top_screen.dart';
 import 'participants_list_screen.dart';
 import 'team_chats_screen.dart';
@@ -321,6 +326,10 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
               ),
             ),
           ),
+          // Fila do aparelho. Badge vermelho quando há registro recusado:
+          // quarentena sem ninguém saber é perda silenciosa de dado, e um
+          // atendimento recusado tem de incomodar quem escreveu.
+          _BotaoFilaOffline(),
           IconButton(
             icon: const Icon(Icons.forum_outlined),
             tooltip: 'Chats do Top',
@@ -659,6 +668,80 @@ class _StatItem extends StatelessWidget {
         Text(value, style: Theme.of(context).textTheme.titleMedium),
         Text(label, style: Theme.of(context).textTheme.labelSmall),
       ],
+    );
+  }
+}
+
+/// Botao da fila do aparelho, com badge quando ha registro recusado.
+///
+/// Stateful e com o proprio Future porque a contagem muda sozinha — o
+/// SyncService roda em segundo plano — e nao faria sentido reconstruir a
+/// tela inteira do Top por causa disso.
+class _BotaoFilaOffline extends StatefulWidget {
+  @override
+  State<_BotaoFilaOffline> createState() => _BotaoFilaOfflineState();
+}
+
+class _BotaoFilaOfflineState extends State<_BotaoFilaOffline> {
+  int _recusados = 0;
+  int _pendentes = 0;
+  StreamSubscription<SyncStatus>? _sub;
+
+  @override
+  void initState() {
+    super.initState();
+    _contar();
+    // Reconta quando o sync muda de estado, em vez de ficar consultando o
+    // banco em timer e gastando bateria numa trilha de horas.
+    _sub = SyncService.instance.statusStream.listen((_) => _contar());
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _contar() async {
+    try {
+      final recusados = await Outbox.instance.quarantinedCount();
+      final pendentes = await Outbox.instance.pendingCount();
+      if (!mounted) return;
+      setState(() {
+        _recusados = recusados;
+        _pendentes = pendentes;
+      });
+    } catch (_) {
+      // Sem banco local a tela do Top continua funcionando.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final temRecusado = _recusados > 0;
+    final botao = IconButton(
+      icon: Icon(temRecusado ? Icons.cloud_off : Icons.cloud_queue),
+      tooltip: temRecusado
+          ? '$_recusados registro(s) recusado(s) pelo servidor'
+          : _pendentes > 0
+          ? '$_pendentes registro(s) esperando sinal'
+          : 'Fila do aparelho',
+      onPressed: () async {
+        await Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const FilaOfflineScreen()),
+        );
+        await _contar();
+      },
+    );
+
+    if (!temRecusado && _pendentes == 0) return botao;
+
+    return Badge(
+      label: Text('${temRecusado ? _recusados : _pendentes}'),
+      backgroundColor: temRecusado
+          ? Theme.of(context).colorScheme.error
+          : Theme.of(context).colorScheme.secondary,
+      child: botao,
     );
   }
 }

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 
+import 'falha_de_envio.dart';
 import 'outbox.dart';
 
 /// Como uma entrada da fila vira uma escrita no servidor.
@@ -17,12 +18,18 @@ class SyncReport {
   final int enviados;
   final int falharam;
   final int aindaPendentes;
+
+  /// Quantas foram recusadas em definitivo nesta rodada e saíram da fila.
+  /// Não são perda silenciosa: ficam no banco, visíveis, para quem resolver.
+  final int quarentenados;
+
   final Object? ultimoErro;
 
   const SyncReport({
     required this.enviados,
     required this.falharam,
     required this.aindaPendentes,
+    this.quarentenados = 0,
     this.ultimoErro,
   });
 
@@ -39,6 +46,16 @@ class SyncService {
   SyncService._();
 
   static final SyncService instance = SyncService._();
+
+  /// Quantas falhas seguidas antes de mandar a entrada para a quarentena.
+  ///
+  /// Rede de segurança para erro mal classificado: `_envioDaFila` erra para
+  /// o lado de "transitório" de propósito, e sem este teto um erro
+  /// definitivo que não foi reconhecido travaria a fila para sempre.
+  ///
+  /// 10 é folgado — com sincronização disparada a cada volta de sinal, dez
+  /// falhas seguidas na mesma entrada não são oscilação de cobertura.
+  static const maxTentativas = 10;
 
   final Map<String, OutboxUploader> _uploaders = {};
   final _statusController = StreamController<SyncStatus>.broadcast();
@@ -99,6 +116,7 @@ class SyncService {
 
     var enviados = 0;
     var falharam = 0;
+    var quarentenados = 0;
     Object? ultimoErro;
 
     try {
@@ -114,18 +132,61 @@ class SyncService {
           await uploader(entrada);
           await Outbox.instance.markSynced(entrada.id);
           enviados++;
+        } on FalhaPermanente catch (e) {
+          // Recusa definitiva: insistir não resolve. Sai da fila e a
+          // sincronização SEGUE para a próxima entrada.
+          //
+          // Sem isto, uma mensagem recusada pela RLS (Top em draft, por
+          // exemplo) travava atendimento, GPS, foto e auditoria atrás dela
+          // para sempre — porque o `break` abaixo parava tudo e a próxima
+          // rodada relia a fila na mesma ordem.
+          await Outbox.instance.quarantine(entrada.id, e.motivo);
+          quarentenados++;
+          ultimoErro = e;
+          continue;
         } catch (e) {
           await Outbox.instance.markFailed(entrada.id, e);
-          falharam++;
           ultimoErro = e;
-          // Para no primeiro erro de propósito: quase sempre é queda de
-          // rede, e insistir nas outras 199 só queima bateria e enche o
-          // log de erro igual.
+
+          // Teto de tentativas: rede de segurança para erro que foi
+          // classificado como transitório e não é. `_envioDaFila` erra
+          // para o lado de "transitório" de propósito (descartar dado
+          // clínico é pior que atrasar), e é aqui que esse erro para de
+          // custar a fila inteira.
+          //
+          // `attempts` é o valor ANTES desta tentativa, daí o `+ 1`.
+          if (entrada.attempts + 1 >= maxTentativas) {
+            await Outbox.instance.quarantine(
+              entrada.id,
+              'falhou ${entrada.attempts + 1} vezes seguidas; '
+              'último erro: $e',
+            );
+            quarentenados++;
+            continue;
+          }
+
+          falharam++;
+          // Para no primeiro erro TRANSITÓRIO de propósito: quase sempre é
+          // queda de rede, e insistir nas outras 199 só queima bateria e
+          // enche o log de erro igual.
           break;
         }
       }
 
       final restantes = await Outbox.instance.pendingCount();
+
+      // Limpa o que já subiu há mais de 30 dias. Rodava em teste nenhum e
+      // em produção nunca: a fila crescia sem fim, e numa trilha de 4 h o
+      // GPS sozinho gera centenas de linhas.
+      //
+      // Só depois de a fila esvaziar, e sem derrubar o sync se falhar:
+      // manutenção não pode custar um envio.
+      if (restantes == 0) {
+        try {
+          await Outbox.instance.purgeSynced();
+        } catch (_) {}
+      }
+
       _setStatus(
         falharam > 0
             ? SyncStatus.comErro
@@ -137,6 +198,7 @@ class SyncService {
         enviados: enviados,
         falharam: falharam,
         aindaPendentes: restantes,
+        quarentenados: quarentenados,
         ultimoErro: ultimoErro,
       );
     } finally {
