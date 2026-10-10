@@ -11,7 +11,20 @@ class Top {
   final String id;
   final String name;
   final String? topNumber;
+
+  /// Pista / local do evento ("Fazenda 3 Colinas").
   final String? location;
+
+  /// Cidade. Separada de [location] porque são coisas diferentes: a pista
+  /// tem nome próprio e a cidade é o que situa quem vem de fora.
+  final String? cidade;
+
+  /// Diretor responsável pelo Top.
+  ///
+  /// Campo informativo — quem manda no app é decidido por `role` e por
+  /// `top_hakunas`, não por este texto. Serve para a equipe saber a quem
+  /// recorrer no evento.
+  final String? diretorResponsavel;
 
   /// Caminho do emblema/brasão da pista no Storage. Null = sem emblema.
   final String? emblemaPath;
@@ -25,6 +38,8 @@ class Top {
     required this.name,
     this.topNumber,
     this.location,
+    this.cidade,
+    this.diretorResponsavel,
     this.emblemaPath,
     this.description,
     required this.status,
@@ -38,6 +53,8 @@ class Top {
       name: map['name'] as String,
       topNumber: map['top_number'] as String?,
       location: map['location'] as String?,
+      cidade: map['cidade'] as String?,
+      diretorResponsavel: map['diretor_responsavel'] as String?,
       emblemaPath: map['emblema_path'] as String?,
       description: map['description'] as String?,
       status: topStatusFromString(map['status'] as String),

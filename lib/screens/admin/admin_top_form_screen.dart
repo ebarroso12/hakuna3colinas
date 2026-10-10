@@ -7,9 +7,17 @@ import '../../models/top.dart';
 import '../../services/acesso_service.dart';
 import '../../services/admin_service.dart';
 import '../../widgets/app_logo.dart';
+import '../../widgets/ficha_medica.dart';
 import 'admin_top_members_screen.dart';
 
-/// Criação/edição de um Top: nome, número, local, descrição, status e datas.
+/// Criação/edição de um Top.
+///
+/// Número, nome, local/pista, cidade, diretor responsável, descrição,
+/// status, datas de início e fim, e o emblema da pista.
+///
+/// Depois de salvo, a tela ganha o bloco de **senha de cadastro do Top** —
+/// ela precisa do id, que num Top novo só existe depois do primeiro
+/// salvar. Ver `_BlocoSenhaDoTop`.
 class AdminTopFormScreen extends StatefulWidget {
   const AdminTopFormScreen({super.key, this.top});
 
@@ -62,6 +70,12 @@ class _AdminTopFormScreenState extends State<AdminTopFormScreen> {
   late final _locationController = TextEditingController(
     text: widget.top?.location,
   );
+  late final _cidadeController = TextEditingController(
+    text: widget.top?.cidade,
+  );
+  late final _diretorController = TextEditingController(
+    text: widget.top?.diretorResponsavel,
+  );
   late final _descriptionController = TextEditingController(
     text: widget.top?.description,
   );
@@ -108,6 +122,12 @@ class _AdminTopFormScreenState extends State<AdminTopFormScreen> {
       final location = _locationController.text.trim().isEmpty
           ? null
           : _locationController.text.trim();
+      final cidade = _cidadeController.text.trim().isEmpty
+          ? null
+          : _cidadeController.text.trim();
+      final diretor = _diretorController.text.trim().isEmpty
+          ? null
+          : _diretorController.text.trim();
       final description = _descriptionController.text.trim().isEmpty
           ? null
           : _descriptionController.text.trim();
@@ -119,6 +139,8 @@ class _AdminTopFormScreenState extends State<AdminTopFormScreen> {
           name: name,
           topNumber: topNumber,
           location: location,
+          cidade: cidade,
+          diretorResponsavel: diretor,
           description: description,
           status: _status,
           startsAt: _startsAt,
@@ -129,6 +151,8 @@ class _AdminTopFormScreenState extends State<AdminTopFormScreen> {
           name: name,
           topNumber: topNumber,
           location: location,
+          cidade: cidade,
+          diretorResponsavel: diretor,
           description: description,
           startsAt: _startsAt,
           endsAt: _endsAt,
@@ -203,6 +227,8 @@ class _AdminTopFormScreenState extends State<AdminTopFormScreen> {
     _nameController.dispose();
     _numberController.dispose();
     _locationController.dispose();
+    _cidadeController.dispose();
+    _diretorController.dispose();
     _descriptionController.dispose();
     super.dispose();
   }
@@ -244,38 +270,99 @@ class _AdminTopFormScreenState extends State<AdminTopFormScreen> {
                     _emblemaExtensao = null;
                   }),
           ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _nameController,
-            decoration: const InputDecoration(labelText: 'Nome do Top'),
+          const SecaoFicha('Identificação do Top'),
+          Row(
+            children: [
+              Expanded(
+                flex: 2,
+                child: TextField(
+                  controller: _numberController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Número do Top *',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                flex: 3,
+                child: TextField(
+                  controller: _nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Nome do Top *',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _numberController,
-            decoration: const InputDecoration(labelText: 'Número do Top'),
-          ),
-          const SizedBox(height: 12),
+
+          const SecaoFicha('Onde'),
           TextField(
             controller: _locationController,
-            decoration: const InputDecoration(labelText: 'Local'),
+            decoration: const InputDecoration(
+              labelText: 'Local / pista',
+              helperText: 'Ex.: Fazenda 3 Colinas',
+              border: OutlineInputBorder(),
+            ),
           ),
           const SizedBox(height: 12),
           TextField(
+            controller: _cidadeController,
+            // Separada do local porque sao coisas diferentes: a pista tem
+            // nome proprio, e a cidade e o que situa quem vem de fora.
+            decoration: const InputDecoration(
+              labelText: 'Cidade',
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+          ),
+
+          const SecaoFicha('Responsável'),
+          TextField(
+            controller: _diretorController,
+            textCapitalization: TextCapitalization.words,
+            decoration: const InputDecoration(
+              labelText: 'Diretor responsável',
+              // Deixa explicito que este campo nao da poder nenhum: quem
+              // manda no app vem de `role` e de `top_hakunas`.
+              helperText: 'Informativo — não define permissão no app',
+              border: OutlineInputBorder(),
+            ),
+          ),
+
+          const SecaoFicha('Detalhes'),
+          TextField(
             controller: _descriptionController,
-            decoration: const InputDecoration(labelText: 'Descrição'),
+            decoration: const InputDecoration(
+              labelText: 'Descrição',
+              border: OutlineInputBorder(),
+            ),
             minLines: 1,
             maxLines: 3,
           ),
           const SizedBox(height: 12),
+          const SecaoFicha('Situação'),
           DropdownButtonFormField<TopStatus>(
             initialValue: _status,
-            decoration: const InputDecoration(labelText: 'Status'),
+            decoration: const InputDecoration(
+              labelText: 'Status',
+              // Em rascunho ninguem se cadastra nem usa o chat geral: a
+              // RLS recusa. Avisar aqui evita o admin distribuir a senha e
+              // so descobrir depois que ninguem consegue entrar.
+              helperText: 'Rascunho impede cadastro e chat geral',
+              border: OutlineInputBorder(),
+            ),
             items: TopStatus.values
                 .map((s) => DropdownMenuItem(value: s, child: Text(s.name)))
                 .toList(),
             onChanged: (s) => setState(() => _status = s ?? _status),
           ),
-          const SizedBox(height: 12),
+
+          const SecaoFicha('Período'),
           ListTile(
             contentPadding: EdgeInsets.zero,
             title: Text(
@@ -318,6 +405,23 @@ class _AdminTopFormScreenState extends State<AdminTopFormScreen> {
           if (widget.top != null) ...[
             const Divider(height: 40),
             _BlocoSenhaDoTop(top: widget.top!),
+          ] else ...[
+            const Divider(height: 40),
+            // Sem este aviso o admin cria o Top, procura a senha e nao
+            // acha - ela depende do id, que so existe depois de salvar.
+            Row(
+              children: [
+                const Icon(Icons.info_outline, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'A senha de cadastro do Top aparece aqui depois de '
+                    'salvar.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+              ],
+            ),
           ],
         ],
       ),
