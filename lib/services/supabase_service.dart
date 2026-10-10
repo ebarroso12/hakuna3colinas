@@ -556,6 +556,33 @@ class SupabaseService {
     return rows.map((r) => Participant.fromMap(r)).toList();
   }
 
+  /// Cadastra um participante no Top.
+  ///
+  /// `registered_by` e obrigatorio na tabela e sai de quem esta logado -
+  /// e o que permite saber depois quem colocou cada pessoa no Top.
+  Future<Participant> criarParticipante(Map<String, dynamic> dados) async {
+    final linhas = await _client.from('top_participants').insert({
+      ...dados,
+      'registered_by': currentUser?.id,
+    }).select();
+    return Participant.fromMap(linhas.first);
+  }
+
+  Future<void> atualizarParticipante(
+    String participantId,
+    Map<String, dynamic> dados,
+  ) async {
+    // top_id e registered_by nao se alteram numa edicao: mudar o Top de um
+    // participante levaria o historico clinico dele junto pro lugar errado.
+    final limpos = {...dados}
+      ..remove('top_id')
+      ..remove('registered_by');
+    await _client
+        .from('top_participants')
+        .update(limpos)
+        .eq('id', participantId);
+  }
+
   Future<Participant?> fetchParticipant(String participantId) async {
     final rows = await _client
         .from('top_participants')

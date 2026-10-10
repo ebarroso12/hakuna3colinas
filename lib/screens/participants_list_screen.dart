@@ -10,6 +10,7 @@ import '../widgets/app_logo.dart';
 import '../widgets/barra_inferior.dart';
 import '../widgets/cabecalho_usuario.dart';
 import '../widgets/emblemas.dart';
+import 'admin/participante_form_screen.dart';
 import 'ler_tag_screen.dart';
 import 'participant_file_screen.dart';
 
@@ -127,6 +128,18 @@ class _ParticipantsListScreenState extends State<ParticipantsListScreen> {
           ),
           const AppLogoTrailing(),
         ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () async {
+          final criou = await Navigator.of(context).push<bool>(
+            MaterialPageRoute(
+              builder: (_) => ParticipanteFormScreen(top: widget.top),
+            ),
+          );
+          if (criou ?? false) await _carregar();
+        },
+        icon: const Icon(Icons.person_add),
+        label: const Text('Novo'),
       ),
       bottomNavigationBar: BarraInferior(
         // LER TAG fica na barra, como no app oficial: e a acao mais usada

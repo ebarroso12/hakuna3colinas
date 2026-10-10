@@ -6,6 +6,7 @@ import '../models/triage_rule.dart';
 import '../services/triage_service.dart';
 import '../widgets/app_logo.dart';
 import '../widgets/barra_inferior.dart';
+import 'admin/participante_form_screen.dart';
 import 'prontuario_screen.dart';
 
 /// FICHA DO PARTICIPANTE — tudo que o Hakuna precisa ver antes de atender.
@@ -40,7 +41,7 @@ class ParticipantFileScreen extends StatelessWidget {
         actions: const [AppLogoTrailing()],
       ),
       bottomNavigationBar: BarraInferior(
-        aoEditar: podeEditar ? () => _editarAinda(context) : null,
+        aoEditar: podeEditar ? () => _editar(context) : null,
         rotuloEditar: 'Editar ficha',
       ),
       body: ListView(
@@ -68,9 +69,12 @@ class ParticipantFileScreen extends StatelessWidget {
     );
   }
 
-  void _editarAinda(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Edição da ficha: próxima etapa.')),
+  void _editar(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            ParticipanteFormScreen(top: top, participante: participante),
+      ),
     );
   }
 
