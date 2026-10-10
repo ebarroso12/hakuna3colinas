@@ -359,25 +359,38 @@ class SupabaseService {
   /// isso, uma trilha de duas horas chegaria ao banco toda carimbada com o
   /// mesmo minuto em que o sinal voltou, e a distancia percorrida sairia
   /// errada.
+  /// Sobe uma posição que saiu da fila offline.
+  ///
+  /// `upsert onConflict: client_id` e não `insert`. Era insert puro, e isso
+  /// **duplicava pontos da trilha**: o outbox reenvia quando o envio
+  /// anterior falhou, e "falhou" inclui o caso em que o insert chegou e só
+  /// a resposta se perdeu — o normal com sinal ruim.
+  ///
+  /// Duplicata aqui não é cosmética: `StatsService` soma a distância entre
+  /// pontos consecutivos, então ponto repetido **infla a distância** e, com
+  /// ela, a estimativa de calorias. E é a entidade de maior volume do
+  /// sistema: um ponto a cada 15 m caminhados.
   Future<void> publishPosition({
     required String topId,
     required double latitude,
     required double longitude,
     String? recordedAt,
+    String? clientId,
   }) {
-    final uid = currentUser?.id;
+    final uid = currentUserId;
     if (uid == null) {
       return Future.error(
         StateError('Sessão expirada — não é possível publicar posição'),
       );
     }
-    return _client.from('hakuna_positions').insert({
+    return _client.from('hakuna_positions').upsert({
       'top_id': topId,
       'profile_id': uid,
       'latitude': latitude,
       'longitude': longitude,
       'recorded_at': ?recordedAt,
-    });
+      'client_id': ?clientId,
+    }, onConflict: 'client_id', ignoreDuplicates: true);
   }
 
   /// Perfis (nome + número do Legendários) dos Hakunas liberados num Top,

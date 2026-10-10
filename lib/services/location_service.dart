@@ -121,6 +121,8 @@ class LocationService {
         latitude: (entrada.payload['latitude'] as num).toDouble(),
         longitude: (entrada.payload['longitude'] as num).toDouble(),
         recordedAt: entrada.payload['recorded_at'] as String?,
+        // Sem isto o reenvio duplicaria o ponto. Ver publishPosition.
+        clientId: entrada.payload['client_id'] as String?,
       );
     });
   }
@@ -221,11 +223,16 @@ class LocationService {
                 // falha de conexao parava o rastreamento inteiro — numa
                 // trilha, a primeira area sem sinal matava a trilha toda.
                 // Agora o ponto fica no celular e sobe quando der.
+                final clientId = Outbox.novoClientId();
                 unawaited(
                   Outbox.instance
                       .enqueue(
                         entity: entityPosicao,
+                        clientId: clientId,
                         payload: {
+                          // Dentro do payload porque e o que o servidor ve:
+                          // o id na linha da fila nao chega ate la.
+                          'client_id': clientId,
                           'top_id': topId,
                           'latitude': position.latitude,
                           'longitude': position.longitude,
