@@ -78,11 +78,32 @@ jobs:
         id: assinatura
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
           if [ -n "$KEYSTORE_B64" ]; then
-            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/legendarios.jks"
+            # `tr -d` antes de decodificar: o secret pode chegar com CR,
+            # quebra de linha ou espaco dependendo de como foi colado. O
+            # `base64 -d` do GNU recusa qualquer um deles com "invalid
+            # input" - foi o que derrubou a build da v1.0.21, porque o
+            # PowerShell injeta CRLF ao canalizar para o `gh secret set`.
+            printf '%s' "$KEYSTORE_B64" | tr -d '\r\n ' | base64 -d \
+              > "$RUNNER_TEMP/legendarios.jks"
+
+            # Confere que saiu um keystore de verdade, e nao um arquivo
+            # vazio ou lixo. Falhar aqui, com mensagem clara, e melhor que
+            # falhar 8 minutos depois dentro do Gradle.
+            if [ ! -s "$RUNNER_TEMP/legendarios.jks" ]; then
+              echo "::error::keystore decodificado esta vazio - confira o secret ANDROID_KEYSTORE_BASE64"
+              exit 1
+            fi
+            keytool -list -keystore "$RUNNER_TEMP/legendarios.jks" \
+              -storepass "$KEYSTORE_PASS" >/dev/null 2>&1 || {
+                echo "::error::keystore invalido ou senha errada - confira ANDROID_KEYSTORE_BASE64 e ANDROID_KEYSTORE_PASSWORD"
+                exit 1
+              }
+
             echo "caminho=$RUNNER_TEMP/legendarios.jks" >> "$GITHUB_OUTPUT"
-            echo "Keystore de PRODUCAO preparado."
+            echo "Keystore de PRODUCAO preparado e validado."
           else
             echo "caminho=" >> "$GITHUB_OUTPUT"
             echo "Sem keystore: o APK sai assinado com a chave de DEBUG."
