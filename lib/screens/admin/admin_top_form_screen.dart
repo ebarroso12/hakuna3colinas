@@ -1,8 +1,10 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../models/top.dart';
+import '../../services/acesso_service.dart';
 import '../../services/admin_service.dart';
 import '../../widgets/app_logo.dart';
 import 'admin_top_members_screen.dart';
@@ -310,8 +312,175 @@ class _AdminTopFormScreenState extends State<AdminTopFormScreen> {
                   )
                 : const Text('Salvar'),
           ),
+
+          // Senha de convite: so faz sentido para Top que ja existe (o
+          // servidor precisa do id). Em Top novo, aparece depois de salvar.
+          if (widget.top != null) ...[
+            const Divider(height: 40),
+            _BlocoSenhaDoTop(top: widget.top!),
+          ],
         ],
       ),
+    );
+  }
+}
+
+/// Gera e mostra a senha de convite do Top.
+///
+/// Uma senha para o evento inteiro, anunciada ao grupo. Ela libera o
+/// CADASTRO, nunca o login: quem se cadastra sai com senha propria. Ver
+/// `PrimeiroAcessoScreen`.
+class _BlocoSenhaDoTop extends StatefulWidget {
+  const _BlocoSenhaDoTop({required this.top});
+
+  final Top top;
+
+  @override
+  State<_BlocoSenhaDoTop> createState() => _BlocoSenhaDoTopState();
+}
+
+class _BlocoSenhaDoTopState extends State<_BlocoSenhaDoTop> {
+  bool _gerando = false;
+
+  Future<void> _gerar() async {
+    // Gerar de novo INVALIDA a anterior na hora. Quem ja se cadastrou nao
+    // e afetado (tem senha propria), mas quem ainda nao, perde o convite
+    // antigo - e isso precisa ser uma escolha consciente, nao um toque
+    // acidental num botao.
+    final confirmou = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Gerar senha do Top?'),
+        content: const Text(
+          'Uma senha nova INVALIDA a anterior na hora.\n\n'
+          'Quem já se cadastrou não é afetado — cada um tem a senha dele. '
+          'Mas quem ainda não se cadastrou vai precisar da senha nova.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Gerar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmou != true) return;
+
+    setState(() => _gerando = true);
+    try {
+      final r = await AcessoService.instance.gerarSenhaDoTop(widget.top.id);
+      if (!mounted) return;
+      await _mostrar(r);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Não foi possível gerar: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _gerando = false);
+    }
+  }
+
+  /// A senha em claro aparece UMA vez. O banco guarda so o hash.
+  Future<void> _mostrar(SenhaDoTop r) {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Senha do Top'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(r.topNome, style: const TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 16),
+            Center(
+              child: SelectableText(
+                r.senha,
+                style: const TextStyle(
+                  fontSize: 30,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 4,
+                  fontFamily: 'monospace',
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Anuncie esta senha ao grupo do Top. Ela aparece só agora — '
+              'o sistema guarda apenas um resumo criptográfico dela.',
+              style: TextStyle(fontSize: 12),
+            ),
+            if (r.aviso != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                r.aviso!,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(ctx).colorScheme.error,
+                ),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton.icon(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: r.senha));
+              if (ctx.mounted) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(content: Text('Senha copiada')),
+                );
+              }
+            },
+            icon: const Icon(Icons.copy),
+            label: const Text('Copiar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Anotei'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'SENHA DE CADASTRO DO TOP',
+          style: Theme.of(context).textTheme.titleSmall
+              ?.copyWith(fontWeight: FontWeight.bold, letterSpacing: 0.5),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Uma senha para o evento inteiro. Anuncie ao grupo e cada '
+          'Legendário se cadastra sozinho, com o número dele. Ela libera o '
+          'cadastro — depois cada um entra com a própria senha.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: _gerando ? null : _gerar,
+          icon: _gerando
+              ? const SizedBox(
+                  height: 18,
+                  width: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.key),
+          label: const Text('Gerar senha do Top'),
+        ),
+      ],
     );
   }
 }

@@ -24,8 +24,9 @@ void main() {
 
       // O rótulo era "Entrar com número do Legendários", que ficou ambíguo
       // quando o campo principal passou a aceitar número. Este botão leva a
-      // outra coisa: pedir acesso e entrar com o código do admin.
-      expect(find.text('Primeiro acesso / pedir código'), findsOneWidget);
+      // outra coisa: quem ainda NÃO tem conta se cadastra com a senha que
+      // o admin anunciou para o Top.
+      expect(find.text('Primeiro acesso'), findsOneWidget);
     });
   });
 

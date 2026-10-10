@@ -4,7 +4,7 @@ import '../services/acesso_service.dart';
 import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
 import '../widgets/password_field.dart';
-import 'login_numero_screen.dart';
+import 'primeiro_acesso_screen.dart';
 import 'login_with_code_screen.dart';
 import 'signup_screen.dart';
 
@@ -158,16 +158,18 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 child: const Text('Esqueci minha senha / entrar com código'),
               ),
-              // O campo la de cima ja aceita o numero de quem JA TEM
-              // conta. Este botao e outra coisa: quem ainda nao tem, pede
-              // acesso e entra com o codigo do admin. Rotulo separado para
-              // os dois nao se confundirem na mesma tela.
+              // O campo la de cima e para quem JA TEM conta. Este botao e
+              // outra coisa: quem ainda nao tem se cadastra com o numero e
+              // a senha que o admin anunciou para o Top. Rotulo separado
+              // para os dois nao competirem na mesma tela.
               FilledButton.tonalIcon(
                 onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const LoginNumeroScreen()),
+                  MaterialPageRoute(
+                    builder: (_) => const PrimeiroAcessoScreen(),
+                  ),
                 ),
                 icon: const Icon(Icons.badge_outlined),
-                label: const Text('Primeiro acesso / pedir código'),
+                label: const Text('Primeiro acesso'),
               ),
             ],
           ),

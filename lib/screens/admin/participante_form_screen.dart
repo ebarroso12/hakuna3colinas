@@ -5,6 +5,7 @@ import '../../models/participant.dart';
 import '../../models/top.dart';
 import '../../services/supabase_service.dart';
 import '../../widgets/app_logo.dart';
+import '../../widgets/ficha_medica.dart';
 
 /// Cadastro e edição da ficha de um participante.
 ///
@@ -88,30 +89,6 @@ class _ParticipanteFormScreenState extends State<ParticipanteFormScreen> {
   ];
 
   bool _salvando = false;
-
-  static const _tiposSanguineos = [
-    'A+',
-    'A-',
-    'B+',
-    'B-',
-    'AB+',
-    'AB-',
-    'O+',
-    'O-',
-  ];
-
-  /// Lista de partida. O campo livre continua existindo — doença que não
-  /// está aqui não pode ficar de fora da ficha.
-  static const _comorbidadesComuns = [
-    'hipertensão',
-    'diabetes',
-    'asma',
-    'cardiopatia',
-    'obesidade',
-    'epilepsia',
-    'doença renal',
-    'problema de coluna',
-  ];
 
   bool get _editando => widget.participante != null;
 
@@ -246,7 +223,7 @@ class _ParticipanteFormScreenState extends State<ParticipanteFormScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            _Secao('Identificação'),
+            SecaoFicha('Identificação'),
             TextFormField(
               controller: _nome,
               textCapitalization: TextCapitalization.characters,
@@ -360,7 +337,7 @@ class _ParticipanteFormScreenState extends State<ParticipanteFormScreen> {
               ),
             ),
 
-            _Secao('Medidas'),
+            SecaoFicha('Medidas'),
             Row(
               children: [
                 Expanded(
@@ -394,9 +371,9 @@ class _ParticipanteFormScreenState extends State<ParticipanteFormScreen> {
                 ),
               ],
             ),
-            _PreviaImc(altura: _numero(_altura), peso: _numero(_peso)),
+            PreviaImc(altura: _numero(_altura), peso: _numero(_peso)),
 
-            _Secao('Clínico'),
+            SecaoFicha('Clínico'),
             DropdownButtonFormField<String>(
               initialValue: _tipoSanguineo,
               decoration: const InputDecoration(
@@ -404,7 +381,7 @@ class _ParticipanteFormScreenState extends State<ParticipanteFormScreen> {
                 border: OutlineInputBorder(),
                 isDense: true,
               ),
-              items: _tiposSanguineos
+              items: tiposSanguineos
                   .map((t) => DropdownMenuItem(value: t, child: Text(t)))
                   .toList(),
               onChanged: (v) => setState(() => _tipoSanguineo = v),
@@ -439,7 +416,7 @@ class _ParticipanteFormScreenState extends State<ParticipanteFormScreen> {
               ),
             ),
 
-            _Secao('Comorbidades'),
+            SecaoFicha('Comorbidades'),
             Text(
               'Só condição clínica. É esta lista que define a cor da '
               'triagem — por isso alergia e plano de saúde ficam em campos '
@@ -447,42 +424,16 @@ class _ParticipanteFormScreenState extends State<ParticipanteFormScreen> {
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 6,
-              children: [
-                for (final c in _comorbidadesComuns)
-                  FilterChip(
-                    label: Text(c),
-                    selected: _comorbidades.contains(c),
-                    onSelected: (sel) => setState(() {
-                      if (sel) {
-                        _comorbidades.add(c);
-                      } else {
-                        _comorbidades.remove(c);
-                      }
-                    }),
-                  ),
-                // Comorbidade digitada à mão (não está na lista comum).
-                for (final c in _comorbidades.where(
-                  (c) => !_comorbidadesComuns.contains(c),
-                ))
-                  InputChip(
-                    label: Text(c),
-                    onDeleted: () => setState(() => _comorbidades.remove(c)),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            _CampoOutraComorbidade(
-              aoAdicionar: (nova) => setState(() => _comorbidades.add(nova)),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              '${_comorbidades.length} comorbidade(s) — conta para a triagem',
-              style: Theme.of(context).textTheme.labelSmall,
+            SeletorComorbidades(
+              selecionadas: _comorbidades,
+              aoMudar: (nova) => setState(() {
+                _comorbidades
+                  ..clear()
+                  ..addAll(nova);
+              }),
             ),
 
-            _Secao('Outros dados de saúde'),
+            SecaoFicha('Outros dados de saúde'),
             TextFormField(
               controller: _alergias,
               minLines: 1,
@@ -532,7 +483,7 @@ class _ParticipanteFormScreenState extends State<ParticipanteFormScreen> {
               ),
             ),
 
-            _Secao('Emergência'),
+            SecaoFicha('Emergência'),
             TextFormField(
               controller: _emergencia,
               decoration: const InputDecoration(
@@ -549,102 +500,3 @@ class _ParticipanteFormScreenState extends State<ParticipanteFormScreen> {
   }
 }
 
-class _Secao extends StatelessWidget {
-  const _Secao(this.titulo);
-
-  final String titulo;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 24, bottom: 10),
-      child: Text(
-        titulo.toUpperCase(),
-        style: Theme.of(context).textTheme.titleSmall
-            ?.copyWith(fontWeight: FontWeight.bold, letterSpacing: 0.5),
-      ),
-    );
-  }
-}
-
-/// Mostra o IMC enquanto se digita altura e peso — evita descobrir só
-/// depois de salvar que faltou um dos dois.
-class _PreviaImc extends StatelessWidget {
-  const _PreviaImc({required this.altura, required this.peso});
-
-  final double? altura;
-  final double? peso;
-
-  @override
-  Widget build(BuildContext context) {
-    if (altura == null || peso == null || altura! <= 0) {
-      return const SizedBox.shrink();
-    }
-    final metros = altura! / 100;
-    final imc = peso! / (metros * metros);
-    final faixa = Participant(
-      id: '',
-      topId: '',
-      fullName: '',
-      heightCm: altura,
-      weightKg: peso,
-    ).faixaImc;
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Text(
-        'IMC ${imc.toStringAsFixed(1)} · ${faixa?.label ?? ""}',
-        style: Theme.of(context).textTheme.labelMedium
-            ?.copyWith(fontWeight: FontWeight.bold),
-      ),
-    );
-  }
-}
-
-class _CampoOutraComorbidade extends StatefulWidget {
-  const _CampoOutraComorbidade({required this.aoAdicionar});
-
-  final void Function(String) aoAdicionar;
-
-  @override
-  State<_CampoOutraComorbidade> createState() => _CampoOutraComorbidadeState();
-}
-
-class _CampoOutraComorbidadeState extends State<_CampoOutraComorbidade> {
-  final _controller = TextEditingController();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _adicionar() {
-    final texto = _controller.text.trim();
-    if (texto.isEmpty) return;
-    widget.aoAdicionar(texto);
-    _controller.clear();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: TextField(
-            controller: _controller,
-            decoration: const InputDecoration(
-              labelText: 'Outra comorbidade',
-              isDense: true,
-              border: OutlineInputBorder(),
-            ),
-            onSubmitted: (_) => _adicionar(),
-          ),
-        ),
-        IconButton(
-          icon: const Icon(Icons.add_circle_outline),
-          onPressed: _adicionar,
-        ),
-      ],
-    );
-  }
-}

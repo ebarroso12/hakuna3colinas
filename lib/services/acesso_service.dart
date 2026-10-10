@@ -135,6 +135,112 @@ class AcessoService {
         'Pedido registrado. Aguarde o código do administrador.';
   }
 
+  // =====================================================================
+  // AUTOCADASTRO POR SENHA DO TOP
+  //
+  //   1. admin gera UMA senha e anuncia ao grupo
+  //   2. Legendário digita número + senha do Top   -> [validarConvite]
+  //   3. preenche a ficha e cria a senha dele      -> [cadastrar]
+  //   4. daí em diante entra com número + senha pessoal
+  //
+  // A senha do Top é CONVITE, não senha de entrada. Se servisse para
+  // entrar, o Legendário 203460 digitaria o número 441892 com a mesma
+  // senha e abriria o prontuário do outro.
+  // =====================================================================
+
+  /// Passo 1: confere número + senha do Top. Não cria nada, não loga.
+  ///
+  /// Devolve o nome e a família que já estão na lista do Top, para a tela
+  /// de cadastro vir preenchida — os Legendários do evento já existem como
+  /// participantes, só sem conta.
+  ///
+  /// Lança [AcessoRecusado] com a mensagem do servidor quando o convite
+  /// não vale. A mensagem é a mesma para senha errada e para número fora
+  /// da lista, de propósito: distingui-las deixaria descobrir quem está
+  /// inscrito testando números.
+  Future<ConviteValidado> validarConvite({
+    required String numero,
+    required String senhaDoTop,
+  }) async {
+    final resposta = await _invocar({
+      'acao': 'validar_convite',
+      'numero': numero.trim(),
+      'senha_top': senhaDoTop.trim(),
+    });
+    return ConviteValidado(
+      topId: resposta['top_id'] as String,
+      topNome: resposta['top_nome'] as String? ?? '',
+      nome: resposta['nome'] as String? ?? '',
+      familia: resposta['familia'] as String?,
+    );
+  }
+
+  /// Passo 2: cria a conta com a senha PESSOAL e vincula a ficha.
+  ///
+  /// [ficha] usa os mesmos nomes de coluna do Postgres (`full_name`,
+  /// `blood_type`, `comorbidades`…), como o resto do projeto — ver a
+  /// convenção em CLAUDE.md.
+  ///
+  /// O servidor revalida a senha do Top do zero: o passo 1 serviu para
+  /// montar a tela, não como permissão. Se desse para pular direto para
+  /// cá, a validação do cliente não valeria nada.
+  Future<void> cadastrar({
+    required String numero,
+    required String senhaDoTop,
+    required String senhaPessoal,
+    required Map<String, dynamic> ficha,
+  }) async {
+    await _invocar({
+      'acao': 'cadastrar',
+      'numero': numero.trim(),
+      'senha_top': senhaDoTop.trim(),
+      'senha': senhaPessoal,
+      'ficha': ficha,
+    });
+  }
+
+  /// Gera (ou regera) a senha de convite do Top. Só admin.
+  ///
+  /// Devolve a senha em claro **uma única vez** — o banco guarda só o
+  /// hash. Gerar de novo invalida a anterior na hora, que é como se corta
+  /// o acesso quando a senha vaza para fora do grupo.
+  Future<SenhaDoTop> gerarSenhaDoTop(String topId) async {
+    final r = await _invocar({'acao': 'gerar_senha_top', 'top_id': topId});
+    return SenhaDoTop(
+      senha: r['senha'] as String,
+      topNome: r['top_nome'] as String? ?? '',
+      topNumero: r['top_numero'] as String?,
+      aviso: r['aviso'] as String?,
+    );
+  }
+
+  /// Chama a Edge Function e transforma a recusa em exceção com a mensagem
+  /// que o servidor escreveu.
+  ///
+  /// Sem isto, `functions.invoke` devolve `FunctionException` com o corpo
+  /// cru dentro — e a tela mostraria JSON ao Hakuna. As mensagens de lá
+  /// são escritas para serem lidas por quem está se cadastrando.
+  Future<Map<String, dynamic>> _invocar(Map<String, dynamic> corpo) async {
+    try {
+      final resposta = await _client.functions.invoke(_funcao, body: corpo);
+      final dados = resposta.data as Map<String, dynamic>?;
+      if (dados == null) throw const AcessoRecusado('resposta vazia');
+      if (dados['error'] != null) {
+        throw AcessoRecusado(
+          dados['mensagem'] as String? ?? dados['error'].toString(),
+        );
+      }
+      return dados;
+    } on FunctionException catch (e) {
+      final detalhes = e.details;
+      if (detalhes is Map) {
+        final msg = detalhes['mensagem'] ?? detalhes['error'];
+        if (msg != null) throw AcessoRecusado(msg.toString());
+      }
+      throw AcessoRecusado('Não foi possível falar com o servidor.');
+    }
+  }
+
   /// Entra com número + código.
   ///
   /// O código é a senha da conta, definida pelo admin ao liberar. Depois
@@ -185,4 +291,57 @@ class AcessoService {
       body: {'acao': 'negar', 'numero': numero.trim(), 'motivo': ?motivo},
     );
   }
+}
+
+/// Recusa do servidor, com a mensagem pronta para a tela.
+///
+/// Existe para a tela não precisar abrir JSON nem adivinhar código HTTP:
+/// as mensagens da Edge Function são escritas para quem está se
+/// cadastrando ler ("este Top ainda não foi aberto pelo administrador"),
+/// não para desenvolvedor.
+class AcessoRecusado implements Exception {
+  final String mensagem;
+  const AcessoRecusado(this.mensagem);
+
+  @override
+  String toString() => mensagem;
+}
+
+/// O que o servidor devolveu quando o convite vale.
+///
+/// [nome] e [familia] vêm da lista de participantes do Top — a pessoa já
+/// está lá, só sem conta. A tela de cadastro abre com eles preenchidos,
+/// o que também serve de conferência: se o nome não for o dela, digitou o
+/// número de outra pessoa.
+class ConviteValidado {
+  final String topId;
+  final String topNome;
+  final String nome;
+  final String? familia;
+
+  const ConviteValidado({
+    required this.topId,
+    required this.topNome,
+    required this.nome,
+    this.familia,
+  });
+}
+
+/// Senha de convite recém-gerada, devolvida ao admin uma única vez.
+class SenhaDoTop {
+  final String senha;
+  final String topNome;
+  final String? topNumero;
+
+  /// Preenchido quando algo impede o cadastro mesmo com a senha na mão —
+  /// hoje, Top em rascunho. Avisar aqui evita o admin distribuir a senha
+  /// e só descobrir depois que ninguém consegue entrar.
+  final String? aviso;
+
+  const SenhaDoTop({
+    required this.senha,
+    required this.topNome,
+    this.topNumero,
+    this.aviso,
+  });
 }
