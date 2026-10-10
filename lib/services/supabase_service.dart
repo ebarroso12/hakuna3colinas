@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -202,11 +203,26 @@ class SupabaseService {
     // No web o plugin exige `clientId`; no Android/iOS o fluxo nativo usa
     // `serverClientId` pra devolver um idToken aceito pelo Supabase. Passar
     // o parametro errado dispara `appClientId != null` / DEVELOPER_ERROR.
+    //
+    // Nos dois casos o valor é o Client ID do tipo **Aplicativo da Web** —
+    // é ele que o Supabase valida como audiência do idToken. Isto já estava
+    // certo; não é a causa da falha no APK (ver [googleIndisponivelNoApk]).
     final googleSignIn = GoogleSignIn(
       clientId: kIsWeb ? _googleWebClientId : null,
       serverClientId: kIsWeb ? null : _googleWebClientId,
     );
-    final googleUser = await googleSignIn.signIn();
+
+    final GoogleSignInAccount? googleUser;
+    try {
+      googleUser = await googleSignIn.signIn();
+    } on PlatformException catch (e) {
+      // Sem este tratamento o usuário via a exceção crua do Android
+      // ("PlatformException(sign_in_failed, com.google.android.gms.common
+      // .api.ApiException: 10: , null, null)") e não tinha como saber que o
+      // problema é de configuração e não dele.
+      throw StateError(_erroDoGoogle(e));
+    }
+
     if (googleUser == null) {
       // usuário cancelou a tela de escolha de conta — não é erro
       return;
@@ -222,6 +238,62 @@ class SupabaseService {
       accessToken: googleAuth.accessToken,
     );
   }
+
+  /// Mensagem explicando o que fazer. **Nunca** devolve o erro cru.
+  ///
+  /// Os códigos vêm de `com.google.android.gms.common.api.ApiException`.
+  static String _erroDoGoogle(PlatformException e) {
+    final texto = '${e.code} ${e.message ?? ''}';
+
+    // 10 = DEVELOPER_ERROR. No nosso caso tem uma causa específica e
+    // conhecida; ver [googleIndisponivelNoApk].
+    if (texto.contains('ApiException: 10') ||
+        texto.contains('DEVELOPER_ERROR')) {
+      return googleIndisponivelNoApk;
+    }
+    // 7 = NETWORK_ERROR.
+    if (texto.contains('ApiException: 7')) {
+      return 'Sem conexão para falar com o Google. '
+          'Entre com número e senha — isso funciona offline depois do '
+          'primeiro login.';
+    }
+    // 12500 = sem Play Services; 12501 = cancelado pelo usuário.
+    if (texto.contains('ApiException: 12500')) {
+      return 'Este aparelho não tem o Google Play Services necessário. '
+          'Entre com número e senha.';
+    }
+    return 'O Google recusou o login ($texto). Entre com número e senha.';
+  }
+
+  /// Por que o login com Google NÃO funciona no APK distribuído.
+  ///
+  /// **Verificado em 10/10/2026, lendo os certificados dos próprios APKs:**
+  ///
+  /// ```
+  /// legendarios1.0.18.apk  SHA-1 AB24D950BC3280D8E391943DE9FD026B32AC05AC
+  /// legendarios1.0.19.apk  SHA-1 E882B41E837A8CAC67944CF168585249474CFF11
+  /// ```
+  ///
+  /// Os dois são "Android Debug" e **são diferentes**: cada execução do
+  /// GitHub Actions gera um keystore de debug novo e aleatório.
+  ///
+  /// O login nativo do Google exige um client OAuth do tipo *Android* no
+  /// Google Cloud, registrado com o nome do pacote **mais o SHA-1 do
+  /// certificado de assinatura**. Com o SHA-1 mudando a cada build, nenhum
+  /// registro casa — e o plugin falha com DEVELOPER_ERROR antes de fazer
+  /// qualquer chamada de rede.
+  ///
+  /// **Nenhuma mudança em Dart corrige isso.** `clientId`/`serverClientId`
+  /// já estão certos. O que falta é assinatura **estável**: criar o
+  /// keystore de produção (ver `android/app/build.gradle.kts`, que já lê
+  /// `LEGENDARIOS_KEYSTORE_*`) e registrar o SHA-1 dele no Google Cloud.
+  ///
+  /// Enquanto isso não existir, número + senha é o caminho — e é o que
+  /// funciona offline, que é o que o evento exige.
+  static const googleIndisponivelNoApk =
+      'Entrar com Google não está disponível nesta versão instalada por '
+      'arquivo: ela é assinada com chave temporária, e o Google exige uma '
+      'assinatura fixa registrada. Use seu número e a senha.';
 
   /// Envia um código de 6 dígitos por e-mail — usado tanto pra "esqueci
   /// minha senha" quanto pra login sem senha. Não depende de link nenhum

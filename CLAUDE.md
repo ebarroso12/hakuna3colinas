@@ -192,8 +192,35 @@ para Play Store.
 
 O workflow imprime no log, lendo do próprio APK, com qual chave ele saiu.
 Keystore e `key.properties` estão no `.gitignore` — perder o `.jks` é
-irreversível. **Trocar a chave obriga quem já tem o app a desinstalar
-antes de atualizar.**
+irreversível.
+
+### A chave de debug do CI é ALEATÓRIA a cada build
+
+Verificado em 10/10/2026 lendo o APK Signing Block dos próprios arquivos:
+
+```
+legendarios1.0.18.apk  SHA-1 AB24D950BC3280D8E391943DE9FD026B32AC05AC
+legendarios1.0.19.apk  SHA-1 E882B41E837A8CAC67944CF168585249474CFF11
+```
+
+Os dois são `CN=Android Debug` e **diferentes**: o runner do GitHub Actions
+não tem `~/.android/debug.keystore`, então o Gradle gera um novo em cada
+execução. Duas consequências, as duas sérias:
+
+1. **Atualizar por cima FALHA** (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`).
+   Precisa desinstalar antes — e desinstalar **apaga o SQLite local**, ou
+   seja, apaga atendimento enfileirado que ainda não subiu. Em campo isso
+   é perda de dado clínico. Sincronize antes de atualizar.
+2. **Login com Google nunca funciona no APK.** O Google exige client OAuth
+   do tipo Android registrado com pacote + SHA-1 do certificado; com o
+   SHA-1 mudando a cada build, nenhum registro casa, e o plugin falha com
+   DEVELOPER_ERROR antes de qualquer chamada de rede. Não é problema de
+   `clientId` — ver `SupabaseService.googleIndisponivelNoApk`.
+
+**Criar o keystore de produção resolve os dois.** Deixou de ser polimento
+para a Play Store; é pré-requisito para atualização segura e para o Google
+Sign-In. Depois de criado, registrar o SHA-1 dele no Google Cloud como
+client Android (pacote `com.legendarios.hakuna_connect`).
 
 ## Regras de triagem
 

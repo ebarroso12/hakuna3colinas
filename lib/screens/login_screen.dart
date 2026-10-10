@@ -49,7 +49,13 @@ class _LoginScreenState extends State<LoginScreen> {
       await SupabaseService.instance.signInWithGoogle();
     } catch (e) {
       if (mounted) {
-        setState(() => _error = 'Não foi possível entrar com Google: $e');
+        // `signInWithGoogle` já traduz os erros do plugin em texto útil
+        // (ver SupabaseService._erroDoGoogle). Prefixar com "Não foi
+        // possível entrar com Google:" repetia a informação e empurrava a
+        // instrução — "use número e senha" — para fora da tela.
+        setState(
+          () => _error = e is StateError ? e.message : 'Erro no Google: $e',
+        );
       }
     } finally {
       if (mounted) setState(() => _loadingGoogle = false);
