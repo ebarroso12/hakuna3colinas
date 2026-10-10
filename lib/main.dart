@@ -50,7 +50,7 @@ class HakunaConnectApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Hakuna Connect',
+      title: 'Legendario Connect',
       theme: ThemeData(colorSchemeSeed: Colors.teal, useMaterial3: true),
       home: const AuthGate(),
     );

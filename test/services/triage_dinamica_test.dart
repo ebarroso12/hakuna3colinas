@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hakuna_connect/models/afericao.dart';
-import 'package:hakuna_connect/models/triage_rule.dart';
-import 'package:hakuna_connect/services/triage_dinamica.dart';
+import 'package:legendario_connect/models/afericao.dart';
+import 'package:legendario_connect/models/triage_rule.dart';
+import 'package:legendario_connect/services/triage_dinamica.dart';
 
 /// Testa o caso que motivou o módulo: participante **verde** no cadastro
 /// com PA 190x120 e SpO₂ 88% aferidos em campo continuava verde na lista.

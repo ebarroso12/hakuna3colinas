@@ -37,10 +37,16 @@
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false"/>
 
+    <!-- `roundIcon` e usado por launchers de API 25 (Android 7.1), que
+         pediam um icone circular proprio. De API 26 em diante os dois
+         apontam para o adaptativo em mipmap-anydpi-v26/ e a mascara do
+         sistema decide a forma. Sem `roundIcon`, o PNG redondo gerado
+         ficaria no APK sem nunca ser usado. -->
     <application
-        android:label="hakuna_connect"
+        android:label="Legendario Connect"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round">
         <activity
             android:name=".MainActivity"
             android:exported="true"

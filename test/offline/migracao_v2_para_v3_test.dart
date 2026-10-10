@@ -1,9 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hakuna_connect/offline/local_db.dart';
-import 'package:hakuna_connect/offline/outbox.dart';
-import 'package:hakuna_connect/offline/tabelas.dart';
+import 'package:legendario_connect/offline/local_db.dart';
+import 'package:legendario_connect/offline/outbox.dart';
+import 'package:legendario_connect/offline/tabelas.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 

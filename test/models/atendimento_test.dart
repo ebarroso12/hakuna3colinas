@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hakuna_connect/models/atendimento.dart';
+import 'package:legendario_connect/models/atendimento.dart';
 
 Atendimento _a({
   int? sistolica,

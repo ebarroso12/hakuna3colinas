@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hakuna_connect/models/participant.dart';
+import 'package:legendario_connect/models/participant.dart';
 
 Participant _p({
   String nome = 'Alan Lucas Lemos',

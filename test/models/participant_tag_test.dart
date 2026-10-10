@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hakuna_connect/models/participant_tag.dart';
+import 'package:legendario_connect/models/participant_tag.dart';
 
 void main() {
   group('geração de token', () {

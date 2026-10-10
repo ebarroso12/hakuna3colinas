@@ -1,10 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hakuna_connect/models/participant_tag.dart';
-import 'package:hakuna_connect/offline/local_db.dart';
-import 'package:hakuna_connect/offline/outbox.dart';
-import 'package:hakuna_connect/offline/sync_service.dart';
-import 'package:hakuna_connect/services/auditoria_service.dart';
-import 'package:hakuna_connect/services/supabase_service.dart';
+import 'package:legendario_connect/models/participant_tag.dart';
+import 'package:legendario_connect/offline/local_db.dart';
+import 'package:legendario_connect/offline/outbox.dart';
+import 'package:legendario_connect/offline/sync_service.dart';
+import 'package:legendario_connect/services/auditoria_service.dart';
+import 'package:legendario_connect/services/supabase_service.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 /// Até a v1.0.17 a leitura de tag chamava o Supabase direto dentro de um

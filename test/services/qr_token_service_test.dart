@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hakuna_connect/models/participant_tag.dart';
-import 'package:hakuna_connect/services/qr_token_service.dart';
+import 'package:legendario_connect/models/participant_tag.dart';
+import 'package:legendario_connect/services/qr_token_service.dart';
 
 /// O QR é contingência do NFC e carrega o MESMO token. Estes testes travam
 /// essa equivalência: se um dia alguém introduzir um formato próprio para o

@@ -1,10 +1,10 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hakuna_connect/offline/falha_de_envio.dart';
-import 'package:hakuna_connect/offline/local_db.dart';
-import 'package:hakuna_connect/offline/outbox.dart';
-import 'package:hakuna_connect/offline/sync_service.dart';
+import 'package:legendario_connect/offline/falha_de_envio.dart';
+import 'package:legendario_connect/offline/local_db.dart';
+import 'package:legendario_connect/offline/outbox.dart';
+import 'package:legendario_connect/offline/sync_service.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 /// O bug que estes testes travam:

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hakuna_connect/models/hakuna_position.dart';
-import 'package:hakuna_connect/services/stats_service.dart';
+import 'package:legendario_connect/models/hakuna_position.dart';
+import 'package:legendario_connect/services/stats_service.dart';
 
 final _inicio = DateTime.utc(2026, 1, 1, 8);
 

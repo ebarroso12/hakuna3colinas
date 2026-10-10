@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Camada de FUNDO do icone adaptativo: grafite tatico #1E2022.
+
+  Separada do foreground de proposito. A especificacao original punha o
+  retangulo de fundo dentro de `ic_launcher_foreground.xml`, mas o Android
+  trata as duas camadas de forma diferente: ele move e escala o foreground
+  em relacao ao fundo para o efeito de paralaxe dos launchers. Fundo dentro
+  do foreground acompanha esse movimento e deixa borda visivel na animacao.
+
+  Fundo e full-bleed (108x108 inteiro): esta camada E para ser cortada pela
+  mascara do sistema.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:pathData="M0,0h108v108h-108z"
+        android:fillColor="#1E2022" />
+</vector>

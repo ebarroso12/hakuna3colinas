@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hakuna_connect/models/profile.dart';
-import 'package:hakuna_connect/models/triage_rule.dart';
-import 'package:hakuna_connect/services/triage_service.dart';
+import 'package:legendario_connect/models/profile.dart';
+import 'package:legendario_connect/models/triage_rule.dart';
+import 'package:legendario_connect/services/triage_service.dart';
 
 /// Perfil com idade exata [age]. Usa 1º de janeiro como data de nascimento
 /// porque essa data existe em todo ano (evita o bug de 29/fev em ano não

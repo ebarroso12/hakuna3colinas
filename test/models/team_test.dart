@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hakuna_connect/models/team.dart';
-import 'package:hakuna_connect/models/team_message.dart';
+import 'package:legendario_connect/models/team.dart';
+import 'package:legendario_connect/models/team_message.dart';
 
 void main() {
   group('TeamKey espelha o enum team_key do Postgres', () {

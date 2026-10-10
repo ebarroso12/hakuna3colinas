@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hakuna_connect/offline/cache_local.dart';
-import 'package:hakuna_connect/offline/local_db.dart';
-import 'package:hakuna_connect/offline/tabelas.dart';
+import 'package:legendario_connect/offline/cache_local.dart';
+import 'package:legendario_connect/offline/local_db.dart';
+import 'package:legendario_connect/offline/tabelas.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 /// Estado que tem de sobreviver ao processo ser morto.

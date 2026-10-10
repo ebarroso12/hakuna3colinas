@@ -1,12 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hakuna_connect/models/chat_message.dart';
-import 'package:hakuna_connect/models/team.dart';
-import 'package:hakuna_connect/models/team_message.dart';
-import 'package:hakuna_connect/offline/chat_repositorio.dart';
-import 'package:hakuna_connect/offline/local_db.dart';
-import 'package:hakuna_connect/offline/outbox.dart';
-import 'package:hakuna_connect/offline/sync_service.dart';
-import 'package:hakuna_connect/services/supabase_service.dart';
+import 'package:legendario_connect/models/chat_message.dart';
+import 'package:legendario_connect/models/team.dart';
+import 'package:legendario_connect/models/team_message.dart';
+import 'package:legendario_connect/offline/chat_repositorio.dart';
+import 'package:legendario_connect/offline/local_db.dart';
+import 'package:legendario_connect/offline/outbox.dart';
+import 'package:legendario_connect/offline/sync_service.dart';
+import 'package:legendario_connect/services/supabase_service.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {

@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Camada de FRENTE do icone adaptativo.
+
+  Conceito (do briefing de branding): anel no laranja oficial dos
+  Legendarios (#FF6B00), e ao centro a fusao de tres picos de montanha com
+  as hastes de uma cruz medica de resgate, com nos brancos nos vertices
+  representando a rede de telemetria.
+
+  ============================================================
+  QUATRO CORRECOES em relacao ao XML da especificacao
+  ============================================================
+
+  1. NAMESPACE. A especificacao usava `xmlns:android="http://android.com"`.
+     O correto e `http://schemas.android.com/apk/res/android`. Com o
+     namespace errado o aapt2 nao reconhece nenhum atributo `android:*` e o
+     build falha.
+
+  2. `<circle>` NAO EXISTE em VectorDrawable. O formato do Android aceita
+     apenas `<path>`, `<group>` e `<clip-path>` (ao contrario de SVG). Os
+     quatro nos de rede foram reescritos como `<path>` com arcos.
+
+  3. ZONA DE SEGURANCA. O anel da especificacao tem raio 40 num viewport de
+     108. A mascara do sistema corta tudo fora do circulo central de ~33 de
+     raio, entao o anel sairia CORTADO em praticamente todo launcher. O
+     desenho inteiro foi colocado num `<group>` com escala 0.75 em torno do
+     centro: o anel vai para raio 30, dentro da zona segura, e as
+     coordenadas originais seguem legiveis no codigo.
+
+  4. SEPARACAO DE CAMADAS. O retangulo de fundo saiu daqui para
+     `ic_launcher_background.xml` — ver o comentario de la.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!--
+      Escala 0.75 em torno de (54,54) = zona de segurança do icone
+      adaptativo. Mantem as coordenadas de desenho do briefing intactas e
+      resolve o corte da mascara num lugar so.
+    -->
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:scaleX="0.75"
+        android:scaleY="0.75">
+
+        <!-- Anel externo — Laranja Oficial Legendarios -->
+        <path
+            android:fillColor="#FF6B00"
+            android:pathData="M54,14C31.9,14 14,31.9 14,54C14,76.1 31.9,94 54,94C76.1,94 94,76.1 94,54C94,31.9 76.1,14 54,14ZM54,90C34.1,90 18,73.9 18,54C18,34.1 34.1,18 54,18C73.9,18 90,34.1 90,54C90,73.9 73.9,90 54,90Z" />
+
+        <!-- Haste horizontal da cruz -->
+        <path
+            android:fillColor="#FF6B00"
+            android:pathData="M34,51h40v6h-40z" />
+
+        <!-- Haste vertical inferior -->
+        <path
+            android:fillColor="#FF6B00"
+            android:pathData="M51,54h6v18h-6z" />
+
+        <!-- Pico central (montanha) -->
+        <path
+            android:fillColor="#FF6B00"
+            android:pathData="M54,30L64,45H44L54,30Z" />
+
+        <!-- Haste vertical superior, ligando o pico a cruz -->
+        <path
+            android:fillColor="#FF6B00"
+            android:pathData="M51,42h6v12h-6z" />
+
+        <!--
+          Nos de rede/telemetria nos vertices.
+          Circulo de raio 3 como path: move para o topo e desenha dois
+          semiarcos. Era `<circle>` na especificacao, que o Android ignora.
+        -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M54,27a3,3 0 1,0 0,6a3,3 0 1,0 0,-6z" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M34,51a3,3 0 1,0 0,6a3,3 0 1,0 0,-6z" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M74,51a3,3 0 1,0 0,6a3,3 0 1,0 0,-6z" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M54,69a3,3 0 1,0 0,6a3,3 0 1,0 0,-6z" />
+    </group>
+</vector>
