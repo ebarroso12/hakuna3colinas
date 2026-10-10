@@ -40,9 +40,15 @@ desconhecidas". O APK fica no Drive, que e para onde `apk_url` aponta —
 o Release do GitHub nao serve porque o repositorio e privado e o link
 exigiria conta no projeto.
 
-Verificado: `analyze` limpo, 284 testes passando, 14 novos (4 da gaveta, 8 do
-servico, 2 do guarda de versao). **Nao verificado em aparelho**: o toque
-na logo abrindo a gaveta e o `launchUrl` saindo para o navegador.
+Verificado: `analyze` limpo, 284 testes passando na tag, 14 novos (4 da
+gaveta, 8 do servico, 2 do guarda de versao). Mais 3 testes de
+`AppLogoAbreGaveta` entraram depois da tag (287 no total em `main`); eles
+provam, contra este mesmo codigo, que tocar na logo abre a gaveta — a
+falha seria o recurso existir e ser inalcancavel, porque o `Scaffold` so
+desenha o hamburguer quando `leading` e nulo.
+
+**Nao verificado em aparelho**: o `launchUrl` saindo para o navegador do
+Android e a instalacao do APK baixado.
 
 ### Correcao de um fato que o CLAUDE.md afirmava errado
 
