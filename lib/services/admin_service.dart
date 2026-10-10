@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/profile.dart';
@@ -110,6 +112,36 @@ class AdminService {
           'ends_at': endsAt?.toIso8601String(),
         })
         .eq('id', topId);
+  }
+
+  /// Sobe o emblema da pista pro Storage e devolve o caminho.
+  ///
+  /// Guarda o CAMINHO na tabela, nao a imagem: blob em coluna faria a
+  /// listagem de Tops baixar megabytes a toa.
+  Future<String> uploadEmblema({
+    required String topId,
+    required Uint8List bytes,
+    required String extensao,
+  }) async {
+    final caminho = 'tops/$topId/emblema$extensao';
+    await _client.storage
+        .from('emblemas')
+        .uploadBinary(
+          caminho,
+          bytes,
+          fileOptions: const FileOptions(upsert: true),
+        );
+    await _client
+        .from('tops')
+        .update({'emblema_path': caminho})
+        .eq('id', topId);
+    return caminho;
+  }
+
+  /// URL publica do emblema. Null quando o Top nao tem um.
+  String? urlEmblema(String? caminho) {
+    if (caminho == null || caminho.isEmpty) return null;
+    return _client.storage.from('emblemas').getPublicUrl(caminho);
   }
 
   Future<void> deleteTop(String topId) {

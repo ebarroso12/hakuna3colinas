@@ -12,6 +12,9 @@ class Top {
   final String name;
   final String? topNumber;
   final String? location;
+
+  /// Caminho do emblema/brasão da pista no Storage. Null = sem emblema.
+  final String? emblemaPath;
   final String? description;
   final TopStatus status;
   final DateTime? startsAt;
@@ -22,6 +25,7 @@ class Top {
     required this.name,
     this.topNumber,
     this.location,
+    this.emblemaPath,
     this.description,
     required this.status,
     this.startsAt,
@@ -34,6 +38,7 @@ class Top {
       name: map['name'] as String,
       topNumber: map['top_number'] as String?,
       location: map['location'] as String?,
+      emblemaPath: map['emblema_path'] as String?,
       description: map['description'] as String?,
       status: topStatusFromString(map['status'] as String),
       startsAt: map['starts_at'] != null

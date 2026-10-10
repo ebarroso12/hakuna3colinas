@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'screens/auth_gate.dart';
 import 'offline/sync_service.dart';
 import 'services/atendimento_service.dart';
+import 'services/location_service.dart';
 import 'services/supabase_service.dart';
 
 /// Credenciais do Supabase são passadas em tempo de build, nunca commitadas:
@@ -23,6 +24,7 @@ Future<void> main() async {
   // Liga a fila offline: atendimentos e fotos registrados sem sinal sobem
   // sozinhos quando a conexao volta.
   AtendimentoService.instance.registrarUploaders();
+  LocationService.instance.registrarUploader();
   unawaited(SyncService.instance.start());
 
   runApp(const HakunaConnectApp());

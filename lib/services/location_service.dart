@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 
+import '../offline/outbox.dart';
+import '../offline/sync_service.dart';
 import 'supabase_service.dart';
 
 /// Publica a posição do Hakuna logado no Supabase em intervalos regulares
@@ -92,6 +94,26 @@ class LocationService {
     );
   }
 
+  /// Nome da entidade na fila offline.
+  static const entityPosicao = 'hakuna_positions';
+
+  /// Liga o envio das posições da fila. Chamar uma vez, na subida do app.
+  void registrarUploader() {
+    SyncService.instance.registerUploader(entityPosicao, (entrada) async {
+      await SupabaseService.instance.publishPosition(
+        topId: entrada.payload['top_id'] as String,
+        latitude: (entrada.payload['latitude'] as num).toDouble(),
+        longitude: (entrada.payload['longitude'] as num).toDouble(),
+        recordedAt: entrada.payload['recorded_at'] as String?,
+      );
+    });
+  }
+
+  /// Quantos pontos ainda não subiram — a tela mostra pro Hakuna saber que
+  /// a trilha está guardada, mesmo sem sinal.
+  Future<int> pontosPendentes() =>
+      Outbox.instance.pendingCount(entity: entityPosicao);
+
   /// Publica uma posição nova a cada 15 m de deslocamento. Esse filtro é o
   /// que segura o ruído de GPS fora da conta de distância do StatsService.
   static const int _distanceFilterMeters = 15;
@@ -121,17 +143,35 @@ class LocationService {
         Geolocator.getPositionStream(locationSettings: _locationSettings())
             .listen(
               (position) {
-                SupabaseService.instance
-                    .publishPosition(
-                      topId: topId,
-                      latitude: position.latitude,
-                      longitude: position.longitude,
-                    )
-                    .catchError((Object e) {
-                      final cb = onError;
-                      stopTracking();
-                      cb?.call(e);
-                    });
+                // Vai pra FILA LOCAL, nunca direto pro Supabase.
+                //
+                // Antes isso publicava na rede a cada ponto, e qualquer
+                // falha de conexao parava o rastreamento inteiro — numa
+                // trilha, a primeira area sem sinal matava a trilha toda.
+                // Agora o ponto fica no celular e sobe quando der.
+                unawaited(
+                  Outbox.instance
+                      .enqueue(
+                        entity: entityPosicao,
+                        payload: {
+                          'top_id': topId,
+                          'latitude': position.latitude,
+                          'longitude': position.longitude,
+                          'recorded_at': position.timestamp
+                              .toUtc()
+                              .toIso8601String(),
+                        },
+                        topId: topId,
+                      )
+                      .catchError((Object e) {
+                        // Falha ao GRAVAR no proprio celular e grave: sem
+                        // isso o ponto se perde de verdade.
+                        final cb = onError;
+                        stopTracking();
+                        cb?.call(e);
+                        return '';
+                      }),
+                );
               },
               onError: (Object error) {
                 final cb = onError;

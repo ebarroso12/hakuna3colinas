@@ -13,6 +13,7 @@ import '../widgets/app_logo.dart';
 import '../widgets/barra_inferior.dart';
 import 'admin/admin_equipes_screen.dart';
 import 'admin/admin_top_form_screen.dart';
+import 'mapa_top_screen.dart';
 import 'participants_list_screen.dart';
 import 'team_chats_screen.dart';
 import 'top_chat_screen.dart';
@@ -298,6 +299,18 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
           // participante, não só Hakuna: o chat geral é aberto a qualquer
           // usuário aprovado do Top, e quais equipes aparecem depois disso
           // quem decide é a RLS de `top_team_members`.
+          IconButton(
+            icon: const Icon(Icons.map_outlined),
+            tooltip: 'Mapa dos Hakunas',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => MapaTopScreen(
+                  top: widget.top,
+                  hakunaProfiles: _hakunaProfiles,
+                ),
+              ),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.groups),
             tooltip: 'Participantes do Top',

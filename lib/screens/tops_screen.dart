@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/profile.dart';
 import '../models/top.dart';
+import '../services/admin_service.dart';
 import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
 import '../widgets/barra_inferior.dart';
@@ -111,9 +112,30 @@ class _TopsScreenState extends State<TopsScreen> {
               itemCount: tops.length,
               itemBuilder: (context, index) {
                 final top = tops[index];
+                final urlEmblema = AdminService.instance.urlEmblema(
+                  top.emblemaPath,
+                );
                 return ListTile(
-                  title: Text(top.name),
-                  subtitle: Text(top.status.name),
+                  leading: urlEmblema == null
+                      ? const CircleAvatar(child: Icon(Icons.terrain))
+                      : CircleAvatar(
+                          backgroundImage: NetworkImage(urlEmblema),
+                          // Emblema que nao carrega nao pode esconder o Top
+                          // da lista.
+                          onBackgroundImageError: (_, _) {},
+                          child: const SizedBox.shrink(),
+                        ),
+                  title: Text(
+                    top.topNumber != null
+                        ? 'TOP# ${top.topNumber} · ${top.name}'
+                        : top.name,
+                  ),
+                  subtitle: Text(
+                    [
+                      top.status.name,
+                      if (top.location != null) top.location!,
+                    ].join(' · '),
+                  ),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(

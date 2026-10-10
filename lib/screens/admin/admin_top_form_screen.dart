@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../models/top.dart';
 import '../../services/admin_service.dart';
@@ -21,6 +23,40 @@ class _AdminTopFormScreenState extends State<AdminTopFormScreen> {
   late final _numberController = TextEditingController(
     text: widget.top?.topNumber,
   );
+
+  /// Emblema escolhido mas ainda nao enviado. Sobe junto com o salvar,
+  /// porque o caminho no Storage precisa do id do Top - que so existe
+  /// depois de criado.
+  Uint8List? _emblemaBytes;
+  String? _emblemaExtensao;
+
+  Future<void> _escolherEmblema() async {
+    if (kIsWeb) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Escolher imagem só no celular, por enquanto.'),
+        ),
+      );
+      return;
+    }
+    final arquivo = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      // Emblema aparece pequeno na lista; 800px bastam e economizam a rede
+      // da equipe em campo.
+      maxWidth: 800,
+      imageQuality: 85,
+    );
+    if (arquivo == null) return;
+    final bytes = await arquivo.readAsBytes();
+    if (!mounted) return;
+    setState(() {
+      _emblemaBytes = bytes;
+      _emblemaExtensao = arquivo.path.contains('.')
+          ? '.${arquivo.path.split('.').last}'
+          : '.jpg';
+    });
+  }
+
   late final _locationController = TextEditingController(
     text: widget.top?.location,
   );
@@ -73,9 +109,11 @@ class _AdminTopFormScreenState extends State<AdminTopFormScreen> {
       final description = _descriptionController.text.trim().isEmpty
           ? null
           : _descriptionController.text.trim();
+      String? topId;
       if (_isEditing) {
+        topId = widget.top!.id;
         await AdminService.instance.updateTop(
-          topId: widget.top!.id,
+          topId: topId,
           name: name,
           topNumber: topNumber,
           location: location,
@@ -85,7 +123,7 @@ class _AdminTopFormScreenState extends State<AdminTopFormScreen> {
           endsAt: _endsAt,
         );
       } else {
-        await AdminService.instance.createTop(
+        final criado = await AdminService.instance.createTop(
           name: name,
           topNumber: topNumber,
           location: location,
@@ -93,6 +131,27 @@ class _AdminTopFormScreenState extends State<AdminTopFormScreen> {
           startsAt: _startsAt,
           endsAt: _endsAt,
         );
+        topId = criado.id;
+      }
+
+      // O emblema sobe DEPOIS de salvar: o caminho no Storage usa o id do
+      // Top, que num Top novo só existe agora. Falha aqui não desfaz o
+      // Top — melhor um Top sem emblema do que perder o cadastro.
+      final bytes = _emblemaBytes;
+      if (bytes != null) {
+        try {
+          await AdminService.instance.uploadEmblema(
+            topId: topId,
+            bytes: bytes,
+            extensao: _emblemaExtensao ?? '.jpg',
+          );
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Top salvo, mas o emblema não subiu: $e')),
+            );
+          }
+        }
       }
       if (!mounted) return;
       Navigator.of(context).pop();
@@ -172,6 +231,18 @@ class _AdminTopFormScreenState extends State<AdminTopFormScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          _CampoEmblema(
+            bytes: _emblemaBytes,
+            urlAtual: AdminService.instance.urlEmblema(widget.top?.emblemaPath),
+            aoEscolher: _escolherEmblema,
+            aoRemover: _emblemaBytes == null
+                ? null
+                : () => setState(() {
+                    _emblemaBytes = null;
+                    _emblemaExtensao = null;
+                  }),
+          ),
+          const SizedBox(height: 16),
           TextField(
             controller: _nameController,
             decoration: const InputDecoration(labelText: 'Nome do Top'),
@@ -241,6 +312,67 @@ class _AdminTopFormScreenState extends State<AdminTopFormScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Emblema/brasão da pista do Top.
+class _CampoEmblema extends StatelessWidget {
+  const _CampoEmblema({
+    required this.bytes,
+    required this.urlAtual,
+    required this.aoEscolher,
+    this.aoRemover,
+  });
+
+  final Uint8List? bytes;
+  final String? urlAtual;
+  final VoidCallback aoEscolher;
+  final VoidCallback? aoRemover;
+
+  @override
+  Widget build(BuildContext context) {
+    final temNovo = bytes != null;
+    final temAtual = urlAtual != null && urlAtual!.isNotEmpty;
+
+    return Column(
+      children: [
+        GestureDetector(
+          onTap: aoEscolher,
+          child: Container(
+            width: 120,
+            height: 120,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Theme.of(context).dividerColor),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: temNovo
+                ? Image.memory(bytes!, fit: BoxFit.cover)
+                : temAtual
+                ? Image.network(
+                    urlAtual!,
+                    fit: BoxFit.cover,
+                    // Emblema que nao carrega nao pode quebrar o formulario.
+                    errorBuilder: (_, _, _) =>
+                        const Icon(Icons.broken_image_outlined, size: 40),
+                  )
+                : const Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.add_photo_alternate_outlined, size: 36),
+                      SizedBox(height: 4),
+                      Text('Emblema', style: TextStyle(fontSize: 12)),
+                    ],
+                  ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text('Emblema da pista', style: Theme.of(context).textTheme.labelSmall),
+        if (aoRemover != null)
+          TextButton(onPressed: aoRemover, child: const Text('Descartar')),
+      ],
     );
   }
 }

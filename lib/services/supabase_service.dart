@@ -175,10 +175,17 @@ class SupabaseService {
   /// Retorna um Future com erro (em vez de lançar de forma síncrona) se a
   /// sessão tiver expirado — assim quem chama pode tratar com .catchError
   /// mesmo estando dentro de um callback de stream (ex: LocationService).
+  /// [recordedAt] e o instante em que o GPS mediu, nao o do envio.
+  ///
+  /// Importa porque a posicao pode ficar horas na fila antes de subir: sem
+  /// isso, uma trilha de duas horas chegaria ao banco toda carimbada com o
+  /// mesmo minuto em que o sinal voltou, e a distancia percorrida sairia
+  /// errada.
   Future<void> publishPosition({
     required String topId,
     required double latitude,
     required double longitude,
+    String? recordedAt,
   }) {
     final uid = currentUser?.id;
     if (uid == null) {
@@ -191,6 +198,7 @@ class SupabaseService {
       'profile_id': uid,
       'latitude': latitude,
       'longitude': longitude,
+      'recorded_at': ?recordedAt,
     });
   }
 
