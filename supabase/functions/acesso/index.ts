@@ -253,9 +253,17 @@ Deno.serve(async (req) => {
       // porque entrou por e-mail/senha e Google.
       //
       // Trocar a senha dele aqui seria um RESET SILENCIOSO de senha de uma
-      // conta que nao usa codigo para entrar — o admin perderia o login por
-      // senha sem ter pedido isso (o login pelo Google continuaria). Entao
-      // isto exige confirmacao explicita em vez de acontecer calado.
+      // conta que nao usa codigo para entrar. Entao isto exige confirmacao
+      // explicita em vez de acontecer calado.
+      //
+      // CORRECAO (10/10/2026): a versao anterior deste comentario dizia que
+      // "o login pelo Google continuaria" como rede de seguranca. E FALSO e
+      // nao havia sido verificado. Consultado em auth.identities: a conta
+      // tem UMA identidade, provedor `email`. Nao existe login por Google.
+      //
+      // Isso torna o freio mais importante, nao menos: sobrescrever a senha
+      // aqui elimina o UNICO jeito de entrar na conta do admin master, e
+      // sobra apenas o link por e-mail.
       //
       // Nao e cautela teorica: antes da v1.0.18 esta acao simplesmente
       // falhava para esse caso (o find por e-mail nao achava a conta, caia
