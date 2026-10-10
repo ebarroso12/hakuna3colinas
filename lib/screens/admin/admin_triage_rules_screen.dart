@@ -27,8 +27,8 @@ class _AdminTriageRulesScreenState extends State<AdminTriageRulesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: const AppLogoAppBarLeading(),
         title: const Text('Regras de triagem'),
+        actions: const [AppLogoTrailing()],
       ),
       body: FutureBuilder<List<TriageRule>>(
         future: _future,

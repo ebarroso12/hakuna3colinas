@@ -36,8 +36,12 @@ class Top {
       location: map['location'] as String?,
       description: map['description'] as String?,
       status: topStatusFromString(map['status'] as String),
-      startsAt: map['starts_at'] != null ? DateTime.parse(map['starts_at'] as String) : null,
-      endsAt: map['ends_at'] != null ? DateTime.parse(map['ends_at'] as String) : null,
+      startsAt: map['starts_at'] != null
+          ? DateTime.parse(map['starts_at'] as String)
+          : null,
+      endsAt: map['ends_at'] != null
+          ? DateTime.parse(map['ends_at'] as String)
+          : null,
     );
   }
 }

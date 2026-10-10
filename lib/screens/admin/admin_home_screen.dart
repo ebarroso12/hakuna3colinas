@@ -15,8 +15,8 @@ class AdminHomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: const AppLogoAppBarLeading(),
         title: const Text('Administração'),
+        actions: const [AppLogoTrailing()],
       ),
       body: ListView(
         children: [

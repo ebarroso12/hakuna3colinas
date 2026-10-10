@@ -16,7 +16,8 @@ class NfcService {
 
   static final NfcService instance = NfcService._();
 
-  Future<NfcAvailability> checkAvailability() => NfcManager.instance.checkAvailability();
+  Future<NfcAvailability> checkAvailability() =>
+      NfcManager.instance.checkAvailability();
 
   /// Lê a primeira tag aproximada e retorna o texto do primeiro registro
   /// NDEF de texto encontrado (ex: id gravado numa pulseira de senderista).
@@ -30,7 +31,9 @@ class NfcService {
       throw StateError('Este aparelho não tem leitor NFC.');
     }
     if (availability == NfcAvailability.disabled) {
-      throw StateError('NFC está desligado. Ative em Configurações > Conexões > NFC.');
+      throw StateError(
+        'NFC está desligado. Ative em Configurações > Conexões > NFC.',
+      );
     }
 
     final completer = Completer<String?>();
@@ -77,7 +80,9 @@ class NfcService {
           if (ndef == null || !ndef.isWritable) {
             throw StateError('Tag não encontrada ou não é gravável');
           }
-          await ndef.write(message: NdefMessage(records: [_encodeTextRecord(text)]));
+          await ndef.write(
+            message: NdefMessage(records: [_encodeTextRecord(text)]),
+          );
           completer.complete();
         } catch (e, st) {
           completer.completeError(e, st);

@@ -10,6 +10,9 @@ import '../services/nfc_service.dart';
 import '../services/stats_service.dart';
 import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
+import '../widgets/barra_inferior.dart';
+import 'admin/admin_top_form_screen.dart';
+import 'participants_list_screen.dart';
 import 'team_chats_screen.dart';
 import 'top_chat_screen.dart';
 import 'top_senderistas_screen.dart';
@@ -270,10 +273,14 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
     final isHakuna =
         _myProfile?.role == UserRole.hakuna ||
         _myProfile?.role == UserRole.admin;
+    final podeEditarTop =
+        _myProfile?.role == UserRole.admin || _myProfile?.isMasterAdmin == true;
 
     return Scaffold(
+      // Sem `leading`: o Flutter coloca a seta de voltar sozinho. A logo foi
+      // pro fim das actions — antes ela ocupava o leading e prendia o
+      // usuario dentro do Top, sem como voltar pra lista.
       appBar: AppBar(
-        leading: const AppLogoAppBarLeading(),
         title: Text(widget.top.name),
         actions: [
           if (isHakuna)
@@ -290,6 +297,15 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
           // participante, não só Hakuna: o chat geral é aberto a qualquer
           // usuário aprovado do Top, e quais equipes aparecem depois disso
           // quem decide é a RLS de `top_team_members`.
+          IconButton(
+            icon: const Icon(Icons.groups),
+            tooltip: 'Participantes do Top',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => ParticipantsListScreen(top: widget.top),
+              ),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.forum_outlined),
             tooltip: 'Chats do Top',
@@ -312,7 +328,20 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
                 ),
               ),
             ),
+          const AppLogoTrailing(),
         ],
+      ),
+      bottomNavigationBar: BarraInferior(
+        // Editar o Top e so pra quem administra. Coordenador de equipe
+        // edita a equipe dele, nao o Top — por isso aqui e admin/master.
+        aoEditar: podeEditarTop
+            ? () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => AdminTopFormScreen(top: widget.top),
+                ),
+              )
+            : null,
+        rotuloEditar: 'Editar Top',
       ),
       body: Column(
         children: [

@@ -112,6 +112,7 @@ class _AdminTopFormScreenState extends State<AdminTopFormScreen> {
           'Excluir "${widget.top!.name}"? Remove também posições, sinais vitais e mensagens ligados a ele.',
         ),
         actions: [
+          const AppLogoTrailing(),
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
             child: const Text('Cancelar'),
@@ -149,7 +150,6 @@ class _AdminTopFormScreenState extends State<AdminTopFormScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: const AppLogoAppBarLeading(),
         title: Text(_isEditing ? 'Editar Top' : 'Novo Top'),
         actions: [
           if (_isEditing)

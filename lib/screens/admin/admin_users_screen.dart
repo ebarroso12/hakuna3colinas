@@ -46,8 +46,8 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: const AppLogoAppBarLeading(),
         title: const Text('Usuários'),
+        actions: const [AppLogoTrailing()],
       ),
       body: FutureBuilder<List<Profile>>(
         future: _future,

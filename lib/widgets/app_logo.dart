@@ -23,13 +23,29 @@ class AppLogo extends StatelessWidget {
 }
 
 /// Ícone pequeno da logo pra usar como leading do AppBar nas telas internas.
+///
+/// **Só usar em tela de onde não se volta** (a raiz, tipo a lista de Tops).
+/// Num AppBar de tela empilhada, `leading` substitui a seta de voltar e o
+/// usuário fica preso — foi o que aconteceu na tela de detalhe do Top. Em
+/// tela interna, use [AppLogoTrailing] no `actions`, que convive com a seta.
 class AppLogoAppBarLeading extends StatelessWidget {
   const AppLogoAppBarLeading({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(8),
+    return const Padding(padding: EdgeInsets.all(8), child: AppLogo(size: 32));
+  }
+}
+
+/// A mesma logo, mas do lado direito do AppBar. Mantém a identidade visual
+/// sem roubar o lugar da seta de voltar.
+class AppLogoTrailing extends StatelessWidget {
+  const AppLogoTrailing({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       child: AppLogo(size: 32),
     );
   }

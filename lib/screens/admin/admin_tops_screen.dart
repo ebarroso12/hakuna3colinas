@@ -31,8 +31,8 @@ class _AdminTopsScreenState extends State<AdminTopsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: const AppLogoAppBarLeading(),
         title: const Text('Tops'),
+        actions: const [AppLogoTrailing()],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {

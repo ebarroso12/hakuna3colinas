@@ -91,9 +91,9 @@ class _VitalSignsScreenState extends State<VitalSignsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: const AppLogoAppBarLeading(),
         title: Text(widget.profile.displayLabel),
         actions: [
+          const AppLogoTrailing(),
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: Center(child: TriageBadge(color: widget.triageColor)),

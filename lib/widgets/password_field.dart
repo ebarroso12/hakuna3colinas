@@ -2,7 +2,11 @@ import 'package:flutter/material.dart';
 
 /// Campo de senha com botão de olho pra mostrar/esconder o que foi digitado.
 class PasswordField extends StatefulWidget {
-  const PasswordField({super.key, required this.controller, required this.labelText});
+  const PasswordField({
+    super.key,
+    required this.controller,
+    required this.labelText,
+  });
 
   final TextEditingController controller;
   final String labelText;

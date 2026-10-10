@@ -24,7 +24,10 @@ class AdminService {
   /// Promove/rebaixa um usuário. Conceder papel 'admin' só é aceito pelo
   /// banco se quem chama for o admin master.
   Future<void> updateProfileRole(String profileId, UserRole role) {
-    return _client.from('profiles').update({'role': role.name}).eq('id', profileId);
+    return _client
+        .from('profiles')
+        .update({'role': role.name})
+        .eq('id', profileId);
   }
 
   /// Libera o acesso de um cadastro pendente — sem isso o usuário fica
@@ -33,16 +36,26 @@ class AdminService {
 
   /// Libera ou revoga o acesso de um usuário.
   Future<void> setApproved(String profileId, bool approved) {
-    return _client.from('profiles').update({'approved': approved}).eq('id', profileId);
+    return _client
+        .from('profiles')
+        .update({'approved': approved})
+        .eq('id', profileId);
   }
 
   /// Dados usados na triagem por cor. Qualquer admin pode editar (só o
   /// papel 'admin' e a flag de admin master são exclusivos do admin master).
-  Future<void> updateProfileTriageInfo(String profileId, {DateTime? birthDate, required List<String> comorbidities}) {
-    return _client.from('profiles').update({
-      'birth_date': birthDate?.toIso8601String().split('T').first,
-      'comorbidities': comorbidities,
-    }).eq('id', profileId);
+  Future<void> updateProfileTriageInfo(
+    String profileId, {
+    DateTime? birthDate,
+    required List<String> comorbidities,
+  }) {
+    return _client
+        .from('profiles')
+        .update({
+          'birth_date': birthDate?.toIso8601String().split('T').first,
+          'comorbidities': comorbidities,
+        })
+        .eq('id', profileId);
   }
 
   /// Rejeitado pelo banco se [profileId] for o admin master.
@@ -83,15 +96,18 @@ class AdminService {
     DateTime? startsAt,
     DateTime? endsAt,
   }) {
-    return _client.from('tops').update({
-      'name': name,
-      'top_number': topNumber,
-      'location': location,
-      'description': description,
-      'status': status.name,
-      'starts_at': startsAt?.toIso8601String(),
-      'ends_at': endsAt?.toIso8601String(),
-    }).eq('id', topId);
+    return _client
+        .from('tops')
+        .update({
+          'name': name,
+          'top_number': topNumber,
+          'location': location,
+          'description': description,
+          'status': status.name,
+          'starts_at': startsAt?.toIso8601String(),
+          'ends_at': endsAt?.toIso8601String(),
+        })
+        .eq('id', topId);
   }
 
   Future<void> deleteTop(String topId) {
@@ -100,17 +116,29 @@ class AdminService {
 
   /// Estado atual de atribuição num Top: profileId -> liberado como Hakuna.
   Future<Map<String, bool>> fetchTopHakunaAssignments(String topId) async {
-    final rows = await _client.from('top_hakunas').select('profile_id, released').eq('top_id', topId);
-    return {for (final r in rows) r['profile_id'] as String: r['released'] as bool};
+    final rows = await _client
+        .from('top_hakunas')
+        .select('profile_id, released')
+        .eq('top_id', topId);
+    return {
+      for (final r in rows) r['profile_id'] as String: r['released'] as bool,
+    };
   }
 
   Future<Set<String>> fetchTopSenderistaIds(String topId) async {
-    final rows = await _client.from('top_senderistas').select('profile_id').eq('top_id', topId);
+    final rows = await _client
+        .from('top_senderistas')
+        .select('profile_id')
+        .eq('top_id', topId);
     return rows.map((r) => r['profile_id'] as String).toSet();
   }
 
   /// Libera/atribui (ou revoga) um Hakuna num Top — "delegar função".
-  Future<void> setHakunaReleased({required String topId, required String profileId, required bool released}) {
+  Future<void> setHakunaReleased({
+    required String topId,
+    required String profileId,
+    required bool released,
+  }) {
     return _client.from('top_hakunas').upsert({
       'top_id': topId,
       'profile_id': profileId,
@@ -118,16 +146,36 @@ class AdminService {
     });
   }
 
-  Future<void> removeHakunaFromTop({required String topId, required String profileId}) {
-    return _client.from('top_hakunas').delete().eq('top_id', topId).eq('profile_id', profileId);
+  Future<void> removeHakunaFromTop({
+    required String topId,
+    required String profileId,
+  }) {
+    return _client
+        .from('top_hakunas')
+        .delete()
+        .eq('top_id', topId)
+        .eq('profile_id', profileId);
   }
 
-  Future<void> registerSenderista({required String topId, required String profileId}) {
-    return _client.from('top_senderistas').upsert({'top_id': topId, 'profile_id': profileId});
+  Future<void> registerSenderista({
+    required String topId,
+    required String profileId,
+  }) {
+    return _client.from('top_senderistas').upsert({
+      'top_id': topId,
+      'profile_id': profileId,
+    });
   }
 
-  Future<void> removeSenderistaFromTop({required String topId, required String profileId}) {
-    return _client.from('top_senderistas').delete().eq('top_id', topId).eq('profile_id', profileId);
+  Future<void> removeSenderistaFromTop({
+    required String topId,
+    required String profileId,
+  }) {
+    return _client
+        .from('top_senderistas')
+        .delete()
+        .eq('top_id', topId)
+        .eq('profile_id', profileId);
   }
 
   /// Todas as regras de triagem (inclusive inativas) — usado na tela de
@@ -140,14 +188,17 @@ class AdminService {
 
   /// Rejeitado pelo banco se quem chama não for o admin master.
   Future<void> updateTriageRule(TriageRule rule) {
-    return _client.from('triage_rules').update({
-      'label': rule.label,
-      'min_age': rule.minAge,
-      'max_age': rule.maxAge,
-      'min_comorbidities': rule.minComorbidities,
-      'max_comorbidities': rule.maxComorbidities,
-      'priority': rule.priority,
-      'active': rule.active,
-    }).eq('id', rule.id);
+    return _client
+        .from('triage_rules')
+        .update({
+          'label': rule.label,
+          'min_age': rule.minAge,
+          'max_age': rule.maxAge,
+          'min_comorbidities': rule.minComorbidities,
+          'max_comorbidities': rule.maxComorbidities,
+          'priority': rule.priority,
+          'active': rule.active,
+        })
+        .eq('id', rule.id);
   }
 }

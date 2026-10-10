@@ -48,6 +48,33 @@ extension TeamKeyUi on TeamKey {
     TeamKey.geral => Icons.forum_outlined,
   };
 
+  /// Ícone operacional da equipe — o que a equipe FAZ, pra ser
+  /// reconhecida de relance na lista de participantes.
+  IconData get iconeOperacional => switch (this) {
+    TeamKey.adm => Icons.assignment_ind,
+    TeamKey.logistica => Icons.local_shipping, // carro/transporte
+    TeamKey.voz => Icons.campaign,
+    TeamKey.intercessao => Icons.favorite,
+    TeamKey.producao => Icons.handyman,
+    TeamKey.midia => Icons.photo_camera, // máquina fotográfica
+    TeamKey.eventos => Icons.celebration,
+    TeamKey.seguranca => Icons.local_police,
+    TeamKey.geral => Icons.forum,
+  };
+
+  /// Cor própria de cada equipe, pra diferenciar no meio da lista.
+  Color get cor => switch (this) {
+    TeamKey.adm => const Color(0xFF5E35B1),
+    TeamKey.logistica => const Color(0xFF00897B),
+    TeamKey.voz => const Color(0xFFF4511E),
+    TeamKey.intercessao => const Color(0xFFAD1457),
+    TeamKey.producao => const Color(0xFF6D4C41),
+    TeamKey.midia => const Color(0xFF1E88E5),
+    TeamKey.eventos => const Color(0xFFFB8C00),
+    TeamKey.seguranca => const Color(0xFF37474F),
+    TeamKey.geral => const Color(0xFF546E7A),
+  };
+
   /// O chat geral é o único que todo participante aprovado do Top enxerga —
   /// as outras equipes só aparecem para quem é membro. Essa regra é imposta
   /// pela RLS de `team_messages`, não pela UI: a UI só evita mostrar uma

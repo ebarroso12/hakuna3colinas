@@ -47,10 +47,14 @@ class VitalSigns {
   /// Resumo compacto pra exibir numa lista (ex: "PA 120/80 · FC 78 · SpO2 97%").
   String get summary {
     final parts = <String>[];
-    if (systolicBp != null && diastolicBp != null) parts.add('PA $systolicBp/$diastolicBp');
+    if (systolicBp != null && diastolicBp != null) {
+      parts.add('PA $systolicBp/$diastolicBp');
+    }
     if (heartRate != null) parts.add('FC $heartRate');
     if (spo2 != null) parts.add('SpO2 $spo2%');
-    if (temperatureC != null) parts.add('Temp ${temperatureC!.toStringAsFixed(1)}°C');
+    if (temperatureC != null) {
+      parts.add('Temp ${temperatureC!.toStringAsFixed(1)}°C');
+    }
     if (respiratoryRate != null) parts.add('FR $respiratoryRate');
     return parts.isEmpty ? 'Sem valores registrados' : parts.join(' · ');
   }

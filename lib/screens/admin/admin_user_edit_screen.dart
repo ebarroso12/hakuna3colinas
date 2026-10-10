@@ -92,6 +92,7 @@ class _AdminUserEditScreenState extends State<AdminUserEditScreen> {
           'Remover ${widget.profile.displayLabel} do app? Essa ação não pode ser desfeita.',
         ),
         actions: [
+          const AppLogoTrailing(),
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
             child: const Text('Cancelar'),
@@ -120,7 +121,6 @@ class _AdminUserEditScreenState extends State<AdminUserEditScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: const AppLogoAppBarLeading(),
         title: Text(widget.profile.displayLabel),
         actions: [
           if (!widget.profile.isMasterAdmin)

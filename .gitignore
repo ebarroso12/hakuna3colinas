@@ -61,3 +61,4 @@ env.local.json
 # `npx skills add` recria — com core.symlinks=false no Windows o git
 # duplicaria os arquivos.
 .claude/
+devtools_options.yaml

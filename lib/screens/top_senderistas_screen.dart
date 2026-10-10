@@ -40,8 +40,8 @@ class _TopSenderistasScreenState extends State<TopSenderistasScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: const AppLogoAppBarLeading(),
         title: Text('Senderistas · ${widget.top.name}'),
+        actions: const [AppLogoTrailing()],
       ),
       body: FutureBuilder<(List<Profile>, List<TriageRule>)>(
         future: _future,

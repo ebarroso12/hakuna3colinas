@@ -67,8 +67,8 @@ class _AdminTopMembersScreenState extends State<AdminTopMembersScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: const AppLogoAppBarLeading(),
         title: Text('Equipe · ${widget.top.name}'),
+        actions: const [AppLogoTrailing()],
       ),
       body: FutureBuilder<_MembersData>(
         future: _future,

@@ -57,8 +57,8 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: const AppLogoAppBarLeading(),
         title: const Text('Trocar senha'),
+        actions: const [AppLogoTrailing()],
       ),
       body: Padding(
         padding: const EdgeInsets.all(24),

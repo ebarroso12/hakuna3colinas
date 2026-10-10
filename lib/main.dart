@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'screens/auth_gate.dart';
+import 'offline/sync_service.dart';
+import 'services/atendimento_service.dart';
 import 'services/supabase_service.dart';
 
 /// Credenciais do Supabase são passadas em tempo de build, nunca commitadas:
@@ -11,7 +15,16 @@ const _supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await SupabaseService.initialize(url: _supabaseUrl, anonKey: _supabaseAnonKey);
+  await SupabaseService.initialize(
+    url: _supabaseUrl,
+    anonKey: _supabaseAnonKey,
+  );
+
+  // Liga a fila offline: atendimentos e fotos registrados sem sinal sobem
+  // sozinhos quando a conexao volta.
+  AtendimentoService.instance.registrarUploaders();
+  unawaited(SyncService.instance.start());
+
   runApp(const HakunaConnectApp());
 }
 

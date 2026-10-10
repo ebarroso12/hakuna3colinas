@@ -63,8 +63,8 @@ class _TopChatScreenState extends State<TopChatScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        leading: const AppLogoAppBarLeading(),
         title: Text('Chat · ${widget.top.name}'),
+        actions: const [AppLogoTrailing()],
       ),
       body: Column(
         children: [

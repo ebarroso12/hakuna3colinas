@@ -44,8 +44,11 @@ class Profile {
       medicalRegistry: map['medical_registry'] as String?,
       weightKg: (map['weight_kg'] as num?)?.toDouble(),
       isMasterAdmin: map['is_master_admin'] as bool? ?? false,
-      birthDate: map['birth_date'] != null ? DateTime.parse(map['birth_date'] as String) : null,
-      comorbidities: (map['comorbidities'] as List<dynamic>?)?.cast<String>() ?? const [],
+      birthDate: map['birth_date'] != null
+          ? DateTime.parse(map['birth_date'] as String)
+          : null,
+      comorbidities:
+          (map['comorbidities'] as List<dynamic>?)?.cast<String>() ?? const [],
       approved: map['approved'] as bool? ?? false,
     );
   }
@@ -60,7 +63,9 @@ class Profile {
     if (b == null) return null;
     final now = DateTime.now();
     var years = now.year - b.year;
-    if (now.month < b.month || (now.month == b.month && now.day < b.day)) years--;
+    if (now.month < b.month || (now.month == b.month && now.day < b.day)) {
+      years--;
+    }
     return years;
   }
 }

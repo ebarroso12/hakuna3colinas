@@ -2,10 +2,15 @@ import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'dart:io';
+
+import '../models/atendimento.dart';
 import '../models/chat_message.dart';
 import '../models/team.dart';
 import '../models/team_message.dart';
 import '../models/hakuna_position.dart';
+import '../models/participant.dart';
+import '../models/participant_tag.dart';
 import '../models/profile.dart';
 import '../models/top.dart';
 import '../models/top_alert.dart';
@@ -331,6 +336,185 @@ class SupabaseService {
       'body': body,
       'is_alert': isAlert,
     });
+  }
+
+  /// Busca a tag pelo token. Null quando o token nao existe.
+  ///
+  /// A RLS decide se quem pergunta pode saber: nao-autenticado e quem nao
+  /// e Hakuna liberado no Top recebem lista vazia, que aqui vira o mesmo
+  /// "desconhecida" de um token inventado. Isso e proposital - a resposta
+  /// nao pode confirmar a existencia de um token para quem nao tem acesso.
+  Future<ParticipantTag?> buscarTagPorToken(String token) async {
+    final rows = await _client
+        .from('participant_tags')
+        .select()
+        .eq('token', token)
+        .limit(1);
+    if (rows.isEmpty) return null;
+    return ParticipantTag.fromMap(rows.first);
+  }
+
+  /// Registra a leitura para auditoria LGPD. Toda leitura entra, inclusive
+  /// as que falham: tentativa com tag revogada e exatamente o que a
+  /// auditoria precisa mostrar.
+  Future<void> registrarLeituraTag({
+    required String token,
+    required String topId,
+    required String resultado,
+    String? participantId,
+    double? latitude,
+    double? longitude,
+  }) async {
+    final uid = currentUser?.id;
+    if (uid == null) return;
+    await _client.from('tag_leituras').insert({
+      'token': token,
+      'top_id': topId,
+      'participant_id': participantId,
+      'lida_por': uid,
+      'resultado': resultado,
+      'latitude': latitude,
+      'longitude': longitude,
+    });
+  }
+
+  /// Tags de um Top, para o admin gerenciar e para o app cachear antes de
+  /// entrar em area sem sinal.
+  Future<List<ParticipantTag>> fetchTags(String topId) async {
+    final rows = await _client
+        .from('participant_tags')
+        .select()
+        .eq('top_id', topId)
+        .order('issued_at', ascending: false);
+    return rows.map((r) => ParticipantTag.fromMap(r)).toList();
+  }
+
+  /// Sobe um atendimento que estava na fila offline.
+  ///
+  /// `upsert` por `client_id` e nao `insert`: se a rede caiu depois de o
+  /// servidor ja ter gravado, reenviar nao pode criar um segundo registro
+  /// no historico clinico da pessoa.
+  Future<void> enviarAtendimento(Map<String, dynamic> payload) async {
+    await _client
+        .from('atendimentos')
+        .upsert(payload, onConflict: 'client_id', ignoreDuplicates: true);
+  }
+
+  /// Sobe uma foto de atendimento: primeiro o arquivo para o Storage,
+  /// depois a linha que aponta para ele.
+  Future<void> enviarFotoAtendimento(Map<String, dynamic> payload) async {
+    final caminhoLocal = payload['local_path'] as String?;
+    final atendimentoClientId = payload['atendimento_client_id'] as String?;
+    if (caminhoLocal == null || atendimentoClientId == null) return;
+
+    final arquivo = File(caminhoLocal);
+    if (!await arquivo.exists()) {
+      // A foto sumiu do aparelho (usuario limpou, sistema removeu). Nao da
+      // pra recuperar, e insistir deixaria a fila travada para sempre.
+      return;
+    }
+
+    // Descobre o id real do atendimento pelo client_id. Se ele ainda nao
+    // subiu, lanca: a entrada volta pra fila e tenta depois, ja que a
+    // ordem de envio garante que o atendimento vem antes da foto.
+    final linhas = await _client
+        .from('atendimentos')
+        .select('id')
+        .eq('client_id', atendimentoClientId)
+        .limit(1);
+    if (linhas.isEmpty) {
+      throw StateError(
+        'Atendimento $atendimentoClientId ainda nao subiu; foto aguarda.',
+      );
+    }
+    final atendimentoId = linhas.first['id'] as String;
+
+    final nomeNoStorage =
+        '${payload['top_id']}/$atendimentoClientId/${arquivo.uri.pathSegments.last}';
+    await _client.storage
+        .from('atendimentos')
+        .upload(
+          nomeNoStorage,
+          arquivo,
+          fileOptions: const FileOptions(upsert: true),
+        );
+
+    await _client
+        .from('atendimento_fotos')
+        .upsert(
+          {
+            'atendimento_id': atendimentoId,
+            'top_id': payload['top_id'],
+            'client_id': atendimentoClientId,
+            'local_path': caminhoLocal,
+            'storage_path': nomeNoStorage,
+            'taken_by': payload['taken_by'],
+            'taken_at': payload['taken_at'],
+            'uploaded_at': DateTime.now().toUtc().toIso8601String(),
+          },
+          onConflict: 'client_id',
+          ignoreDuplicates: true,
+        );
+  }
+
+  /// Atendimentos de um participante, do mais recente para o mais antigo —
+  /// a ordem do HISTORICO DE ATENDIMENTOS.
+  Future<List<Atendimento>> fetchAtendimentos({
+    required String topId,
+    required String participantId,
+  }) async {
+    final rows = await _client
+        .from('atendimentos')
+        .select()
+        .eq('top_id', topId)
+        .eq('participant_id', participantId)
+        .order('opened_at', ascending: false);
+    return rows.map((r) => Atendimento.fromMap(r)).toList();
+  }
+
+  /// Participantes (Senderistas) de um Top.
+  ///
+  /// Baixa a lista inteira de uma vez de proposito: a busca por nome e por
+  /// familia tem que funcionar no mato, sem sinal. 215 registros cabem
+  /// tranquilamente na memoria, e filtrar localmente e instantaneo —
+  /// enquanto uma busca por rede falharia justamente onde o app e usado.
+  Future<List<Participant>> fetchParticipants(String topId) async {
+    final rows = await _client
+        .from('top_participants')
+        .select()
+        .eq('top_id', topId)
+        .eq('active', true)
+        .order('full_name');
+    return rows.map((r) => Participant.fromMap(r)).toList();
+  }
+
+  Future<Participant?> fetchParticipant(String participantId) async {
+    final rows = await _client
+        .from('top_participants')
+        .select()
+        .eq('id', participantId)
+        .limit(1);
+    if (rows.isEmpty) return null;
+    return Participant.fromMap(rows.first);
+  }
+
+  /// Equipes de cada participante do Top, para mostrar o icone da equipe
+  /// na lista. Devolve profileId -> equipes.
+  Future<Map<String, List<TeamKey>>> fetchEquipesPorPerfil(String topId) async {
+    final rows = await _client
+        .from('top_team_members')
+        .select('profile_id, team')
+        .eq('top_id', topId)
+        .eq('released', true)
+        .eq('blocked', false);
+    final mapa = <String, List<TeamKey>>{};
+    for (final row in rows) {
+      final pid = row['profile_id'] as String?;
+      final team = teamKeyFromString(row['team'] as String?);
+      if (pid == null || team == null || team.isGeral) continue;
+      mapa.putIfAbsent(pid, () => []).add(team);
+    }
+    return mapa;
   }
 
   /// Equipes em que o usuário logado participa neste Top.

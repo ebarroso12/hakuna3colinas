@@ -4,6 +4,7 @@ import '../models/profile.dart';
 import '../models/top.dart';
 import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
+import '../widgets/barra_inferior.dart';
 import 'admin/admin_home_screen.dart';
 import 'change_password_screen.dart';
 import 'top_detail_screen.dart';
@@ -78,6 +79,7 @@ class _TopsScreenState extends State<TopsScreen> {
           ),
         ],
       ),
+      bottomNavigationBar: const BarraInferior(mostrarInicio: false),
       body: RefreshIndicator(
         onRefresh: _refresh,
         child: FutureBuilder<List<Top>>(

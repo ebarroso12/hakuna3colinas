@@ -8,18 +8,18 @@ TriageColor? triageColorFromString(String? value) {
 
 extension TriageColorUi on TriageColor {
   Color get materialColor => switch (this) {
-        TriageColor.blue => Colors.blue,
-        TriageColor.green => Colors.green,
-        TriageColor.yellow => Colors.amber,
-        TriageColor.red => Colors.red,
-      };
+    TriageColor.blue => Colors.blue,
+    TriageColor.green => Colors.green,
+    TriageColor.yellow => Colors.amber,
+    TriageColor.red => Colors.red,
+  };
 
   String get label => switch (this) {
-        TriageColor.blue => 'Azul',
-        TriageColor.green => 'Verde',
-        TriageColor.yellow => 'Amarelo',
-        TriageColor.red => 'Vermelho',
-      };
+    TriageColor.blue => 'Azul',
+    TriageColor.green => 'Verde',
+    TriageColor.yellow => 'Amarelo',
+    TriageColor.red => 'Vermelho',
+  };
 }
 
 /// Regra de triagem editável pelo admin master: define qual [color] se
