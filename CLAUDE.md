@@ -194,33 +194,68 @@ O workflow imprime no log, lendo do próprio APK, com qual chave ele saiu.
 Keystore e `key.properties` estão no `.gitignore` — perder o `.jks` é
 irreversível.
 
-### A chave de debug do CI é ALEATÓRIA a cada build
+### Assinatura: resolvida a partir da v1.0.23
 
-Verificado em 10/10/2026 lendo o APK Signing Block dos próprios arquivos:
+Conferido em 10/10/2026 com `apksigner verify --print-certs` nos APKs que
+estão no Drive:
 
 ```
-legendarios1.0.18.apk  SHA-1 AB24D950BC3280D8E391943DE9FD026B32AC05AC
-legendarios1.0.19.apk  SHA-1 E882B41E837A8CAC67944CF168585249474CFF11
+legendarios1.0.18.apk  CN=Android Debug          SHA-1 AB24D950...AC05AC
+legendarios1.0.19.apk  CN=Android Debug          SHA-1 E882B41E...4CFF11
+legendarios1.0.23.apk  CN=Legendarios Connect    SHA-1 0B992313...1D4B88
+legendarios1.0.28.apk  CN=Legendarios Connect    SHA-1 0B992313...1D4B88
+legendarios1.0.29.apk  CN=Legendarios Connect    SHA-1 0B992313...1D4B88
 ```
 
-Os dois são `CN=Android Debug` e **diferentes**: o runner do GitHub Actions
-não tem `~/.android/debug.keystore`, então o Gradle gera um novo em cada
-execução. Duas consequências, as duas sérias:
+As duas primeiras saíram com chave de **debug**, e **diferentes entre si**:
+o runner do GitHub Actions não tem `~/.android/debug.keystore`, então o
+Gradle gerava uma nova a cada execução. Da v1.0.23 em diante o CI assina
+com o keystore de produção, vindo dos secrets `LEGENDARIOS_KEYSTORE_*`.
 
-1. **Atualizar por cima FALHA** (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`).
-   Precisa desinstalar antes — e desinstalar **apaga o SQLite local**, ou
-   seja, apaga atendimento enfileirado que ainda não subiu. Em campo isso
-   é perda de dado clínico. Sincronize antes de atualizar.
-2. **Login com Google nunca funciona no APK.** O Google exige client OAuth
-   do tipo Android registrado com pacote + SHA-1 do certificado; com o
-   SHA-1 mudando a cada build, nenhum registro casa, e o plugin falha com
-   DEVELOPER_ERROR antes de qualquer chamada de rede. Não é problema de
-   `clientId` — ver `SupabaseService.googleIndisponivelNoApk`.
+Use `apksigner`, não `keytool -printcert -jarfile`: o Flutter assina só com
+esquema v2/v3 e o `keytool` lê apenas assinatura v1 de JAR — ele não acha
+nada e o silêncio parece "sem assinatura".
 
-**Criar o keystore de produção resolve os dois.** Deixou de ser polimento
-para a Play Store; é pré-requisito para atualização segura e para o Google
-Sign-In. Depois de criado, registrar o SHA-1 dele no Google Cloud como
-client Android (pacote `com.legendarios.hakuna_connect`).
+O que mudou com o keystore de produção:
+
+1. **Atualizar por cima funciona** entre versões ≥ 1.0.23, e o SQLite local
+   sobrevive. Vindo da 1.0.18/1.0.19 ainda falha com
+   `INSTALL_FAILED_UPDATE_INCOMPATIBLE` e exige desinstalar — e desinstalar
+   **apaga a fila**, ou seja, apaga atendimento que ainda não subiu.
+   Sincronize antes.
+2. **Login com Google passou a ser possível** — mas só passa a funcionar
+   depois que o SHA-1 `0B:99:23:13:83:2C:54:BE:2A:0C:B3:ED:0F:DE:56:11:44:1D:4B:88`
+   estiver registrado no Google Cloud como client OAuth do tipo Android
+   (projeto `hakuna3colinas-app`, pacote `com.legendarios.hakuna_connect`).
+   Enquanto não estiver, o plugin falha com DEVELOPER_ERROR antes de
+   qualquer chamada de rede — não é problema de `clientId`, ver
+   `SupabaseService.googleIndisponivelNoApk`.
+
+**Perder o `.jks` é irreversível** e, agora que há base instalada assinada
+com ele, significa não poder mais atualizar nenhum aparelho sem desinstalar.
+O arquivo e sua senha estão fora do repositório (`.gitignore`); o backup
+fora desta máquina é obrigação do dono do projeto.
+
+### Versão instalada e aviso de atualização
+
+`lib/versao.dart` carrega `nome` e `build` como constantes — compiladas
+dentro do APK, que é o único jeito de o aparelho saber a própria versão sem
+rede. Não há `package_info_plus` de propósito: ele não responderia nada
+melhor. O esquecimento de atualizar essas constantes ao bumpar o
+`pubspec.yaml` é travado por `test/versao_bate_com_pubspec_test.dart`, que
+lê o pubspec e falha na divergência — então roda no CI antes de gerar o APK.
+
+A tabela `app_versions` guarda a última versão publicada (`build_number` +
+`apk_url`). `AtualizacaoService` lê a de maior `build_number` e
+`GavetaDoApp` mostra o botão **ATUALIZAR** quando ela é mais alta que a
+instalada. A comparação é pelo `build_number`, **nunca** pelo texto da
+versão: como string, `"1.0.9" > "1.0.10"`, e o app diria que está em dia
+estando atrasado.
+
+Consulta sem rede devolve `null`, e `null` é tratado como "não sei" — a
+gaveta diz que não deu para verificar, em vez de afirmar que está
+atualizado. Publicar versão nova é inserir uma linha em `app_versions` com
+o link do APK; só admin escreve (RLS).
 
 ## Regras de triagem
 

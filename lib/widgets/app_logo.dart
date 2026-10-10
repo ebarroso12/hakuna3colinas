@@ -37,6 +37,36 @@ class AppLogoAppBarLeading extends StatelessWidget {
   }
 }
 
+/// A logo como `leading`, abrindo a gaveta lateral ao toque.
+///
+/// Existe porque `Scaffold` só desenha o botão de hambúrguer quando
+/// `leading` é nulo — e a tela raiz usa a logo ali. Sem isto a gaveta
+/// ficaria acessível só arrastando a borda, que ninguém descobre.
+///
+/// [novidade] pinta um ponto sobre a logo quando há versão nova; é o único
+/// aviso que o usuário recebe sem abrir a gaveta.
+class AppLogoAbreGaveta extends StatelessWidget {
+  const AppLogoAbreGaveta({super.key, this.novidade = false});
+
+  final bool novidade;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: 'Menu e versão do app',
+      padding: const EdgeInsets.all(8),
+      // `Scaffold.of` em vez de `Scaffold.maybeOf`: este widget só faz
+      // sentido dentro de um Scaffold com gaveta, e falhar alto no
+      // desenvolvimento é melhor que um botão que não faz nada em campo.
+      onPressed: () => Scaffold.of(context).openDrawer(),
+      icon: Badge(
+        isLabelVisible: novidade,
+        child: const AppLogo(size: 32),
+      ),
+    );
+  }
+}
+
 /// A mesma logo, mas do lado direito do AppBar. Mantém a identidade visual
 /// sem roubar o lugar da seta de voltar.
 class AppLogoTrailing extends StatelessWidget {

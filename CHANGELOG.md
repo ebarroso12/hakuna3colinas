@@ -11,6 +11,61 @@ Android físico.
 
 ## 10/10/2026
 
+### v1.0.30 — versao na gaveta e botao "Atualizar"
+
+Pedido que estava em aberto: "mostre na lateral a versao que esta no
+momento; caso esteja desatualizado, crie o botao Atualizar".
+
+A versao instalada vem de `lib/versao.dart`, duas constantes compiladas
+dentro do APK. Nao entrou `package_info_plus`: ele nao responderia nada
+melhor, porque o que interessa e a versao DESTA build, e ela esta no
+binario. O preco e a duplicacao com o `pubspec.yaml`, travada por
+`test/versao_bate_com_pubspec_test.dart` — divergencia falha no CI antes
+de gerar o APK.
+
+A versao publicada vem da tabela nova `app_versions` (leitura para quem
+esta logado, escrita so de admin). A comparacao e pelo `build_number`,
+nunca pelo texto: em ordem lexicografica "1.0.9" e maior que "1.0.10", e
+o app diria que esta em dia estando atras. Ha teste com esse par exato.
+
+Consulta sem rede devolve `null`, e `null` e tratado como **"nao sei"**:
+a gaveta diz que nao deu para verificar, em vez de afirmar que esta
+atualizado. Era o jeito facil de errar — na trilha o app passa a maior
+parte do tempo sem sinal, e um "voce esta na ultima versao" inventado
+nessas horas e pior que nao dizer nada.
+
+O botao abre o link do APK no navegador; nao instala. Instalacao
+silenciosa exigiria Play Store, e o app e distribuido por "fontes
+desconhecidas". O APK fica no Drive, que e para onde `apk_url` aponta —
+o Release do GitHub nao serve porque o repositorio e privado e o link
+exigiria conta no projeto.
+
+Verificado: `analyze` limpo, 284 testes passando, 14 novos (4 da gaveta, 8 do
+servico, 2 do guarda de versao). **Nao verificado em aparelho**: o toque
+na logo abrindo a gaveta e o `launchUrl` saindo para o navegador.
+
+### Correcao de um fato que o CLAUDE.md afirmava errado
+
+O arquivo dizia, em presente, que o CI assina com chave de debug aleatoria
+por build, e que por isso atualizar por cima falha. Conferi com
+`apksigner verify --print-certs` nos cinco APKs do Drive:
+
+```
+1.0.18  CN=Android Debug        SHA-1 AB24D950...AC05AC
+1.0.19  CN=Android Debug        SHA-1 E882B41E...4CFF11
+1.0.23  CN=Legendarios Connect  SHA-1 0B992313...1D4B88
+1.0.28  CN=Legendarios Connect  SHA-1 0B992313...1D4B88
+1.0.29  CN=Legendarios Connect  SHA-1 0B992313...1D4B88
+```
+
+Da v1.0.23 em diante a chave e a de producao e **a mesma**. Atualizar por
+cima funciona entre essas versoes, e o SQLite local sobrevive. O aviso que
+eu havia escrito na gaveta ("pode exigir desinstalar, e desinstalar apaga
+a fila") estava desatualizado e foi reescrito: o texto agora diz que
+instala por cima e mantem os dados, e so menciona a desinstalacao como o
+que fazer SE o Android recusar.
+
+
 ### v1.0.23 — corrige a decodificação do keystore no CI
 
 A build da v1.0.21, a primeira com chave de produção, falhou com

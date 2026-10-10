@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 
 import '../models/profile.dart';
 import '../models/top.dart';
+import '../offline/outbox.dart';
 import '../services/admin_service.dart';
+import '../services/atualizacao_service.dart';
 import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
 import '../widgets/barra_inferior.dart';
 import '../widgets/cabecalho_usuario.dart';
+import '../widgets/gaveta_do_app.dart';
 import 'admin/admin_home_screen.dart';
 import 'change_password_screen.dart';
 import 'top_detail_screen.dart';
@@ -24,6 +27,15 @@ class _TopsScreenState extends State<TopsScreen> {
   late Future<List<Top>> _topsFuture;
   Profile? _myProfile;
 
+  /// Quantas entradas ainda não subiram, lido uma vez na abertura. Vai
+  /// para a gaveta porque atualizar o app pode exigir desinstalar, e
+  /// desinstalar apaga a fila — ver [GavetaDoApp].
+  int _pendentes = 0;
+
+  /// Se há versão mais nova publicada. Mexe só no ponto sobre a logo; a
+  /// gaveta consulta de novo quando é aberta.
+  bool _temVersaoNova = false;
+
   @override
   void initState() {
     super.initState();
@@ -31,6 +43,18 @@ class _TopsScreenState extends State<TopsScreen> {
     SupabaseService.instance.fetchMyProfile().then((p) {
       if (mounted) setState(() => _myProfile = p);
     });
+    _verificarVersao();
+    Outbox.instance.pendingCount().then((n) {
+      if (mounted) setState(() => _pendentes = n);
+    });
+  }
+
+  Future<void> _verificarVersao() async {
+    final v = await AtualizacaoService.instance.consultar();
+    if (!mounted) return;
+    // `null` é "não deu para verificar", não "está atualizado" — então o
+    // ponto fica apagado, sem afirmar nada.
+    setState(() => _temVersaoNova = v?.maisNovaQueEsta ?? false);
   }
 
   Future<void> _refresh() async {
@@ -41,8 +65,9 @@ class _TopsScreenState extends State<TopsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      drawer: GavetaDoApp(pendentesNaFila: _pendentes),
       appBar: AppBar(
-        leading: const AppLogoAppBarLeading(),
+        leading: AppLogoAbreGaveta(novidade: _temVersaoNova),
         title: CabecalhoUsuario(
           perfil: _myProfile,
           aoEditar: _myProfile == null

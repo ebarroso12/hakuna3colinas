@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.29+30
+version: 1.0.30+31
 
 environment:
   sdk: ^3.13.1
@@ -85,6 +85,13 @@ dependencies:
   # Geracao do QR para imprimir/mostrar na tela. Sem isto a contingencia
   # nao existe de fato: nao ha como PRODUZIR o codigo que se le.
   qr_flutter: ^4.1.0
+
+  # Abre o link do APK no navegador quando ha versao nova. Ja vinha como
+  # dependencia transitiva do flutter_map; esta declarado aqui porque o
+  # codigo do app passou a importa-lo direto, e depender de um pacote que
+  # so chegou de carona quebra no dia em que o flutter_map trocar de
+  # implementacao.
+  url_launcher: ^6.3.3
 
 dev_dependencies:
   flutter_test:
