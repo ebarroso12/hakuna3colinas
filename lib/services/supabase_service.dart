@@ -44,6 +44,20 @@ String friendlyAuthError(Object error) {
       lower.contains('signups not allowed')) {
     return 'Não encontramos essa conta.';
   }
+  if (lower.contains('already registered') ||
+      lower.contains('user_already_exists')) {
+    return 'Esse e-mail já está cadastrado. Entre em vez de se cadastrar.';
+  }
+  // O cadastro falha DENTRO do trigger `handle_new_user`, que insere em
+  // `profiles`. A única restrição que ele pode violar é
+  // `profiles_legendarios_number_key` (o id é novo, então a chave primária
+  // não colide). O GoTrue embrulha isso como "Database error saving new
+  // user" — texto que não diz nada a quem está se cadastrando e some com a
+  // informação útil: o número já é de outra pessoa.
+  if (lower.contains('database error saving new user')) {
+    return 'Esse número do Legendários já está cadastrado por outra pessoa. '
+        'Confira o número; se estiver certo, fale com o administrador.';
+  }
   return message;
 }
 

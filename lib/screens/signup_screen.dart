@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../services/acesso_service.dart';
 import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
 import '../widgets/password_field.dart';
@@ -32,6 +34,20 @@ class _SignupScreenState extends State<SignupScreen> {
 
     if (name.isEmpty || number.isEmpty || email.isEmpty || password.isEmpty) {
       setState(() => _error = 'Preencha todos os campos.');
+      return;
+    }
+
+    // Mesma validação de `AcessoService.numeroValido` e da Edge Function
+    // `acesso` (^[0-9]{4,10}$). Antes a tela aceitava qualquer coisa não
+    // vazia: dava para se cadastrar com "12" ou "abc", e aí o admin nunca
+    // conseguiria liberar o acesso dessa pessoa — a Edge Function recusaria
+    // o número com "numero invalido" e ninguém saberia por quê.
+    if (!AcessoService.numeroValido(number)) {
+      setState(
+        () => _error =
+            'Número do Legendários inválido. '
+            'Use só dígitos, de 4 a 10 (ex.: 203460).',
+      );
       return;
     }
     final weightKg = weightText.isEmpty ? null : double.tryParse(weightText);
@@ -102,8 +118,12 @@ class _SignupScreenState extends State<SignupScreen> {
             TextField(
               controller: _legendariosNumberController,
               keyboardType: TextInputType.number,
+              // `keyboardType` sozinho não barra letra: teclado de terceiro,
+              // colar e teclado físico passam por cima. O formatter barra.
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               decoration: const InputDecoration(
                 labelText: 'Número do Legendários',
+                helperText: 'Só dígitos. É ele que identifica você no app.',
               ),
             ),
             const SizedBox(height: 12),
