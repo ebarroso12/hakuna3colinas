@@ -105,15 +105,33 @@ jobs:
       - name: Diz com qual chave o APK foi assinado
         run: |
           APK=build/app/outputs/flutter-apk/app-release.apk
-          # Confere no arquivo, nao na configuracao: e o unico jeito de
-          # saber o que realmente saiu. "Android Debug" no DN = chave de
-          # debug.
-          DN=$(keytool -printcert -jarfile "$APK" 2>/dev/null \
-               | grep -m1 'Owner:' || echo 'Owner: desconhecido')
-          echo "$DN"
-          if echo "$DN" | grep -q 'Android Debug'; then
+
+          # Confere no ARQUIVO, nao na configuracao: e o unico jeito de
+          # saber o que realmente saiu.
+          #
+          # Precisa ser apksigner, nao keytool. `keytool -printcert
+          # -jarfile` le apenas assinatura JAR v1 (META-INF/*.RSA), e o
+          # Flutter assina com APK Signature Scheme v2/v3 apenas — entao
+          # keytool nao acha nada e devolve vazio em silencio. Foi o que
+          # aconteceu na v1.0.17: o passo existia e nao verificava nada.
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner \
+                      -type f 2>/dev/null | sort -V | tail -1)
+          if [ -z "$APKSIGNER" ]; then
+            echo "::warning::apksigner nao encontrado — assinatura NAO verificada."
+            exit 0
+          fi
+
+          CERTS=$("$APKSIGNER" verify --print-certs "$APK" 2>&1)
+          echo "$CERTS" | grep -E 'Signer #1 certificate (DN|SHA-256)' || true
+
+          if echo "$CERTS" | grep -q 'CN=Android Debug'; then
             echo "::warning::APK assinado com CHAVE DE DEBUG. Instala por \
           fontes desconhecidas; nao serve para Play Store."
+          elif echo "$CERTS" | grep -q 'Signer #1 certificate DN'; then
+            echo "APK assinado com chave de PRODUCAO."
+          else
+            echo "::warning::Nao foi possivel ler o certificado do APK."
+            echo "$CERTS"
           fi
 
       - name: Renomeia para o padrao de distribuicao
