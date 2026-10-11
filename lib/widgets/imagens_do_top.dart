@@ -163,7 +163,8 @@ class _ImagensDoTopState extends State<ImagensDoTop> {
               ? 'Salve o Top primeiro. As imagens ficam ligadas a ele, e '
                     'antes de salvar ele ainda não existe.'
               : 'Logo da trilha, brasão, patrocínio — o que identificar '
-                    'este Top. Toque num quadro vazio para escolher.',
+                    'este Top. Toque num quadro para escolher, e toque numa '
+                    'imagem já posta para TROCAR por outra. O × apaga.',
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 10),
@@ -237,6 +238,11 @@ class _Quadro extends StatelessWidget {
     return AspectRatio(
       aspectRatio: 1,
       child: GestureDetector(
+        // Toque num quadro CHEIO troca a imagem: `ocupado` é "enviando
+        // agora", não "tem imagem". O texto acima diz isso — antes dizia
+        // "toque num quadro vazio", o que fazia o admin concluir que para
+        // trocar era preciso apagar primeiro. O dono do projeto reforçou
+        // em 11/10/2026 que editar nome e fotos tem de funcionar sempre.
         onTap: habilitado && !ocupado ? aoEscolher : null,
         child: Container(
           decoration: BoxDecoration(
