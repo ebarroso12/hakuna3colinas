@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/top_alert.dart';
 import '../services/alarme_service.dart';
+import 'lugar_do_alarme.dart';
 import 'quem_esta_mais_perto.dart';
 
 /// Faixa vermelha de alarme, por cima de qualquer tela do app.
@@ -49,6 +50,15 @@ class FaixaDeAlarme extends StatelessWidget {
   }
 }
 
+/// Estilo compartilhado dos botões da faixa — compacto, porque a faixa
+/// cobre a tela de quem pode estar no meio de um atendimento.
+final _estiloDoBotao = TextButton.styleFrom(
+  padding: EdgeInsets.zero,
+  minimumSize: const Size(0, 32),
+  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  foregroundColor: Colors.white,
+);
+
 class _CartaoDeAlarme extends StatelessWidget {
   const _CartaoDeAlarme(this.alarme);
 
@@ -76,8 +86,14 @@ class _CartaoDeAlarme extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // QUEM ESTÁ CHAMANDO vem na primeira linha, junto da
+                  // hora. Decisão do dono em 11/10/2026. Antes a faixa
+                  // dizia só "ALARME — 14:32": numa trilha com 200
+                  // pessoas, saber que houve emergência sem saber de quem
+                  // não diz a quem correr. O nome viaja dentro do alarme
+                  // porque `profiles` é fechada para quem recebe.
                   Text(
-                    'ALARME — $hora',
+                    'ALARME — ${alarme.quemChama} · $hora',
                     style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.bold,
@@ -89,24 +105,50 @@ class _CartaoDeAlarme extends StatelessWidget {
                         : 'Sem descrição. Procure quem disparou.',
                     style: const TextStyle(color: Colors.white),
                   ),
-                  if (alarme.latitude != null && alarme.longitude != null)
-                    // Toque abre quem está mais perto do ponto do alarme.
-                    // É a pergunta que vem logo depois de "houve um
-                    // alarme" e que o app não respondia.
-                    TextButton.icon(
-                      style: TextButton.styleFrom(
-                        padding: EdgeInsets.zero,
-                        minimumSize: const Size(0, 32),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        foregroundColor: Colors.white,
+                  if (alarme.temPosicao)
+                    // Duas perguntas diferentes, dois botões.
+                    //
+                    // "Ver o lugar" responde ONDE — é o GPS do acidente, o
+                    // que o dono pediu, e o único que serve a quem vai se
+                    // deslocar. "Quem está mais perto" responde QUEM pode
+                    // chegar primeiro, e depende de haver gente publicando
+                    // posição.
+                    //
+                    // `Wrap` e não `Row`: em 320 dp os dois rótulos não
+                    // cabem na mesma linha, e `Row` estoura cortando o
+                    // segundo botão em silêncio.
+                    Wrap(
+                      spacing: 4,
+                      children: [
+                        TextButton.icon(
+                          style: _estiloDoBotao,
+                          onPressed: () => LugarDoAlarme.abrir(alarme),
+                          icon: const Icon(Icons.place, size: 16),
+                          label: const Text('Ver o lugar'),
+                        ),
+                        TextButton.icon(
+                          style: _estiloDoBotao,
+                          onPressed: () => QuemEstaMaisPerto.abrir(
+                            topId: alarme.topId,
+                            latitude: alarme.latitude!,
+                            longitude: alarme.longitude!,
+                          ),
+                          icon: const Icon(Icons.near_me, size: 16),
+                          label: const Text('Quem está mais perto'),
+                        ),
+                      ],
+                    )
+                  else
+                    // Alarme sem GPS não é raro: o disparo segue mesmo se
+                    // o `getCurrentPosition` falhar, e falha bastante
+                    // debaixo de mata fechada. Dizer isso é melhor que
+                    // deixar a pessoa procurando o botão que não existe.
+                    const Padding(
+                      padding: EdgeInsets.only(top: 2),
+                      child: Text(
+                        'Sem posição de GPS neste alarme — use o rádio.',
+                        style: TextStyle(color: Colors.white70, fontSize: 12),
                       ),
-                      onPressed: () => QuemEstaMaisPerto.abrir(
-                        topId: alarme.topId,
-                        latitude: alarme.latitude!,
-                        longitude: alarme.longitude!,
-                      ),
-                      icon: const Icon(Icons.near_me, size: 16),
-                      label: const Text('Quem está mais perto'),
                     ),
                 ],
               ),

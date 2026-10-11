@@ -11,6 +11,121 @@ Android físico.
 
 ## 11/10/2026
 
+### v1.0.39 — as 9 equipes aparecem, e a emergencia chega a TODOS
+
+O dono abriu o app e nao achou as 9 equipes. Puxando esse fio sairam
+quatro defeitos, e **os quatro eram do mesmo tipo: a tela mais fechada
+que o banco**. A RLS permitia, a interface nao oferecia — o inverso da
+regra do projeto, que e a UI nunca abrir porta que o banco vai fechar.
+
+#### P0 — o alarme chegava a UMA pessoa
+
+`pertence_ao_top()` exige ser admin, Hakuna liberado em `top_hakunas`, OU
+membro liberado em `top_team_members`. `top_team_members` esta vazia e ha
+**1 so Hakuna liberado no Top 1782 — o proprio admin**.
+
+Somadas as duas coisas: se alguem apertasse emergencia, o unico que
+receberia era o admin. A funcao mais critica do app chegava a uma pessoa.
+
+Nao e bug de codigo. E a guarda certa aplicada a um banco sem o dado
+operacional que ela pressupoe — e e o tipo de falha que teste nenhum
+pega: a policy esta correta, a fila funciona, o som toca, e nao ha
+ninguem do outro lado. Nenhum dos 426 testes falhava.
+
+`pode_alarmar_no_top()` passa a aceitar **todo aprovado de Top nao-draft**
+(a mesma regua do chat geral), com a escada antiga somada por baixo.
+
+#### P0 — o botao EMERGENCIA so existia para Hakuna e admin
+
+Estava dentro de `if (isHakuna)`. O membro da **seguranca**, cuja funcao e
+exatamente ver acidente, nao tinha o botao. A RLS foi aberta na v1.0.35
+para `pertence_ao_top()` e a UI nunca foi; o `CLAUDE.md` afirmava "membro
+liberado de qualquer equipe" descrevendo a INTENCAO, nao o app.
+
+#### P0 — "Compartilhar minha posicao" tambem era so de Hakuna
+
+Isso esvaziava o alarme pela raiz: sem ninguem publicando ponto, nao
+existe GPS de socorro nem "quem esta mais perto" a responder. A RLS de
+INSERT em `hakuna_positions` sempre aceitou qualquer um logado.
+
+#### P1 — as 9 equipes nao apareciam para ninguem
+
+`TeamChatsScreen` listava so as equipes em que a pessoa ja era membro
+liberado. Como `top_team_members` nasce vazia, esse era o estado de todo
+mundo num Top recem-montado — inclusive do admin, que a RLS libera em
+todas. Hoje a tela mostra **sempre as 9** e cada uma diz seu estado.
+
+Os tres motivos de "fechada" sao textos diferentes porque tem solucoes
+diferentes: nao estar na equipe, estar e **faltar ser LIBERADO**, e estar
+bloqueado. O segundo era o pior de esconder — `is_team_member` exige
+`released`, e quem caia nele ficava sem chat e sem anotacoes sem saber o
+que pedir.
+
+#### QUEM esta chamando e ONDE foi
+
+A faixa dizia so `ALARME — 14:32`. Numa trilha com 200 pessoas isso nao
+diz a quem correr nem para onde. Agora diz
+`ALARME — Edson Barroso · 14:32`, com botao **Ver o lugar** que abre o
+ponto num mapa, com a coordenada em texto e botao de copiar — sem tiles no
+mato, a coordenada e o que se dita no radio.
+
+O nome viaja DENTRO do alarme (`top_alerts.sender_name`), desnormalizado
+de proposito: `profiles` e fechada para quem recebe
+(`id = auth.uid() or is_admin()`), o Realtime nao passa por RPC, e offline
+nao ha rede para resolver uuid em nome. Vem do cache local, entao
+**funciona sem sinal**. Sem nome o alarme sai de qualquer jeito e a faixa
+diz "Alguem do Top" — nunca um uuid, que ocuparia a linha do nome sem
+ajudar ninguem a achar a pessoa.
+
+#### O enum `team_key` nao existia no repositorio
+
+`grep -rn "create type.*team_key" supabase/` nao achava nada. O valor
+`hakunas` entrou em producao por comando a mao registrado apenas como
+**comentario**. Comentario nao roda: um schema reconstruido daqui sairia
+com 8 equipes e a de salvamento desapareceria em silencio — o mesmo
+padrao de `top_imagens`. Corrigido com arquivo idempotente.
+
+#### Decisao que tomei, e o custo dela
+
+Perguntei se as posicoes de todos deviam abrir durante a emergencia; ficou
+em aberto, entao vale a leitura literal do pedido: "ver **o lugar** via
+GPS" e o ponto do acidente, nao a localizacao de 200 pessoas.
+`pode_ver_mapa()` fica como estava.
+
+**O custo e real:** `QuemEstaMaisPerto` le `hakuna_positions` e devolve
+lista vazia para quem nao passa em `pode_ver_mapa()`. O botao aparece para
+todos e so responde para admin, Hakuna liberado, coordenacao, `seguranca`
+e `hakunas`.
+
+#### Verificado
+
+`flutter analyze` sem issues. **452 testes passando** (eram 426). Os 26
+novos cobrem a regra de acesso as 9 equipes (14 casos, inclusive admin
+bloqueado numa equipe), o alarme com e sem nome, alarme antigo sem a
+coluna, meia coordenada, e `0,0` — que **e** posicao valida, nao ausencia.
+
+#### NAO verificado
+
+**O SQL nao foi aplicado por mim** — nao tenho credencial do banco nesta
+sessao (`supabase projects list` devolve `AccessTokenRequiredError`).
+Quatro arquivos a rodar, na ordem, com consulta de conferencia:
+
+    1. supabase/team_key_as_nove_equipes.sql
+    2. supabase/admin_ve_todas_as_equipes.sql
+    3. supabase/alarme_para_todo_o_top.sql
+    4. supabase/CONFERIR_APOS_APLICAR.sql   (so pergunta, nao altera)
+
+**Enquanto o 3 nao rodar, o alarme continua chegando a uma pessoa.** O app
+novo nao resolve isso sozinho: a fronteira e a RLS.
+
+Tambem nao verificado, e so se prova em aparelho: o som e a vibracao do
+alarme, o GPS com tela bloqueada, e os tiles do mapa sem rede.
+
+**`top_team_members` e `team_messages` seguem fora do repositorio.** Nao as
+escrevi de memoria: `create table` inventado parece fonte da verdade e
+diverge calado. Extrair com `pg_dump --schema-only`.
+
+
 ### v1.0.37 — dez defeitos achados por revisao, um deles grave
 
 Rodei revisao de codigo no commit da v1.0.36. Dez achados, todos

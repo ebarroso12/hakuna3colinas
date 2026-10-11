@@ -3,8 +3,11 @@ import 'package:flutter/services.dart' show PlatformException;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'dart:async';
 import 'dart:io';
 
+import '../offline/cache_local.dart';
+import '../offline/tabelas.dart';
 import '../models/anotacao.dart';
 import '../models/atendimento.dart';
 import '../models/chat_message.dart';
@@ -351,7 +354,25 @@ class SupabaseService {
   Future<Profile> fetchMyProfile() async {
     final uid = currentUser!.id;
     final row = await _client.from('profiles').select().eq('id', uid).single();
-    return Profile.fromMap(row);
+    final perfil = Profile.fromMap(row);
+    // Guarda o nome para o alarme poder dizer QUEM está chamando mesmo
+    // disparado offline. `profiles` é fechada para quem recebe o alarme
+    // (`id = auth.uid() or is_admin()`), então o nome tem de viajar DENTRO
+    // do alarme — ver `AlarmeService.nomeDeQuemDispara` e
+    // `supabase/alarme_para_todo_o_top.sql`.
+    //
+    // Grava no `CacheLocal` direto, e não via `AlarmeService`, para não
+    // criar import circular: o serviço de alarme já importa este arquivo.
+    //
+    // Sem `await` e com o erro engolido: é escrita em disco a serviço de
+    // uma função futura, e não pode atrasar nem derrubar o carregamento
+    // do perfil, que é o que decide o que a tela mostra.
+    unawaited(
+      CacheLocal.instance
+          .guardarEstado(ColunasEstado.meuNome, perfil.fullName.trim())
+          .catchError((_) {}),
+    );
+    return perfil;
   }
 
   /// Tops (eventos) aos quais o usuário atual está vinculado (como hakuna
@@ -853,7 +874,19 @@ class SupabaseService {
   ///
   /// O chat geral não vem daqui: ele é aberto para todo aprovado, então a
   /// UI o adiciona sempre, sem depender de vínculo.
-  Future<List<TeamMembership>> fetchMyTeams(String topId) async {
+  ///
+  /// `somenteAtivas = false` devolve também os vínculos **inativos** — não
+  /// liberado e bloqueado. Eles parecem inúteis e são o oposto: sem eles a
+  /// tela não distingue "você não está nesta equipe" de "você está e falta
+  /// o admin te LIBERAR", que são problemas diferentes e têm soluções
+  /// diferentes. `is_team_member` exige `released = true AND blocked =
+  /// false` (ver `supabase/team_roles_and_triage_v2.sql:69`), então quem
+  /// cai no segundo estado fica sem chat e sem bloco de anotações — e, se a
+  /// tela não disser isso, sem nem saber o que pedir.
+  Future<List<TeamMembership>> fetchMyTeams(
+    String topId, {
+    bool somenteAtivas = true,
+  }) async {
     final uid = currentUser?.id;
     if (uid == null) return const [];
     final rows = await _client
@@ -861,10 +894,10 @@ class SupabaseService {
         .select()
         .eq('top_id', topId)
         .eq('profile_id', uid);
-    return rows
-        .map((r) => TeamMembership.fromMap(r))
-        .where((m) => m.isActive)
-        .toList();
+    final vinculos = rows.map((r) => TeamMembership.fromMap(r));
+    return somenteAtivas
+        ? vinculos.where((m) => m.isActive).toList()
+        : vinculos.toList();
   }
 
   /// Membros liberados de uma equipe, para identificar quem é quem no chat.

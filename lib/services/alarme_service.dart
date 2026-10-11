@@ -4,8 +4,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../models/top_alert.dart';
+import '../offline/cache_local.dart';
 import '../offline/outbox.dart';
 import '../offline/sync_service.dart';
+import '../offline/tabelas.dart';
 import 'supabase_service.dart';
 
 /// Alarme do Top: disparo e recebimento.
@@ -101,6 +103,14 @@ class AlarmeService extends ChangeNotifier {
         'client_id': clientId,
         'top_id': topId,
         'sender_id': uid,
+        // QUEM ESTÁ CHAMANDO viaja dentro do alarme.
+        //
+        // `profiles` é fechada para quem recebe (`id = auth.uid() or
+        // is_admin()`), então o destinatário não tem como resolver o uuid.
+        // Lido do cache local porque o disparo precisa funcionar sem rede
+        // — buscar o perfil aqui transformaria a função mais crítica do
+        // app numa que depende de sinal.
+        'sender_name': await nomeDeQuemDispara(),
         'message': mensagem,
         'latitude': latitude,
         'longitude': longitude,
@@ -113,6 +123,27 @@ class AlarmeService extends ChangeNotifier {
     envioEmAndamento = SyncService.instance.syncNow();
     unawaited(envioEmAndamento!);
     return clientId;
+  }
+
+  /// Nome de quem está logado, do cache local. Null até o primeiro login
+  /// com sinal — e aí o alarme sai sem nome, que a faixa trata.
+  ///
+  /// Nunca devolve uuid como substituto: uuid na faixa de emergência
+  /// ocupa a linha do nome e não ajuda ninguém a achar a pessoa.
+  ///
+  /// **Quem GRAVA é `SupabaseService.fetchMyProfile`**, no cache local, a
+  /// cada carregamento de perfil. Fica lá e não aqui para não criar import
+  /// circular — este arquivo já importa o serviço do Supabase.
+  Future<String?> nomeDeQuemDispara() async {
+    try {
+      final nome = await CacheLocal.instance.lerEstado(ColunasEstado.meuNome);
+      final limpo = nome?.trim();
+      return (limpo == null || limpo.isEmpty) ? null : limpo;
+    } catch (_) {
+      // Falha de disco não pode impedir o disparo. Alarme sem nome é
+      // muito melhor que alarme não enviado.
+      return null;
+    }
   }
 
   /// A tentativa de envio que [disparar] acabou de disparar.

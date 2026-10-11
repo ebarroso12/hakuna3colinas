@@ -199,8 +199,14 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // O texto dizia "todos os Hakunas liberados" e isso ficou
+            // falso duas vezes: a RLS abriu para qualquer equipe na
+            // v1.0.35 e agora o alarme vai para TODO o Top. Prometer
+            // menos gente do que de fato recebe faz quem dispara achar
+            // que precisa avisar os outros por fora.
             const Text(
-              'Avisa todos os Hakunas liberados neste Top agora. Use só em acidente ou atendimento crítico.',
+              'Avisa TODO MUNDO neste Top agora, com a sua posição no GPS '
+              'e o seu nome. Use só em acidente ou atendimento crítico.',
             ),
             const SizedBox(height: 12),
             TextField(
@@ -262,7 +268,7 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
           duration: const Duration(seconds: 6),
           content: Text(
             pendentes == 0
-                ? 'Alarme disparado para os Hakunas do Top.'
+                ? 'Alarme disparado para TODO o Top, com a sua posição.'
                 : 'Alarme GRAVADO e aguardando sinal. Ele sobe sozinho '
                       'quando a rede voltar — não conte com ele agora, use '
                       'o rádio.',
@@ -420,37 +426,49 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
                 ],
               ),
             ),
-          if (isHakuna)
-            if (isHakuna)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-                child: FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Colors.red,
-                    foregroundColor: Colors.white,
-                  ),
-                  onPressed: _sendAlert,
-                  icon: const Icon(Icons.warning_amber),
-                  label: const Text(
-                    'EMERGÊNCIA — acidente / atendimento crítico',
-                  ),
-                ),
+          // EMERGENCIA E DE TODOS, sem `if` nenhum. Decisao do dono em
+          // 11/10/2026: "se alguma pessoa apertar emergencia todos devem
+          // ver o lugar via GPS e quem esta chamando".
+          //
+          // Estava sob `if (isHakuna)` — ou seja, so Hakuna e admin. A
+          // RLS havia sido aberta na v1.0.35 para `pertence_ao_top()`, e a
+          // UI nunca foi: o membro da SEGURANCA, cuja funcao e exatamente
+          // ver acidente, nao tinha o botao. O `CLAUDE.md` afirmava
+          // "membro liberado de qualquer equipe" descrevendo a INTENCAO,
+          // nao o app. Quem ve o acidente e quem esta por perto.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
               ),
-          if (isHakuna)
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: FilledButton.icon(
-                onPressed: widget.top.status.name == 'active'
-                    ? _toggleTracking
-                    : null,
-                icon: Icon(_tracking ? Icons.location_off : Icons.location_on),
-                label: Text(
-                  _tracking
-                      ? 'Parar de compartilhar posição'
-                      : 'Compartilhar minha posição',
-                ),
+              onPressed: _sendAlert,
+              icon: const Icon(Icons.warning_amber),
+              label: const Text(
+                'EMERGÊNCIA — acidente / atendimento crítico',
               ),
             ),
+          ),
+          // Compartilhar posicao tambem era so de Hakuna, e isso esvaziava
+          // o alarme pela raiz: sem ninguem publicando ponto, "quem esta
+          // mais perto" nao tem a quem responder e o GPS do socorro nao
+          // existe. A RLS de INSERT em `hakuna_positions` sempre aceitou
+          // qualquer um logado ("quem caminha gera o ponto").
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: FilledButton.icon(
+              onPressed: widget.top.status.name == 'active'
+                  ? _toggleTracking
+                  : null,
+              icon: Icon(_tracking ? Icons.location_off : Icons.location_on),
+              label: Text(
+                _tracking
+                    ? 'Parar de compartilhar posição'
+                    : 'Compartilhar minha posição',
+              ),
+            ),
+          ),
           if (isHakuna)
             _MyStatsCard(topId: widget.top.id, weightKg: _myProfile?.weightKg),
           Padding(

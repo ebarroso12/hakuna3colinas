@@ -32,6 +32,66 @@ clínico, em `top_hakuna_messages`, numa tabela separada. Hakuna é equipe
 **e** papel: a equipe é onde a pessoa trabalha, o papel (`user_role`) é o
 que ela pode fazer.
 
+### As 9 equipes têm de APARECER, não só existir
+
+O dono abriu o app em 11/10/2026 e não achou as 9. Os dois lados do mesmo
+problema, os dois corrigidos:
+
+1. **`TeamChatsScreen` listava só as equipes em que a pessoa já era membro
+   liberado.** `top_team_members` nasce vazia, então esse era o estado de
+   **todo mundo** num Top recém-montado — e também do admin, que a RLS
+   libera em todas (`is_admin() or is_team_member(...)`). A tela estava
+   fechando porta que o banco deixa aberta, o inverso da regra do projeto.
+   Hoje ela mostra **sempre as 9** e marca o estado de cada uma. Equipe
+   fechada não abre o chat (a RLS esvaziaria) — ao toque, explica.
+
+   Os três estados de "fechada" têm soluções diferentes e por isso são
+   textos diferentes: **não está na equipe** (pedir inclusão), **está e
+   falta liberar** (`released = false`, pedir liberação) e **bloqueado**.
+   O segundo é o pior de esconder: `is_team_member` exige `released`, e
+   quem cai nele fica sem chat e sem anotações sem saber o que pedir. Daí
+   `fetchMyTeams(..., somenteAtivas: false)` existir.
+
+   Travado por `test/widgets/as_nove_equipes_aparecem_test.dart`, que
+   monta a tela no pior caso (ninguém logado: zero vínculos e perfil que
+   nem carrega) e exige as 9 na árvore. Ele precisa de superfície alta —
+   o `ListView` constrói só o visível e a primeira versão falhou em
+   "Mídia" por isso, não por defeito da tela.
+
+   **O ADMIN VÊ E ACESSA AS 9**, incluindo mandar mensagem como alerta.
+   Decisão do dono em 11/10/2026, nestas palavras: "como administrador
+   devo ver e ter acesso a todas as equipes". Garantido no banco por
+   `supabase/admin_ve_todas_as_equipes.sql` — **aditivo de propósito**:
+   `team_messages` não está no repositório, então não há como reescrever
+   as policies dela sem apagar regra que não se sabe que existe. Policies
+   do mesmo comando são OR entre si, então somar `is_admin()` amplia e não
+   tira nada de ninguém.
+
+   **O vínculo manda sobre o papel, e a ordem importa.** Admin bloqueado
+   numa equipe aparece como BLOQUEADO, não como "acesso de admin": o
+   bloqueio é decisão explícita de alguém sobre aquela pessoa naquela
+   equipe, e ignorá-lo seria a tela desfazendo pela leitura o que um admin
+   fez pela escrita.
+
+   A regra toda mora em `lib/models/acesso_as_equipes.dart`, fora da tela,
+   porque regra de acesso precisa de teste direto — dentro do `State` só
+   se verificava montando a árvore e fingindo rede. 14 casos em
+   `test/models/acesso_as_equipes_test.dart`, inclusive o texto de cada
+   estado: **o texto é a correção**, não enfeite.
+
+2. **Nada no repositório cria o enum `team_key`.** O valor `hakunas`
+   entrou em produção por comando à mão registrado apenas como
+   *comentário* em `equipes_alarme_mapa_e_blocos.sql:17-18`. Comentário
+   não roda: um schema reconstruído deste repositório sairia com 8
+   equipes e a de salvamento desapareceria em silêncio. Hoje há
+   `supabase/team_key_as_nove_equipes.sql`, idempotente, com a consulta
+   de conferência.
+
+**Ainda fora do repositório: `top_team_members` e `team_messages`.** As
+duas só existem em produção. Não as escrevi de memória de propósito —
+`create table` inventado parece fonte da verdade e diverge calado. Extrair
+com `pg_dump --schema-only` e versionar.
+
 ## O módulo clínico é uma PARTE, e tem cerca própria
 
 **O que passa por aqui inclui triagem, comorbidade e sinais vitais de
@@ -45,9 +105,11 @@ mídia não tem motivo para ler prontuário.
 
 | Função | Quem pode | Por quê |
 |---|---|---|
-| Chat e anotações da equipe | membro **liberado** da equipe | `is_team_member` |
+| Chat e anotações da equipe | membro **liberado** da equipe · **admin, nas 9** | `is_team_member` ou `is_admin()` |
+| Mandar mensagem como **alerta** | coordenação da equipe · **admin, nas 9** | `is_alert` na RLS de `team_messages` |
 | Atendimento, prontuário, foto, chat clínico | Hakuna liberado em `top_hakunas` | dado clínico tem cerca própria |
-| **Disparar e receber alarme** | membro liberado de **qualquer** equipe | `pertence_ao_top()` |
+| **Disparar e receber alarme** | **TODO aprovado do Top** | `pode_alarmar_no_top()` |
+| Ver o **lugar do alarme** no mapa | quem recebe o alarme — todos | vem de `top_alerts`, não de `hakuna_positions` |
 | **Ver a posição dos outros** | admin · Hakuna liberado · coordenação/subcoordenação de qualquer equipe · membros de `seguranca` e `hakunas` | `pode_ver_mapa()` |
 | Publicar a própria posição | qualquer um logado | quem caminha gera o ponto |
 | Ver a própria trilha | sempre | alimenta `StatsService` |
@@ -57,6 +119,70 @@ quem vê um acidente é quem está por perto, não quem tem o papel certo. A
 posição é vigilância contínua, e 200 pessoas vendo a localização de todas
 as outras não é necessário para mídia, produção ou intercessão fazerem o
 trabalho delas.
+
+### Emergência: todos disparam, todos recebem, com GPS e nome
+
+Decisão do dono em 11/10/2026: *"se alguma pessoa apertar emergência todos
+devem ver o lugar via GPS e quem está chamando"*. Três defeitos achados ao
+aplicar, e os três eram **a UI mais restrita que o banco**:
+
+1. **O botão EMERGÊNCIA estava sob `if (isHakuna)`** — só Hakuna e admin.
+   A RLS foi aberta na v1.0.35 para `pertence_ao_top()` e a UI nunca foi.
+   O membro da **segurança**, cuja função é exatamente ver acidente, não
+   tinha o botão. A tabela acima dizia "membro liberado de qualquer
+   equipe" descrevendo a intenção, não o app.
+
+2. **"Compartilhar minha posição" também era só de Hakuna**, e isso
+   esvaziava o alarme pela raiz: sem ninguém publicando ponto, "quem está
+   mais perto" não tem a quem responder. A RLS de INSERT em
+   `hakuna_positions` sempre aceitou qualquer um logado.
+
+3. **Com `top_team_members` vazia e 1 só Hakuna liberado, o único que
+   recebia alarme era o admin.** Não é bug de código — é a guarda certa
+   sobre um banco sem o dado que ela pressupõe, e é o tipo de falha que
+   teste nenhum pega: a policy está correta, a fila funciona, o som toca,
+   e não há ninguém do outro lado. `pode_alarmar_no_top()` passa a aceitar
+   **todo aprovado de Top não-draft** — a mesma régua do chat geral — com
+   a escada antiga somada por baixo.
+
+**Quem está chamando viaja DENTRO do alarme**, em `top_alerts.sender_name`.
+`profiles` é fechada para quem recebe (`id = auth.uid() or is_admin()`),
+então o destinatário não tem como resolver o uuid; o Realtime não passa por
+RPC; e offline não há rede para buscar. Desnormalizado de propósito — para
+registro de emergência, guardar o nome *do momento do disparo* é a
+vantagem, não o defeito. O nome vem do cache local (`ColunasEstado.meuNome`,
+gravado por `fetchMyProfile`), e **sem nome o alarme sai mesmo assim**: a
+faixa diz "Alguém do Top", que é verdade. Nunca mostrar uuid — ele ocupa a
+linha do nome e não ajuda ninguém a achar a pessoa.
+
+**`LugarDoAlarme` não depende de `pode_ver_mapa()`, e isso é deliberado.**
+O ponto vem de `top_alerts`, não de `hakuna_positions`: é uma coordenada
+única, do instante da emergência, publicada por quem pediu socorro. Mostra
+**um marcador só** e nunca a posição dos outros — a distinção entre alarme
+(aberto) e trilha contínua (restrita) continua de pé. A coordenada aparece
+em texto e dá para copiar, porque sem tiles de mapa no mato é ela que se
+dita no rádio.
+
+SQL em `supabase/alarme_para_todo_o_top.sql`. Testes em
+`test/services/alarme_quem_chama_e_onde_test.dart`, incluindo alarme antigo
+sem a coluna, meia coordenada e `0,0` (que **é** posição válida).
+
+**A trilha contínua NÃO foi aberta, e a escolha foi minha.** Perguntei ao
+dono se as posições de todos deviam abrir durante a emergência; ele deixou
+em aberto, então vale a leitura literal do pedido — "ver **o lugar** via
+GPS e quem está chamando" é o ponto do acidente, não a localização de 200
+pessoas. `pode_ver_mapa()` fica como estava, e a decisão anterior dele
+("200 pessoas vendo a localização de todas as outras não é necessário")
+continua valendo.
+
+**O custo disso é real e precisa ser dito:** `QuemEstaMaisPerto` lê
+`hakuna_positions` e devolve **lista vazia** para quem não passa em
+`pode_ver_mapa()`. Ou seja, o botão "Quem está mais perto" aparece para
+todos e só responde para admin, Hakuna liberado, coordenação, `seguranca` e
+`hakunas`. Quem quiser mudar isso tem duas saídas: abrir de vez, ou abrir
+só enquanto houver alarme da última hora (policy dependente de
+`top_alerts`, que precisa ser medida antes — `hakuna_positions` cresce a
+cada 15 m caminhados).
 
 **`top_permissoes` sobrepõe a regra do mapa, pessoa por pessoa.** Três
 estados: sem linha vale a regra automática; `ver_mapa = true` libera quem a

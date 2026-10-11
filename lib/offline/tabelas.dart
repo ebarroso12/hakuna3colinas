@@ -56,6 +56,18 @@ abstract final class ColunasEstado {
   /// Top que deveria estar sendo rastreado. Ausente = rastreamento parado
   /// de propósito pelo usuário.
   static const topRastreando = 'top_rastreando';
+
+  /// Nome de quem está logado, para o alarme dizer QUEM está chamando.
+  ///
+  /// Gravado sempre que o perfil carrega da rede. Existe porque
+  /// `profiles` é fechada para quem recebe o alarme
+  /// (`profiles_select_own_or_admin`), então o nome tem de viajar DENTRO
+  /// do alarme — e no disparo offline não há rede para buscá-lo.
+  ///
+  /// Ausente só até o primeiro login com sinal. Nesse caso o alarme sai
+  /// sem nome e a faixa diz "Alguém do Top", que é verdade, em vez de
+  /// mostrar um uuid.
+  static const meuNome = 'meu_nome';
 }
 
 /// Colunas de [Tabelas.participantes].
