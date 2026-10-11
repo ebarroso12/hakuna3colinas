@@ -8,6 +8,11 @@ void main() {
     // ganhar uma equipe nova, este teste quebra e lembra de atualizar o
     // Dart junto — senão as mensagens daquela equipe caem no chat errado
     // pelo fallback do fromMap.
+    //
+    // `hakunas` entrou em 11/10/2026, e esta guarda fez o trabalho dela:
+    // ao adicionar o valor no Postgres, ela quebrou e apontou para ca. A
+    // equipe de salvamento faltava no enum — por isso nao tinha chat nem
+    // anotacao como as outras, so o chat clinico numa tabela separada.
     const valoresNoBanco = [
       'adm',
       'logistica',
@@ -17,6 +22,7 @@ void main() {
       'midia',
       'eventos',
       'seguranca',
+      'hakunas',
       'geral',
     ];
 
@@ -45,9 +51,12 @@ void main() {
       }
     });
 
-    test('só "geral" é o canal geral; as outras 8 são equipes', () {
+    test('só "geral" é o canal geral; as outras 9 são equipes', () {
       expect(TeamKey.values.where((t) => t.isGeral).toList(), [TeamKey.geral]);
-      expect(TeamKeyUi.equipes.length, 8);
+      // 9 desde 11/10/2026: `hakunas` faltava no enum, e por isso a
+      // equipe de salvamento nao tinha chat nem anotacao como as
+      // outras — so o chat clinico, numa tabela separada.
+      expect(TeamKeyUi.equipes.length, 9);
       expect(TeamKeyUi.equipes, isNot(contains(TeamKey.geral)));
     });
   });

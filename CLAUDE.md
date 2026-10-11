@@ -19,12 +19,18 @@ São **três** coisas separadas no banco:
 **`hakuna` NÃO é uma equipe** — é um papel, de quem atende clinicamente.
 Uma pessoa pode ser `hakuna` e estar na equipe `logistica`.
 
-As 9 chaves de `team_key`: `adm`, `logistica`, `voz`, `intercessao`,
-`producao`, `midia`, `eventos`, `seguranca`, `geral`.
+As 10 chaves de `team_key`: `adm`, `logistica`, `voz`, `intercessao`,
+`producao`, `midia`, `eventos`, `seguranca`, **`hakunas`**, `geral`.
 
-`geral` não é equipe: é o canal que todo participante aprovado do Top
-enxerga. Daí `TeamKeyUi.equipes` devolver 8 — ver `lib/models/team.dart`,
-que já tem rótulo, ícone e cor de cada uma.
+São **9 equipes** mais o canal `geral`, que não é equipe — é o que todo
+participante aprovado do Top enxerga. Daí `TeamKeyUi.equipes` devolver 9.
+Ver `lib/models/team.dart`, que tem rótulo, ícone e cor de cada uma.
+
+`hakunas` entrou em 11/10/2026. **A equipe de salvamento faltava no enum**,
+e por isso não tinha chat nem bloco de anotações como as outras — só o chat
+clínico, em `top_hakuna_messages`, numa tabela separada. Hakuna é equipe
+**e** papel: a equipe é onde a pessoa trabalha, o papel (`user_role`) é o
+que ela pode fazer.
 
 ## O módulo clínico é uma PARTE, e tem cerca própria
 
@@ -35,18 +41,29 @@ de ferida e chat clínico (`top_hakuna_messages`) exigem estar em
 `top_hakunas` com `released = true` — e deve continuar assim. Membro de
 mídia não tem motivo para ler prontuário.
 
-**O que NÃO deveria ter essa cerca, e tem** (achado de 11/10/2026, ainda
-não decidido — ver Pendências):
+### Quem vê o quê — decidido em 11/10/2026
 
-- `hakuna_positions` SELECT exige ser Hakuna liberado. Então **segurança e
-  logística não veem ninguém no mapa**, embora qualquer um possa publicar
-  a própria posição (o INSERT só exige `profile_id = auth.uid()`).
-- `top_alerts` exige Hakuna nas duas pontas. **Segurança não dispara nem
-  recebe alarme** — sendo que disparar alarme é literalmente a função
-  dela.
+| Função | Quem pode | Por quê |
+|---|---|---|
+| Chat e anotações da equipe | membro **liberado** da equipe | `is_team_member` |
+| Atendimento, prontuário, foto, chat clínico | Hakuna liberado em `top_hakunas` | dado clínico tem cerca própria |
+| **Disparar e receber alarme** | membro liberado de **qualquer** equipe | `pertence_ao_top()` |
+| **Ver a posição dos outros** | admin · Hakuna liberado · coordenação/subcoordenação de qualquer equipe · membros de `seguranca` e `hakunas` | `pode_ver_mapa()` |
+| Publicar a própria posição | qualquer um logado | quem caminha gera o ponto |
+| Ver a própria trilha | sempre | alimenta `StatsService` |
 
-O chat por equipe está correto: `team_messages` usa `is_team_member` /
-`is_team_admin`, não `top_hakunas`.
+**O alarme é mais aberto que o mapa de propósito.** Alarme é emergência:
+quem vê um acidente é quem está por perto, não quem tem o papel certo. A
+posição é vigilância contínua, e 200 pessoas vendo a localização de todas
+as outras não é necessário para mídia, produção ou intercessão fazerem o
+trabalho delas.
+
+**`top_permissoes` sobrepõe a regra do mapa, pessoa por pessoa.** Três
+estados: sem linha vale a regra automática; `ver_mapa = true` libera quem a
+regra não liberaria; `ver_mapa = false` **bloqueia quem a regra liberaria**.
+O terceiro é o que faz a tabela ser "editar" e não só "conceder" — sem ele,
+tirar o mapa de um coordenador exigiria rebaixá-lo de cargo. Só admin
+escreve nela.
 
 ## Stack
 
@@ -207,6 +224,43 @@ nada. O uploader decide por `entrada.operation` — ver
 Hora dos eventos vem **do aparelho** (`created_at`, `lida_em`,
 `occurred_at`), nunca de `now()` no Postgres: offline a coisa acontece
 horas antes do upload.
+
+### Bloco de anotações: um por membro, EDITÁVEL
+
+O equivalente não-médico do prontuário. Cada membro tem o bloco dele, e
+edita — não há sobrescrita entre pessoas porque cada login tem o seu.
+
+A chave é `bloco_id`, **texto**, calculada no aparelho por
+`Anotacao.chaveDe`: `<top>|<team>|<autor>|<participante ou ->`. Não é
+índice composto porque `participante_id` é nulo no bloco do turno, e em
+Postgres **NULL não conflita com NULL** num índice único — dois blocos de
+turno da mesma pessoa não colidiriam e virariam duplicata. Resolver com
+índice parcial quebraria o upsert (o Postgres não infere parcial na forma
+simples do `ON CONFLICT`: foi o bug da v1.0.29). **Não mudar o formato da
+chave** — o valor está gravado, e mudá-lo faria cada aparelho criar bloco
+novo em vez de editar o seu.
+
+**Usa `Outbox.enqueueSubstituindo`, não `enqueue`.** `enqueue` tem
+`ConflictAlgorithm.ignore`: reenfileirar o mesmo `client_id` descarta o
+segundo pedido, o que é certo para append-only (atendimento) e
+catastrófico aqui — a edição seria jogada fora sem erro na tela. E a
+substituição mexe na linha em **qualquer** estado, inclusive já
+sincronizada: `client_id` tem índice único, então a linha antiga continua
+ali depois do envio e um `enqueue` novo também seria ignorado. Era perda
+silenciosa duas camadas de profundidade; os dois níveis têm teste em
+`test/offline/enqueue_substituindo_test.dart`.
+
+No envio, `upsert(onConflict: 'bloco_id')` **sem** `ignoreDuplicates` — o
+bloco é editável, a segunda chegada tem de atualizar.
+
+Risco que resta, e é honesto registrar: a **mesma pessoa** editando em dois
+aparelhos offline. Vale o último a sincronizar. Não há como resolver sem
+mesclar texto automaticamente, o que erraria mais do que acerta.
+
+**A tela avisa, fixo em cima do campo, que ali não se escreve sintoma,
+pressão nem conduta.** Isso vai em `atendimentos`; escrito na anotação,
+fica fora da triagem e invisível para quem vai atender. É o erro mais
+provável daquela tela e o mais caro.
 
 ### Apagar é a única coisa que NÃO funciona offline, e é decisão
 
@@ -458,13 +512,6 @@ validando uma configuração que não existe mais.
 - **APK com 76 MB.** O modelo do ML Kit vai embutido para o QR funcionar
   sem rede (ver `android/gradle.properties`). Se virar problema, o caminho
   é `--split-per-abi`, não desligar o bundling.
-- **GPS e ALARME estão restritos a Hakunas, num app de 9 equipes.**
-  Conferido em 11/10/2026 nas policies: `hakuna_positions` SELECT e
-  `top_alerts` (INSERT e SELECT) exigem `top_hakunas.released`. Membro de
-  segurança não vê o mapa nem recebe alarme. É decisão de produto e de
-  privacidade — abrir o GPS para as 9 equipes significa mais gente vendo a
-  localização de todos —, então **não foi alterado por conta própria**.
-  Precisa da decisão do dono do projeto.
 - **144 dos 216 senderistas do Top 1782 estão sem `participant_code`.**
   Conferido em 10/10/2026: 72 têm número do Legendários, 144 não. O
   autocadastro exige número **na lista do Top** (`participante_elegivel`,

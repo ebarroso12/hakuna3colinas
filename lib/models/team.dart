@@ -3,6 +3,12 @@ import 'package:flutter/material.dart';
 /// As equipes de um Top. Espelha o enum `team_key` do Postgres — os nomes
 /// precisam bater exatamente com os valores do banco, porque são eles que
 /// vão e voltam na coluna `team`.
+///
+/// São **9 equipes** mais o canal `geral`. `hakunas` entrou em 11/10/2026:
+/// a equipe de salvamento faltava no enum, e por isso ela não tinha chat
+/// nem anotação como as outras — só o chat clínico, numa tabela separada
+/// (`top_hakuna_messages`). Hakuna é equipe **e** papel (`user_role`): a
+/// equipe é onde a pessoa trabalha, o papel é o que ela pode fazer no app.
 enum TeamKey {
   adm,
   logistica,
@@ -12,6 +18,7 @@ enum TeamKey {
   midia,
   eventos,
   seguranca,
+  hakunas,
   geral,
 }
 
@@ -33,6 +40,7 @@ extension TeamKeyUi on TeamKey {
     TeamKey.midia => 'Mídia',
     TeamKey.eventos => 'Eventos',
     TeamKey.seguranca => 'Segurança',
+    TeamKey.hakunas => 'Hakunas',
     TeamKey.geral => 'Geral',
   };
 
@@ -45,6 +53,7 @@ extension TeamKeyUi on TeamKey {
     TeamKey.midia => Icons.photo_camera_outlined,
     TeamKey.eventos => Icons.event_outlined,
     TeamKey.seguranca => Icons.shield_outlined,
+    TeamKey.hakunas => Icons.medical_services_outlined,
     TeamKey.geral => Icons.forum_outlined,
   };
 
@@ -59,6 +68,8 @@ extension TeamKeyUi on TeamKey {
     TeamKey.midia => Icons.photo_camera, // máquina fotográfica
     TeamKey.eventos => Icons.celebration,
     TeamKey.seguranca => Icons.local_police,
+    // Salvamento, não consultório: a equipe resgata e atende em trilha.
+    TeamKey.hakunas => Icons.health_and_safety,
     TeamKey.geral => Icons.forum,
   };
 
@@ -72,6 +83,8 @@ extension TeamKeyUi on TeamKey {
     TeamKey.midia => const Color(0xFF1E88E5),
     TeamKey.eventos => const Color(0xFFFB8C00),
     TeamKey.seguranca => const Color(0xFF37474F),
+    // Vermelho de emergência, a única equipe que usa essa cor.
+    TeamKey.hakunas => const Color(0xFFC62828),
     TeamKey.geral => const Color(0xFF546E7A),
   };
 
@@ -81,7 +94,7 @@ extension TeamKeyUi on TeamKey {
   /// porta que o banco vai fechar.
   bool get isGeral => this == TeamKey.geral;
 
-  /// As 8 equipes de verdade, sem o canal geral.
+  /// As 9 equipes de verdade, sem o canal geral.
   static List<TeamKey> get equipes =>
       TeamKey.values.where((t) => !t.isGeral).toList();
 }

@@ -423,7 +423,10 @@ void main() {
       // tabelas novas estão acessíveis no mesmo banco.
       final db = await LocalDb.instance.database;
       // v1 fila · v2 cache de leitura · v3 quarentena
-      expect(db.getVersion(), completion(3));
+      // v4 `client_id` unico POR ENTIDADE (era global, e o bloco de
+      // anotacoes usa client_id deterministico — colisao entre entidades
+      // fazia a escrita nova ser descartada em silencio).
+      expect(db.getVersion(), completion(4));
 
       final tabelas =
           (await db.rawQuery(

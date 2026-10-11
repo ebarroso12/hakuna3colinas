@@ -6,22 +6,22 @@ import '../offline/outbox.dart';
 import '../offline/sync_service.dart';
 import 'supabase_service.dart';
 
-/// Anotações de equipe — o bloco de texto das 8 equipes não-médicas.
+/// Bloco de anotações de equipe — o equivalente não-médico do prontuário.
 ///
-/// Funciona **sem rede**, como todo o resto que se escreve em campo: a
-/// anotação entra na fila e sobe quando o sinal voltar. Numa trilha isso
-/// não é detalhe — é onde a anotação é escrita.
+/// **Um bloco por membro, editável, e funciona sem rede.**
 ///
-/// **Append-only, e isso é decisão.** Não existe editar nem apagar. Dois
-/// motivos:
+/// A primeira versão foi append-only, por medo de perda de texto: duas
+/// pessoas editando o mesmo bloco offline, a última a sincronizar
+/// sobrescreve a outra. O dono do projeto apontou que isso não acontece —
+/// cada membro tem login próprio e o bloco é dele. Sem concorrência, sem
+/// perda. Mudei.
 ///
-/// 1. Um bloco único editável, offline, perde texto: duas pessoas da
-///    mesma equipe editam sem sinal e a última a sincronizar sobrescreve a
-///    outra, sem aviso. Com registros separados nada se perde.
-/// 2. Fica rastreável quem anotou o quê e quando — e numa ocorrência de
-///    segurança isso é metade do valor da anotação.
-///
-/// Para corrigir, escreve-se outra. É o mesmo desenho de `atendimentos`.
+/// O que RESTA de risco, e é honesto registrar: a **mesma pessoa** editando
+/// em dois aparelhos offline. Aí vale o último a sincronizar, e o outro
+/// texto se perde. Não há como resolver isso sem mesclar texto
+/// automaticamente, o que erraria mais do que acerta. É raro (exige dois
+/// celulares com a mesma conta) e está dito aqui para ninguém se
+/// surpreender.
 class AnotacaoService {
   AnotacaoService._();
 
@@ -35,15 +35,15 @@ class AnotacaoService {
     });
   }
 
-  /// Grava uma anotação. Devolve o que ficou no aparelho.
+  /// Salva o bloco. Cria na primeira vez, edita nas seguintes.
   ///
-  /// [participanteId] é opcional: com ele a anotação é sobre a pessoa, sem
-  /// ele é sobre o turno.
-  Future<Anotacao> registrar({
+  /// Devolve como ficou no aparelho. Não lança por falta de rede.
+  Future<Anotacao> salvar({
     required String topId,
     required TeamKey team,
     required String texto,
     String? participanteId,
+    Anotacao? anterior,
   }) async {
     final uid = SupabaseService.instance.currentUserId;
     if (uid == null) {
@@ -52,37 +52,103 @@ class AnotacaoService {
     final limpo = texto.trim();
     if (limpo.isEmpty) {
       // O banco também recusa (`check length(trim(texto)) > 0`), mas
-      // falhar aqui evita uma entrada na fila que seria quarentenada.
+      // falhar aqui evita uma entrada na fila que iria para quarentena.
       throw ArgumentError('anotação vazia');
     }
 
-    final clientId = Outbox.novoClientId();
-    final anotacao = Anotacao(
-      id: clientId,
+    final agora = DateTime.now().toUtc();
+    final blocoId = Anotacao.chaveDe(
       topId: topId,
       team: team,
       autorId: uid,
-      texto: limpo,
-      // Hora do aparelho: offline a anotação é escrita horas antes do
-      // upload, e `now()` no Postgres marcaria a hora em que o sinal
-      // voltou.
-      criadaEm: DateTime.now().toUtc(),
       participanteId: participanteId,
     );
 
-    await Outbox.instance.enqueue(
+    final bloco = anterior != null && anterior.blocoId == blocoId
+        ? anterior.comTexto(limpo, agora)
+        : Anotacao(
+            blocoId: blocoId,
+            topId: topId,
+            team: team,
+            autorId: uid,
+            texto: limpo,
+            criadaEm: agora,
+            atualizadoEm: agora,
+            participanteId: participanteId,
+          );
+
+    // `enqueueSubstituindo` e NAO `enqueue`, e a diferença decide se o
+    // texto se perde.
+    //
+    // `enqueue` usa `ConflictAlgorithm.ignore`: enfileirar duas vezes o
+    // mesmo `client_id` descarta o segundo. Isso é certo para atendimento
+    // (append-only) e **errado** aqui — editar o bloco duas vezes sem
+    // sinal faria a segunda edição ser ignorada em silêncio, e o texto
+    // antigo subiria. Perda de texto sem erro na tela, que é o pior tipo.
+    //
+    // `clientId: blocoId` porque a identidade do envio É o bloco: uma
+    // entrada na fila por bloco, sempre com o texto atual.
+    await Outbox.instance.enqueueSubstituindo(
       entity: entidade,
       topId: topId,
-      clientId: clientId,
-      payload: {...anotacao.toMap(), 'client_id': clientId},
+      clientId: blocoId,
+      payload: bloco.toMap(),
     );
     unawaited(SyncService.instance.syncNow());
 
-    return anotacao;
+    return bloco;
   }
 
-  /// Anotações da equipe neste Top, as que já subiram.
-  Future<List<Anotacao>> doTop({
+  /// O bloco desta pessoa, lido do servidor.
+  ///
+  /// Null quando ela ainda não escreveu nada — e aí a tela abre vazia.
+  Future<Anotacao?> meuBloco({
+    required String topId,
+    required TeamKey team,
+    String? participanteId,
+  }) async {
+    final uid = SupabaseService.instance.currentUserId;
+    if (uid == null) return null;
+    return SupabaseService.instance.buscarBloco(
+      blocoId: Anotacao.chaveDe(
+        topId: topId,
+        team: team,
+        autorId: uid,
+        participanteId: participanteId,
+      ),
+    );
+  }
+
+  /// O bloco desta pessoa como está **no aparelho**, se ainda não subiu.
+  ///
+  /// Tem prioridade sobre o do servidor quando existe: é a versão mais
+  /// recente, e sem isto quem editou offline veria o texto antigo voltar
+  /// ao reabrir a tela.
+  Future<Anotacao?> meuBlocoNaFila({
+    required String topId,
+    required TeamKey team,
+    String? participanteId,
+  }) async {
+    final uid = SupabaseService.instance.currentUserId;
+    if (uid == null) return null;
+    final chave = Anotacao.chaveDe(
+      topId: topId,
+      team: team,
+      autorId: uid,
+      participanteId: participanteId,
+    );
+    final fila = await Outbox.instance.pending(entity: entidade, limit: 500);
+    for (final e in fila) {
+      if (e.payload['bloco_id'] == chave) return Anotacao.fromMap(e.payload);
+    }
+    return null;
+  }
+
+  /// Os blocos da equipe inteira — o que a coordenação lê.
+  ///
+  /// A RLS decide o que volta: membro de uma equipe não lê o bloco de
+  /// outra.
+  Future<List<Anotacao>> daEquipe({
     required String topId,
     required TeamKey team,
     String? participanteId,
@@ -92,32 +158,5 @@ class AnotacaoService {
       team: team.name,
       participanteId: participanteId,
     );
-  }
-
-  /// As que ainda estão no aparelho, esperando sinal.
-  ///
-  /// A tela mostra estas junto com as do servidor, marcadas — sem isso o
-  /// autor escreveria a anotação e não a veria na lista, concluindo que
-  /// não salvou.
-  Future<List<Anotacao>> naFila({
-    required String topId,
-    required TeamKey team,
-    String? participanteId,
-  }) async {
-    final fila = await Outbox.instance.pending(entity: entidade, limit: 500);
-    return fila
-        .map((e) => e.payload)
-        .where((p) {
-          if (p['top_id'] != topId) return false;
-          if (p['team'] != team.name) return false;
-          if (participanteId != null && p['participante_id'] != participanteId) {
-            return false;
-          }
-          return true;
-        })
-        .map(Anotacao.fromMap)
-        .toList()
-      // Mais recente primeiro, a mesma ordem da lista do servidor.
-      ..sort((a, b) => b.criadaEm.compareTo(a.criadaEm));
   }
 }

@@ -132,6 +132,75 @@ class Outbox {
     return id;
   }
 
+  /// Enfileira **substituindo** o payload se já houver entrada pendente
+  /// com o mesmo `clientId`.
+  ///
+  /// Existe para o que é EDITÁVEL, e só para isso. `enqueue` usa
+  /// `ConflictAlgorithm.ignore` de propósito: enfileirar duas vezes o mesmo
+  /// atendimento não pode criar dois registros, e o segundo pedido é
+  /// descartado. Para um bloco de anotações isso é exatamente o contrário
+  /// do desejado — a segunda edição seria **ignorada em silêncio** e o
+  /// texto antigo subiria. Era o que o código fazia antes desta função, e
+  /// o pior tipo de bug: perda de texto sem erro nenhum na tela.
+  ///
+  /// Só mexe em entrada PENDENTE. Se a anterior já subiu (ou está em
+  /// quarentena), entra uma nova — o servidor resolve pelo `onConflict` da
+  /// entidade, e a ordem FIFO garante que a última edição é a que fica.
+  ///
+  /// Devolve o `clientId`.
+  Future<String> enqueueSubstituindo({
+    required String entity,
+    required Map<String, dynamic> payload,
+    required String clientId,
+    OutboxOperation operation = OutboxOperation.insert,
+    String? topId,
+  }) async {
+    final db = await LocalDb.instance.database;
+
+    // Atualiza a linha deste `client_id` em QUALQUER estado — pendente,
+    // já sincronizada ou em quarentena — e a devolve para a fila.
+    //
+    // Pegar só as pendentes era o que o código fazia antes, e um teste
+    // mostrou o buraco: `client_id` tem índice **único** nesta tabela
+    // (`idx_outbox_client_id`), então, depois que o bloco subia, a linha
+    // continuava ali com `synced_at` preenchido e o `enqueue` seguinte
+    // caía no `ConflictAlgorithm.ignore`. Resultado: **toda edição feita
+    // depois do primeiro envio era descartada em silêncio.** O mesmo tipo
+    // de perda que esta função existia para evitar, uma camada adiante.
+    //
+    // Zerar `synced_at` é o que recoloca na fila. Zerar `quarantined_at`
+    // também: o texto é outro, e a recusa anterior era do texto antigo.
+    final atualizadas = await db.update(
+      'outbox',
+      {
+        'payload': jsonEncode(payload),
+        'operation': operation.name,
+        'synced_at': null,
+        'quarantined_at': null,
+        'quarantine_reason': null,
+        // Zera as tentativas: o conteúdo é outro, e o motivo da falha
+        // anterior pode não valer mais para este texto.
+        'attempts': 0,
+        'last_error': null,
+        // `created_at` novo para a entrada ir ao FIM da fila. Ela acabou
+        // de ser escrita; manter a data antiga a colocaria na frente de
+        // coisas registradas antes dela.
+        'created_at': DateTime.now().millisecondsSinceEpoch,
+      },
+      where: 'entity = ? AND client_id = ?',
+      whereArgs: [entity, clientId],
+    );
+    if (atualizadas > 0) return clientId;
+
+    return enqueue(
+      entity: entity,
+      payload: payload,
+      operation: operation,
+      topId: topId,
+      clientId: clientId,
+    );
+  }
+
   /// Escritas ainda não sincronizadas, na ordem em que foram feitas.
   ///
   /// A ordem importa: a posição registrada às 9h tem que chegar antes da

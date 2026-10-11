@@ -894,19 +894,34 @@ class SupabaseService {
         .map((rows) => rows.map((r) => TopAlert.fromMap(r)).toList());
   }
 
-  /// Envio de anotação a partir da fila.
+  /// Envio do bloco de anotações a partir da fila.
   ///
-  /// `upsert(onConflict: 'client_id', ignoreDuplicates: true)`: anotação é
-  /// append-only, então a segunda chegada do mesmo `client_id` é o reenvio
-  /// de algo que já subiu — ignorar é o certo. Com `insert`, o reenvio
-  /// depois de uma resposta perdida criaria a mesma anotação duas vezes no
-  /// histórico da equipe.
+  /// `onConflict: 'bloco_id'` e **sem** `ignoreDuplicates`: o bloco é
+  /// editável, então a segunda chegada do mesmo `bloco_id` tem de
+  /// ATUALIZAR o texto, não ser ignorada. Com `ignoreDuplicates: true` —
+  /// que é o certo para atendimento e alarme — toda edição depois da
+  /// primeira seria descartada pelo servidor em silêncio.
   Future<void> enviarAnotacao(Map<String, dynamic> payload) {
     return _envioDaFila('anotação', () async {
-      await _client
-          .from('anotacoes')
-          .upsert(payload, onConflict: 'client_id', ignoreDuplicates: true);
+      await _client.from('anotacoes').upsert(payload, onConflict: 'bloco_id');
     });
+  }
+
+  /// Um bloco específico, pela chave. Null quando ainda não existe.
+  Future<Anotacao?> buscarBloco({required String blocoId}) async {
+    final linhas = await _client
+        .from('anotacoes')
+        .select(
+          'id, bloco_id, top_id, team, autor_id, participante_id, texto, '
+          'criada_em, atualizado_em, '
+          'autor:profiles!anotacoes_autor_id_fkey(full_name), '
+          'participante:top_participants!anotacoes_participante_id_fkey'
+          '(full_name)',
+        )
+        .eq('bloco_id', blocoId)
+        .limit(1);
+    if (linhas.isEmpty) return null;
+    return Anotacao.fromMap(linhas.first);
   }
 
   /// Anotações de uma equipe num Top, da mais recente para a mais antiga.
@@ -923,7 +938,8 @@ class SupabaseService {
     var consulta = _client
         .from('anotacoes')
         .select(
-          'id, top_id, team, autor_id, participante_id, texto, criada_em, '
+          'id, bloco_id, top_id, team, autor_id, participante_id, texto, '
+          'criada_em, atualizado_em, '
           'autor:profiles!anotacoes_autor_id_fkey(full_name), '
           'participante:top_participants!anotacoes_participante_id_fkey'
           '(full_name)',
@@ -935,7 +951,11 @@ class SupabaseService {
       consulta = consulta.eq('participante_id', participanteId);
     }
 
-    final linhas = await consulta.order('criada_em', ascending: false).limit(
+    final linhas = await consulta
+        // `atualizado_em`: o bloco e editavel, e quem coordena quer ver o
+        // que mudou agora, nao o que foi criado primeiro.
+        .order('atualizado_em', ascending: false)
+        .limit(
       // Teto: o histórico de uma equipe num Top de 4 dias não precisa vir
       // inteiro para a tela de uma vez.
       300,

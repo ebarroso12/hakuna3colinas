@@ -11,6 +11,104 @@ Android físico.
 
 ## 11/10/2026
 
+### v1.0.35 — a equipe HAKUNAS, alarme para todos, mapa por cargo, bloco editavel
+
+#### A equipe de salvamento faltava no banco
+
+Voce corrigiu: "hakuna e equipe tb, equipe de saude salvamento", e depois
+"o nome dela e HAKUNAS". Conferi — `team_key` tinha 8 equipes + `geral`, e
+a de salvamento **nao existia no enum**. Por isso ela nao tinha chat de
+equipe nem bloco de anotacoes como as outras; so o chat clinico, numa
+tabela separada.
+
+Com `hakunas` fecham os 9 times que voce disse, e `geral` e o canal.
+
+Erro meu no caminho: eu adicionei `saude` por conta propria antes de voce
+dizer o nome. Corrigi com `RENAME VALUE` em vez de adicionar o certo e
+deixar o errado — valor orfao num enum reaparece em todo dropdown e em
+toda migracao futura.
+
+#### Alarme: todos disparam e recebem
+
+Antes exigia ser Hakuna liberado nas duas pontas, e a seguranca — cuja
+funcao e exatamente isso — ficava de fora. Agora e `pertence_ao_top()`:
+membro liberado de qualquer equipe, Hakuna liberado, ou admin. Nao e
+"qualquer pessoa logada".
+
+#### Mapa: por cargo, com o admin sobrepondo pessoa por pessoa
+
+Regra automatica: admin, Hakuna liberado, coordenacao/subcoordenacao de
+qualquer equipe, e membros de `seguranca` e `hakunas`.
+
+Mais restrito que o alarme **de proposito**: alarme e emergencia, posicao e
+vigilancia continua. 200 pessoas vendo a localizacao de todas as outras nao
+e necessario para midia, producao ou intercessao trabalharem.
+
+E `top_permissoes` sobrepoe, com TRES estados: sem linha vale a regra;
+`ver_mapa = true` libera quem a regra nao liberaria; `ver_mapa = false`
+**bloqueia quem a regra liberaria**. O terceiro e o que faz ser "editar" e
+nao so "conceder" — sem ele, tirar o mapa de um coordenador exigiria
+rebaixa-lo de cargo. So admin escreve nela.
+
+Provado com sessao simulada, quatro usuarios liberados:
+
+```
+MIDIA (membro) dispara alarme       -> conseguiu
+MIDIA recebe alarme                 -> 1
+MIDIA (membro) ve posicao de outro  -> 0
+SEGURANCA (membro) ve posicao       -> 1
+COORDENADOR de midia ve posicao     -> 1
+LOGISTICA (membro) ve posicao       -> 0
+LOGISTICA apos admin LIBERAR        -> 1
+COORDENADOR apos admin BLOQUEAR     -> 0
+MIDIA ve a PROPRIA trilha           -> 1
+```
+
+#### Bloco de anotacoes: editavel, um por membro
+
+Voce apontou que o meu medo de perda de texto nao se aplica: cada membro
+tem login proprio e o bloco e dele, entao nao ha duas pessoas editando o
+mesmo. Estava certo, e troquei de append-only para editavel.
+
+**Mas trocar abriu um buraco de verdade, em duas camadas.** `Outbox.enqueue`
+usa `ConflictAlgorithm.ignore`: reenfileirar o mesmo `client_id` DESCARTA o
+segundo pedido. Isso e certo para atendimento (append-only) e catastrofico
+aqui — a segunda edicao offline seria jogada fora sem erro nenhum na tela.
+Criei `enqueueSubstituindo`.
+
+E ai um teste pegou a segunda camada: `client_id` tem indice UNICO, entao
+depois que o bloco sobe a linha CONTINUA na tabela, e um `enqueue` novo
+tambem era ignorado. **Toda edicao feita apos o primeiro envio
+desaparecia.** `enqueueSubstituindo` passou a mexer na linha em qualquer
+estado, devolvendo-a a fila.
+
+Os dois niveis tem teste em `test/offline/enqueue_substituindo_test.dart`.
+
+#### Divida latente no banco local, achada pelo mesmo teste — schema v4
+
+`client_id` era unico GLOBALMENTE no outbox, nao por entidade. Com uuid
+aleatorio a colisao nunca aconteceria; o bloco usa `client_id`
+DETERMINISTICO em texto (`top|team|autor|-`), e ai deixou de ser
+hipotetico: uma escrita de outra entidade com o mesmo id fazia a anotacao
+ser descartada em silencio. Agora e unico por `(entity, client_id)`,
+migracao v3 -> v4 com teste.
+
+#### Top de Franca cadastrado
+
+`Comemoração de 1 ano`, Franca, 26 a 29/11/2026. Nasce em **draft** de
+proposito: e a trava que impede alguem se cadastrar antes de voce terminar
+de montar. `diretor_responsavel` e `top_number` ficaram NULOS — quem define
+o responsavel e o numero de um evento e voce.
+
+#### Verificado
+
+`analyze` limpo em modo estrito, **380 testes**. Tres guardas antigas
+quebraram e fizeram o trabalho delas: a que fixava os valores do enum
+`team_key`, a que fixava 8 equipes e as de migracao que fixavam o schema
+v3. Todas atualizadas com o motivo escrito.
+
+**Nao verificado em aparelho**: nada.
+
 ### v1.0.34 — o app e dos 9 TIMES: anotacoes das equipes, trava do autocadastro e marcacao de teste
 
 #### Correcao de premissa minha, e ela era de fundo

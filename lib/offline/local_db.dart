@@ -24,7 +24,7 @@ class LocalDb {
 
   /// Subir este número roda as migrações em [_upgrade]. Nunca editar uma
   /// migração já publicada: adicionar a próxima.
-  static const _schemaVersion = 3;
+  static const _schemaVersion = 4;
 
   Database? _db;
 
@@ -98,8 +98,17 @@ class LocalDb {
       'ON outbox (synced_at, quarantined_at, created_at)',
     );
     // Barra duplicata da mesma escrita, mesmo se a tela chamar duas vezes.
+    //
+    // UNICO POR (entity, client_id), nao por `client_id` sozinho. Era
+    // global ate a v4, e um teste mostrou o problema: o `client_id` e
+    // identidade DENTRO da entidade, nao no banco inteiro. Com uuid
+    // aleatorio a colisao era improvavel, mas o bloco de anotacoes usa um
+    // `client_id` DETERMINISTICO em texto (`top|team|autor|-`), e ai o
+    // risco deixou de ser hipotetico — uma escrita de outra entidade com o
+    // mesmo id fazia a anotacao ser descartada em silencio.
     await db.execute(
-      'CREATE UNIQUE INDEX idx_outbox_client_id ON outbox (client_id)',
+      'CREATE UNIQUE INDEX idx_outbox_client_id '
+      'ON outbox (entity, client_id)',
     );
 
     // ------------------------------------------------------------------
@@ -151,6 +160,26 @@ class LocalDb {
   Future<void> _upgrade(Database db, int from, int to) async {
     if (from < 2) await _criarCacheDeLeitura(db);
     if (from < 3) await _criarQuarentena(db);
+    if (from < 4) await _clientIdUnicoPorEntidade(db);
+  }
+
+  /// v4: `client_id` passa a ser unico POR ENTIDADE.
+  ///
+  /// Era unico no banco inteiro. O `client_id` e identidade dentro da
+  /// entidade — dois registros de tabelas diferentes podem legitimamente
+  /// ter o mesmo id. Com uuid aleatorio isso nunca aconteceria; o bloco de
+  /// anotacoes, porem, usa `client_id` deterministico em texto, e ai a
+  /// colisao passou a ser possivel. O efeito era a escrita nova ser
+  /// IGNORADA (o enqueue usa `ConflictAlgorithm.ignore`), ou seja, perda
+  /// silenciosa.
+  ///
+  /// Recriar o indice nao perde nada: ele nao guarda dado, so restringe.
+  Future<void> _clientIdUnicoPorEntidade(Database db) async {
+    await db.execute('DROP INDEX IF EXISTS idx_outbox_client_id');
+    await db.execute(
+      'CREATE UNIQUE INDEX idx_outbox_client_id '
+      'ON outbox (entity, client_id)',
+    );
   }
 
   /// v3: quarentena de entradas recusadas em definitivo pelo servidor.

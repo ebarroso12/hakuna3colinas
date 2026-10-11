@@ -114,7 +114,23 @@ void main() {
       LocalDb.overridePathForTests = arquivo;
       final db = await LocalDb.instance.database;
 
-      expect(await db.getVersion(), 3);
+      // A versao ATUAL, nao o 3 fixo: este teste prova que um banco
+      // antigo sobe ate onde o app esta hoje, e fixar o numero o faria
+      // falhar em cada versao nova sem nada estar errado.
+      expect(await db.getVersion(), greaterThanOrEqualTo(3));
+
+      // v4: `client_id` passou a ser unico POR ENTIDADE. Era global, e o
+      // bloco de anotacoes usa client_id deterministico — colisao entre
+      // entidades fazia a escrita nova ser descartada em silencio.
+      final indice = (await db.rawQuery(
+        "SELECT sql FROM sqlite_master WHERE type='index' "
+        "AND name='idx_outbox_client_id'",
+      )).single['sql'] as String;
+      expect(
+        indice.replaceAll(' ', ''),
+        contains('(entity,client_id)'),
+        reason: 'o indice tem de ser por entidade depois da migracao v4',
+      );
 
       // As colunas novas existem.
       final colunas = (await db.rawQuery('PRAGMA table_info(outbox)'))
@@ -212,11 +228,17 @@ void main() {
       LocalDb.overridePathForTests = arquivo;
       final db = await LocalDb.instance.database;
 
-      expect(await db.getVersion(), 3);
+      expect(await db.getVersion(), greaterThanOrEqualTo(3));
       final colunas = (await db.rawQuery('PRAGMA table_info(outbox)'))
           .map((l) => l['name'] as String)
           .toSet();
       expect(colunas, contains('quarantined_at'));
+      // O salto 1 -> atual tambem tem de deixar o indice da v4 no lugar.
+      final indice = (await db.rawQuery(
+        "SELECT sql FROM sqlite_master WHERE type='index' "
+        "AND name='idx_outbox_client_id'",
+      )).single['sql'] as String;
+      expect(indice.replaceAll(' ', ''), contains('(entity,client_id)'));
       // E o cache de leitura da v2 também foi criado no caminho 1 → 3.
       final tabelas =
           (await db.rawQuery(

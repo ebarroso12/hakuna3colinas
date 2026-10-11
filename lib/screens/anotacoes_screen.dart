@@ -8,22 +8,24 @@ import '../services/anotacao_service.dart';
 import '../widgets/app_logo.dart';
 import '../widgets/botao_inicio.dart';
 
-/// Bloco de anotações de uma equipe.
+/// Bloco de anotações.
 ///
-/// O app é dos Legendários, não só dos Hakunas. A diferença é que o Hakuna
-/// tem **prontuário** — dado clínico, com cerca própria — e as outras 8
-/// equipes precisam do equivalente não-médico: um lugar para registrar o
-/// que aconteceu no turno.
+/// O app é dos Legendários, e as 9 equipes trabalham no Top. A diferença é
+/// que a equipe **Hakunas** tem prontuário — dado clínico, com cerca
+/// própria — e todas elas precisam de um lugar para registrar o que
+/// acontece no turno.
 ///
-/// Abre de dois lugares, e o conteúdo muda conforme:
+/// **Cada membro tem o seu bloco, e ele é editável.** Não há sobrescrita
+/// entre pessoas porque cada login tem o bloco dele. Abaixo do campo
+/// aparecem os blocos dos colegas da equipe, em leitura.
 ///
-/// - da tela de equipes: todas as anotações da equipe naquele Top;
-/// - da ficha de um participante: só as sobre aquela pessoa, e o que se
-///   escrever ali já sai ligado a ela.
+/// Abre de dois lugares:
 ///
-/// Funciona sem rede. O que está esperando sinal aparece na lista,
-/// marcado — senão quem escreveu não veria a própria anotação e escreveria
-/// de novo.
+/// - da lista de chats: o bloco do turno naquela equipe;
+/// - da ficha de um participante: o bloco sobre **aquela pessoa**.
+///
+/// Funciona sem rede: o texto fica no aparelho e sobe quando o sinal
+/// voltar.
 class AnotacoesScreen extends StatefulWidget {
   const AnotacoesScreen({
     super.key,
@@ -34,9 +36,6 @@ class AnotacoesScreen extends StatefulWidget {
 
   final Top top;
   final TeamKey team;
-
-  /// Quando vem preenchido, a tela é o bloco de anotações **daquela
-  /// pessoa** dentro desta equipe.
   final Participant? participante;
 
   @override
@@ -46,22 +45,34 @@ class AnotacoesScreen extends StatefulWidget {
 class _AnotacoesScreenState extends State<AnotacoesScreen> {
   final _texto = TextEditingController();
 
-  List<Anotacao> _doServidor = [];
-  List<Anotacao> _naFila = [];
+  Anotacao? _meu;
+  List<Anotacao> _daEquipe = [];
   bool _carregando = true;
   bool _salvando = false;
+  bool _naFila = false;
   String? _erroDeRede;
+
+  /// Se o texto na tela difere do que está salvo. Governa o aviso de
+  /// "não salvo" e o estado do botão.
+  bool _mudou = false;
 
   @override
   void initState() {
     super.initState();
+    _texto.addListener(_verificarMudanca);
     _carregar();
   }
 
   @override
   void dispose() {
+    _texto.removeListener(_verificarMudanca);
     _texto.dispose();
     super.dispose();
+  }
+
+  void _verificarMudanca() {
+    final mudou = _texto.text.trim() != (_meu?.texto ?? '').trim();
+    if (mudou != _mudou) setState(() => _mudou = mudou);
   }
 
   Future<void> _carregar() async {
@@ -70,29 +81,53 @@ class _AnotacoesScreenState extends State<AnotacoesScreen> {
       _erroDeRede = null;
     });
 
-    // O que está no APARELHO primeiro, e fora do try da rede. Mesma ordem
-    // do prontuário, pelo mesmo motivo: quando a rede falha, o `catch` não
-    // pode engolir o que a pessoa acabou de escrever.
+    // O que está NO APARELHO primeiro, e fora do try da rede.
+    //
+    // A ordem é a proteção: o bloco da fila é a versão mais recente, e se
+    // a busca no servidor viesse antes e falhasse, o `catch` deixaria a
+    // tela com o texto antigo — ou vazia — por cima do que a pessoa
+    // acabou de escrever.
+    Anotacao? local;
     try {
-      final fila = await AnotacaoService.instance.naFila(
+      local = await AnotacaoService.instance.meuBlocoNaFila(
         topId: widget.top.id,
         team: widget.team,
         participanteId: widget.participante?.id,
       );
-      if (mounted) setState(() => _naFila = fila);
     } catch (_) {
       // Falha de disco. Não impede tentar o servidor.
     }
+    if (local != null && mounted) {
+      setState(() {
+        _meu = local;
+        _naFila = true;
+        _texto.text = local!.texto;
+        _mudou = false;
+      });
+    }
 
     try {
-      final lista = await AnotacaoService.instance.doTop(
+      final doServidor = await AnotacaoService.instance.meuBloco(
+        topId: widget.top.id,
+        team: widget.team,
+        participanteId: widget.participante?.id,
+      );
+      final equipe = await AnotacaoService.instance.daEquipe(
         topId: widget.top.id,
         team: widget.team,
         participanteId: widget.participante?.id,
       );
       if (!mounted) return;
       setState(() {
-        _doServidor = lista;
+        // O do servidor só substitui o da fila se não houver versão local:
+        // o que está na fila é mais novo por definição.
+        if (local == null) {
+          _meu = doServidor;
+          _naFila = false;
+          _texto.text = doServidor?.texto ?? '';
+          _mudou = false;
+        }
+        _daEquipe = equipe;
         _carregando = false;
       });
     } catch (e) {
@@ -106,26 +141,35 @@ class _AnotacoesScreenState extends State<AnotacoesScreen> {
 
   Future<void> _salvar() async {
     final texto = _texto.text.trim();
-    if (texto.isEmpty) return;
+    if (texto.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Escreva algo antes de salvar.')),
+      );
+      return;
+    }
 
     setState(() => _salvando = true);
     try {
-      await AnotacaoService.instance.registrar(
+      final salvo = await AnotacaoService.instance.salvar(
         topId: widget.top.id,
         team: widget.team,
         texto: texto,
         participanteId: widget.participante?.id,
+        anterior: _meu,
       );
       if (!mounted) return;
-      _texto.clear();
+      setState(() {
+        _meu = salvo;
+        _mudou = false;
+      });
       await _carregar();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            _naFila.isEmpty
-                ? 'Anotação salva e enviada.'
-                : 'Anotação GRAVADA no aparelho. Sobe quando a rede voltar.',
+            _naFila
+                ? 'Salvo no aparelho. Sobe quando a rede voltar.'
+                : 'Bloco salvo.',
           ),
         ),
       );
@@ -142,7 +186,10 @@ class _AnotacoesScreenState extends State<AnotacoesScreen> {
   @override
   Widget build(BuildContext context) {
     final cores = Theme.of(context).colorScheme;
-    final todas = [..._naFila, ..._doServidor];
+    // Os blocos dos colegas: tudo da equipe menos o meu.
+    final dosColegas = _daEquipe
+        .where((a) => a.blocoId != _meu?.blocoId)
+        .toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -153,19 +200,22 @@ class _AnotacoesScreenState extends State<AnotacoesScreen> {
         ),
         actions: const [BotaoInicio(), AppLogoTrailing()],
       ),
-      body: Column(
+      body: ListView(
         children: [
-          // O aviso fica FIXO em cima do campo, não num diálogo que se
-          // dispensa. Sintoma escrito aqui não entra na triagem e não
-          // aparece para quem vai atender — o Hakuna nunca leria. É o
-          // erro mais provável desta tela, e o mais caro.
+          // Aviso FIXO, não um diálogo que se dispensa. Sintoma escrito
+          // aqui fica fora da triagem e invisível para quem vai atender:
+          // é o erro mais provável desta tela e o mais caro.
           Container(
             width: double.infinity,
             color: cores.secondaryContainer,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Row(
               children: [
-                Icon(Icons.info_outline, size: 18, color: cores.onSecondaryContainer),
+                Icon(
+                  Icons.info_outline,
+                  size: 18,
+                  color: cores.onSecondaryContainer,
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -187,23 +237,69 @@ class _AnotacoesScreenState extends State<AnotacoesScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                Row(
+                  children: [
+                    Text(
+                      'Meu bloco',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    const Spacer(),
+                    if (_naFila)
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.cloud_upload_outlined,
+                            size: 15,
+                            color: cores.tertiary,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'aguardando sinal',
+                            style: Theme.of(context).textTheme.labelSmall,
+                          ),
+                        ],
+                      )
+                    else if (_meu != null)
+                      Text(
+                        'salvo ${_quando(_meu!.atualizadoEm)}',
+                        style: Theme.of(context).textTheme.labelSmall,
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+
                 TextField(
                   controller: _texto,
-                  minLines: 3,
-                  maxLines: 8,
+                  minLines: 6,
+                  maxLines: 20,
                   textCapitalization: TextCapitalization.sentences,
                   decoration: InputDecoration(
-                    labelText: 'O que aconteceu?',
                     hintText: widget.participante != null
-                        ? 'Sobre ${widget.participante!.fullName}'
-                        : 'Ocorrência, combinado, pendência do turno…',
+                        ? 'O que você precisa registrar sobre '
+                              '${widget.participante!.fullName}'
+                        : 'Ocorrências, combinados, pendências do turno…',
                     border: const OutlineInputBorder(),
                     alignLabelWithHint: true,
                   ),
                 ),
                 const SizedBox(height: 8),
+
+                if (_mudou)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      'Alterações não salvas.',
+                      style: TextStyle(
+                        color: cores.error,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+
                 FilledButton.icon(
-                  onPressed: _salvando ? null : _salvar,
+                  // Desabilitado quando nada mudou: evita gravar uma
+                  // versão igual à anterior e poluir a fila.
+                  onPressed: (_salvando || !_mudou) ? null : _salvar,
                   icon: _salvando
                       ? const SizedBox(
                           height: 16,
@@ -211,88 +307,72 @@ class _AnotacoesScreenState extends State<AnotacoesScreen> {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.save_outlined),
-                  label: const Text('Salvar anotação'),
+                  label: const Text('Salvar'),
                 ),
               ],
             ),
           ),
 
-          const Divider(height: 1),
-
-          Expanded(
-            child: _carregando
-                ? const Center(child: CircularProgressIndicator())
-                : RefreshIndicator(
-                    onRefresh: _carregar,
-                    child: ListView(
-                      padding: const EdgeInsets.all(12),
-                      children: [
-                        if (_erroDeRede != null)
-                          Card(
-                            color: cores.errorContainer,
-                            child: ListTile(
-                              leading: const Icon(Icons.wifi_off),
-                              title: const Text(
-                                'Sem internet: aparecem só as anotações '
-                                'feitas neste aparelho',
-                              ),
-                              subtitle: Text(
-                                'O que a equipe escreveu em outro celular '
-                                'não dá para buscar agora.',
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                            ),
-                          ),
-                        if (todas.isEmpty && _erroDeRede == null)
-                          const Padding(
-                            padding: EdgeInsets.all(32),
-                            child: Center(
-                              child: Text(
-                                'Nenhuma anotação ainda.',
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
-                          ),
-                        for (final a in todas)
-                          _CartaoAnotacao(
-                            anotacao: a,
-                            // As da fila vêm primeiro na lista montada
-                            // acima; marcá-las é o que diz ao autor que a
-                            // anotação está salva mas ainda não chegou
-                            // para os outros.
-                            aguardandoSinal: _naFila.contains(a),
-                            mostrarParticipante: widget.participante == null,
-                          ),
-                      ],
-                    ),
+          if (_erroDeRede != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Card(
+                color: cores.errorContainer,
+                child: ListTile(
+                  leading: const Icon(Icons.wifi_off),
+                  title: const Text('Sem internet'),
+                  subtitle: Text(
+                    'Seu bloco está salvo no aparelho. O que a equipe '
+                    'escreveu em outro celular não dá para buscar agora.',
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
-          ),
+                ),
+              ),
+            ),
+
+          if (_carregando)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (dosColegas.isNotEmpty) ...[
+            const Divider(),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+              child: Text(
+                'Blocos da equipe (${dosColegas.length})',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+            ),
+            for (final a in dosColegas)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: _BlocoDoColega(anotacao: a, quando: _quando),
+              ),
+            const SizedBox(height: 24),
+          ],
         ],
       ),
     );
   }
+
+  String _quando(DateTime utc) {
+    final l = utc.toLocal();
+    return '${l.day.toString().padLeft(2, "0")}/'
+        '${l.month.toString().padLeft(2, "0")} '
+        '${l.hour.toString().padLeft(2, "0")}:'
+        '${l.minute.toString().padLeft(2, "0")}';
+  }
 }
 
-class _CartaoAnotacao extends StatelessWidget {
-  const _CartaoAnotacao({
-    required this.anotacao,
-    required this.aguardandoSinal,
-    required this.mostrarParticipante,
-  });
+class _BlocoDoColega extends StatelessWidget {
+  const _BlocoDoColega({required this.anotacao, required this.quando});
 
   final Anotacao anotacao;
-  final bool aguardandoSinal;
-  final bool mostrarParticipante;
+  final String Function(DateTime) quando;
 
   @override
   Widget build(BuildContext context) {
-    final local = anotacao.criadaEm.toLocal();
-    final quando =
-        '${local.day.toString().padLeft(2, "0")}/'
-        '${local.month.toString().padLeft(2, "0")} '
-        '${local.hour.toString().padLeft(2, "0")}:'
-        '${local.minute.toString().padLeft(2, "0")}';
-
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: Padding(
@@ -302,34 +382,29 @@ class _CartaoAnotacao extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(anotacao.team.iconeOperacional, size: 14,
-                    color: anotacao.team.cor),
+                Icon(
+                  anotacao.team.iconeOperacional,
+                  size: 14,
+                  color: anotacao.team.cor,
+                ),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    // "Você" quando o nome não veio: a anotação está na
-                    // fila, e quem a escreveu é quem está olhando.
-                    anotacao.autorNome ?? 'Você',
+                    anotacao.autorNome ?? 'Membro da equipe',
                     style: const TextStyle(fontWeight: FontWeight.bold),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                if (aguardandoSinal)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: Icon(
-                      Icons.cloud_upload_outlined,
-                      size: 15,
-                      color: Theme.of(context).colorScheme.tertiary,
-                    ),
-                  ),
-                Text(quando, style: Theme.of(context).textTheme.labelSmall),
+                Text(
+                  quando(anotacao.atualizadoEm),
+                  style: Theme.of(context).textTheme.labelSmall,
+                ),
               ],
             ),
-            if (mostrarParticipante && anotacao.sobrePessoa) ...[
+            if (anotacao.sobrePessoa && anotacao.participanteNome != null) ...[
               const SizedBox(height: 4),
               Text(
-                'Sobre: ${anotacao.participanteNome ?? "participante"}',
+                'Sobre: ${anotacao.participanteNome}',
                 style: Theme.of(context).textTheme.labelSmall,
               ),
             ],
