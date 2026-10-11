@@ -13,13 +13,15 @@ import '../services/location_service.dart';
 import '../services/nfc_service.dart';
 import '../services/stats_service.dart';
 import '../services/supabase_service.dart';
-import '../widgets/app_logo.dart';
 import '../widgets/barra_inferior.dart';
 import '../widgets/botao_inicio.dart';
 import 'admin/admin_equipes_screen.dart';
+import 'admin/admin_importar_screen.dart';
+import 'admin/admin_mapa_permissoes_screen.dart';
 import 'admin/admin_tags_screen.dart';
 import 'admin/admin_top_form_screen.dart';
 import 'fila_offline_screen.dart';
+import 'ler_tag_screen.dart';
 import 'mapa_top_screen.dart';
 import 'participants_list_screen.dart';
 import 'team_chats_screen.dart';
@@ -315,25 +317,34 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
       // usuario dentro do Top, sem como voltar pra lista.
       appBar: AppBar(
         title: Text(widget.top.name),
+        // SETE acoes e o teto num celular de 360 dp — medido, nao
+        // estimado: a oitava faz a Row da AppBar estourar e o Flutter
+        // **corta em silencio** o que passa da borda. Com 11 acoes, o admin
+        // nao alcancava Pulseiras, Equipes nem Quem-ve-o-mapa: os botoes
+        // existiam, respondiam a teste e eram invisiveis no aparelho.
+        //
+        // O que fica como icone e o que se usa com o paciente na frente:
+        // ler a pulseira, mapa, lista, fila, chat. O resto vai para o menu,
+        // com nome escrito — mais achavel que um icone a adivinhar.
+        // `test/appbar_cabe_no_celular_test.dart` trava o teto.
         actions: [
           const BotaoInicio(),
-          if (isHakuna)
-            IconButton(
-              icon: const Icon(Icons.monitor_heart),
-              tooltip: 'Sinais vitais dos Senderistas',
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => TopSenderistasScreen(top: widget.top),
-                ),
+          // Primeiro icone depois da saida, de proposito: e o celular que
+          // encosta na pulseira, e identificar o paciente e o caminho mais
+          // curto que esta tela precisa ter. Antes estava dois toques
+          // fundo, dentro de Participantes.
+          IconButton(
+            icon: const Icon(Icons.nfc),
+            tooltip: 'Ler tag / QR da pulseira',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => LerTagScreen(top: widget.top),
               ),
             ),
-          // Chat geral + chats das equipes. Fica disponível para todo
-          // participante, não só Hakuna: o chat geral é aberto a qualquer
-          // usuário aprovado do Top, e quais equipes aparecem depois disso
-          // quem decide é a RLS de `top_team_members`.
+          ),
           IconButton(
             icon: const Icon(Icons.map_outlined),
-            tooltip: 'Mapa dos Hakunas',
+            tooltip: 'Mapa do Top',
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
                 builder: (_) => MapaTopScreen(
@@ -352,8 +363,8 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
               ),
             ),
           ),
-          // Fila do aparelho. Badge vermelho quando há registro recusado:
-          // quarentena sem ninguém saber é perda silenciosa de dado, e um
+          // Fila do aparelho. Badge vermelho quando ha registro recusado:
+          // quarentena sem ninguem saber e perda silenciosa de dado, e um
           // atendimento recusado tem de incomodar quem escreveu.
           _BotaoFilaOffline(),
           IconButton(
@@ -365,41 +376,12 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
               ),
             ),
           ),
-          if (isHakuna)
-            IconButton(
-              icon: const Icon(Icons.medical_services_outlined),
-              tooltip: 'Chat com os Hakunas',
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => TopChatScreen(
-                    top: widget.top,
-                    hakunaProfiles: _hakunaProfiles,
-                  ),
-                ),
-              ),
-            ),
-          if (podeEditarTop)
-            IconButton(
-              icon: const Icon(Icons.nfc),
-              tooltip: 'Pulseiras NFC',
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => AdminTagsScreen(top: widget.top),
-                ),
-              ),
-            ),
-          if (podeEditarTop)
-            IconButton(
-              icon: const Icon(Icons.groups_2_outlined),
-              tooltip: 'Equipes do Top',
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) =>
-                      AdminEquipesScreen(top: widget.top, souAdmin: true),
-                ),
-              ),
-            ),
-          const AppLogoTrailing(),
+          _MenuDoTop(
+            top: widget.top,
+            isHakuna: isHakuna,
+            podeEditarTop: podeEditarTop,
+            hakunaProfiles: _hakunaProfiles,
+          ),
         ],
       ),
       bottomNavigationBar: BarraInferior(
@@ -682,6 +664,127 @@ class _BotaoFilaOfflineState extends State<_BotaoFilaOffline> {
           ? Theme.of(context).colorScheme.error
           : Theme.of(context).colorScheme.secondary,
       child: botao,
+    );
+  }
+}
+
+/// Menu do Top: o que nao se usa com o paciente na frente.
+///
+/// Separado em widget para o `build` da tela nao crescer e para cada item
+/// carregar o motivo de estar aqui e nao na barra. A regra de corte e
+/// "quantas vezes isto e tocado durante a trilha": emitir pulseira e
+/// montar equipe se faz sentado, antes do evento.
+class _MenuDoTop extends StatelessWidget {
+  const _MenuDoTop({
+    required this.top,
+    required this.isHakuna,
+    required this.podeEditarTop,
+    required this.hakunaProfiles,
+  });
+
+  final Top top;
+  final bool isHakuna;
+  final bool podeEditarTop;
+  final Map<String, Profile> hakunaProfiles;
+
+  void _abrir(BuildContext context, Widget Function() tela) {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => tela()));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<String>(
+      icon: const Icon(Icons.more_vert),
+      tooltip: 'Mais opcoes do Top',
+      onSelected: (valor) {
+        switch (valor) {
+          case 'vitais':
+            _abrir(context, () => TopSenderistasScreen(top: top));
+          case 'chat_hakunas':
+            _abrir(
+              context,
+              () => TopChatScreen(top: top, hakunaProfiles: hakunaProfiles),
+            );
+          case 'pulseiras':
+            _abrir(context, () => AdminTagsScreen(top: top));
+          case 'equipes':
+            _abrir(
+              context,
+              () => AdminEquipesScreen(top: top, souAdmin: true),
+            );
+          case 'mapa_permissoes':
+            _abrir(context, () => AdminMapaPermissoesScreen(top: top));
+          case 'importar':
+            _abrir(context, () => AdminImportarScreen(top: top));
+        }
+      },
+      itemBuilder: (context) => [
+        if (isHakuna)
+          const PopupMenuItem(
+            value: 'vitais',
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.monitor_heart),
+              title: Text('Sinais vitais'),
+            ),
+          ),
+        if (isHakuna)
+          const PopupMenuItem(
+            value: 'chat_hakunas',
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.medical_services_outlined),
+              title: Text('Chat com os Hakunas'),
+            ),
+          ),
+        if (isHakuna && podeEditarTop) const PopupMenuDivider(),
+        if (podeEditarTop)
+          const PopupMenuItem(
+            value: 'pulseiras',
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.style_outlined),
+              title: Text('Emitir pulseiras'),
+              subtitle: Text('gravar e revogar tag'),
+            ),
+          ),
+        if (podeEditarTop)
+          const PopupMenuItem(
+            value: 'equipes',
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.groups_2_outlined),
+              title: Text('Equipes do Top'),
+            ),
+          ),
+        if (podeEditarTop)
+          const PopupMenuItem(
+            value: 'mapa_permissoes',
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.visibility_outlined),
+              title: Text('Quem ve o mapa'),
+            ),
+          ),
+        if (podeEditarTop)
+          const PopupMenuItem(
+            value: 'importar',
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.table_view_outlined),
+              title: Text('Importar lista'),
+              subtitle: Text('planilha CSV, XLSX ou TXT'),
+            ),
+          ),
+      ],
     );
   }
 }

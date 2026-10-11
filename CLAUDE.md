@@ -292,6 +292,64 @@ Dois achados que vieram antes de escrever a tela, em
   cair em cascata — e isso exige `service_role`, daí a ação
   `apagar_usuarios` na Edge Function.
 
+### NFC: `flutter_nfc_kit`, e o UID vem sempre
+
+Trocado do `nfc_manager` em 11/10/2026, depois de abrir o APK do app de
+NFC que já roda em campo nos Legendários (`com.trixx.hakunanfc`) e ver que
+ele usa `flutter_nfc_kit` com `NfcAdapter.enableReaderMode`.
+
+O motivo não é preferência de pacote. `nfc_manager` só entregava a tag
+pela API de NDEF: `Ndef.from(tag)` devolvia null e `readTagText` devolvia
+`null` seco. Cartão em branco, cartão de outro sistema e MIFARE Classic
+que o chipset não formata eram **indistinguíveis de "nenhuma tag foi
+encostada"**. Em campo é a diferença entre trocar a pulseira e ficar
+batendo o celular nela.
+
+`FlutterNfcKit.poll()` devolve `id` (o UID), `type`, `standard`,
+`ndefAvailable` e `ndefWritable` **antes** de olhar conteúdo. `NfcService.lerTag`
+embala isso em `LeituraNfc`, e a tela de leitura mostra UID e tipo quando
+não identifica ninguém.
+
+**UID identifica, não autentica.** Ele é lido por qualquer celular sem
+senha e se copia com hardware de dezenas de reais. O token NDEF — 128 bits
+aleatórios, revogável, em `participant_tags.token` — continua sendo a
+identificação válida. `participant_tags.tag_uid` existe no banco e está
+vazio: usar UID como identificação exige decisão de produto, porque
+rebaixa a segurança da pulseira.
+
+A leitura aceita registro de **texto** (o que o app grava) e de **URI** (o
+que qualquer outro programa de NFC gravaria para a mesma URL). A gravação
+usa texto de propósito: com URI, o celular de um estranho que encostasse
+na pulseira abriria o navegador.
+
+HCE **não** passa por aqui — segue em `nfc_hce_service.dart`, por canal
+nativo, Android-only. `minSdk` do plugin é 24, igual ao do Flutter: não
+houve bump.
+
+### Sete ações é o teto da AppBar
+
+Medido em 11/10/2026, não estimado: a oitava `IconButton` estoura a Row da
+AppBar num celular de 360 dp, e o Flutter **corta em silêncio** o que passa
+da borda direita. Em release não há aviso nenhum.
+
+A tela do Top tinha chegado a **11 ações**. Para o admin, Pulseiras NFC,
+Equipes do Top e Quem vê o mapa existiam, abriam por código, passavam em
+teste — e eram inalcançáveis no aparelho. Achado antes da primeira
+instalação.
+
+A regra de corte é "quantas vezes isto é tocado com o paciente na frente".
+Ficam como ícone: ler a pulseira, mapa, participantes, fila, chats. O
+resto vai para o `PopupMenuButton` (`_MenuDoTop`), com nome escrito — mais
+achável que um ícone a adivinhar. Emitir pulseira e montar equipe se faz
+sentado, antes do evento; **ler** a pulseira é tarefa de campo e por isso
+é o primeiro ícone depois da saída.
+
+`test/appbar_cabe_no_celular_test.dart` mede o teto de verdade (360 e
+320 dp) e varre `lib/screens` contando as ações declaradas. Ao medir,
+derrube a árvore entre as iterações: o `RenderFlex` reporta o estouro uma
+vez por instância, e reusar o render object engole o erro — a primeira
+versão do teste mediu 14 por causa disso.
+
 ### Toda tela tem saída
 
 Seta de voltar (automática) **e** `BotaoInicio` no `actions` do AppBar, que
@@ -482,6 +540,17 @@ validando uma configuração que não existe mais.
 
 ## Pendências conhecidas
 
+- **`flutter_nfc_kit` aplica o Kotlin Gradle Plugin.** O build avisa:
+  "Your app uses the following plugins that apply Kotlin Gradle Plugin
+  (KGP): flutter_nfc_kit". Hoje é só warning e `android.builtInKotlin=false`
+  em `android/gradle.properties` segura. Quando o Flutter tornar o Built-in
+  Kotlin obrigatório, ou o plugin migra ou o build para. Vale olhar o
+  changelog do pacote antes de atualizar o Flutter.
+- **Memória do Gradle.** `org.gradle.jvmargs` ficou em `-Xmx4G` /
+  metaspace 1G. Com os 8G/4G anteriores o Windows **matava** o
+  `assembleRelease` no meio, sem erro de compilação — só o processo morto.
+  Se um dia faltar memória de verdade, o sintoma é `OutOfMemoryError` no
+  log, que é diferente de o build desaparecer.
 - **Schema à frente do app.** O banco ainda tem tabelas que o app não usa:
   `direct_messages`, `notifications`, `attendance_members`, `nfc_tags`.
 - **AID de exemplo.** `android/app/src/main/res/xml/apduservice.xml` usa

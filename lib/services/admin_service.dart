@@ -6,6 +6,7 @@ import '../models/profile.dart';
 import '../models/team.dart';
 import '../models/team_message.dart';
 import '../models/top.dart';
+import '../models/top_imagem.dart';
 import '../models/triage_rule.dart';
 
 /// Operações exclusivas de admin/admin master: gestão de usuários, Tops e
@@ -168,6 +169,138 @@ class AdminService {
   String? urlEmblema(String? caminho) {
     if (caminho == null || caminho.isEmpty) return null;
     return _client.storage.from('emblemas').getPublicUrl(caminho);
+  }
+
+  // ====================================================================
+  // ATE 3 IMAGENS POR TOP
+  //
+  // "A cada Top sera tudo novo": logo da trilha, brasao, patrocinio. O
+  // `emblema_path` continua sendo a principal; estas sao as outras.
+  // ====================================================================
+
+  /// As imagens extras de um Top, em ordem.
+  Future<List<TopImagem>> imagensDoTop(String topId) async {
+    final linhas = await _client
+        .from('top_imagens')
+        .select()
+        .eq('top_id', topId)
+        .order('ordem');
+    return linhas.map(TopImagem.fromMap).toList();
+  }
+
+  /// Sobe (ou troca) a imagem de uma posicao.
+  ///
+  /// O caminho no Storage inclui a POSICAO, nao um id aleatorio: trocar a
+  /// imagem 2 sobrescreve o arquivo dela em vez de deixar o antigo
+  /// orfao no bucket. Sem isso, cada troca deixaria lixo que ninguem
+  /// apaga — e o bucket cresce para sempre.
+  Future<TopImagem> enviarImagemDoTop({
+    required String topId,
+    required int ordem,
+    required Uint8List bytes,
+    required String extensao,
+    String? legenda,
+  }) async {
+    if (ordem < 1 || ordem > 3) {
+      throw ArgumentError('a ordem tem de ser 1, 2 ou 3');
+    }
+    final caminho = 'tops/$topId/imagem$ordem$extensao';
+    await _client.storage
+        .from('emblemas')
+        .uploadBinary(
+          caminho,
+          bytes,
+          fileOptions: const FileOptions(upsert: true),
+        );
+
+    final linha = await _client
+        .from('top_imagens')
+        .upsert({
+          'top_id': topId,
+          'ordem': ordem,
+          'storage_path': caminho,
+          'legenda': legenda,
+          'enviado_por': _client.auth.currentUser?.id,
+        }, onConflict: 'top_id,ordem')
+        .select()
+        .single();
+    return TopImagem.fromMap(linha);
+  }
+
+  /// Apaga a imagem de uma posicao — a linha e o arquivo.
+  ///
+  /// O arquivo tambem, e nao so a linha: deixar o objeto no Storage faria
+  /// a imagem "apagada" continuar acessivel por URL publica, o que e o
+  /// oposto do que o admin pediu ao apagar.
+  Future<void> apagarImagemDoTop({
+    required String topId,
+    required int ordem,
+    required String storagePath,
+  }) async {
+    await _client
+        .from('top_imagens')
+        .delete()
+        .eq('top_id', topId)
+        .eq('ordem', ordem);
+    // Falha ao remover o arquivo nao desfaz a remocao da linha: a imagem
+    // ja saiu da tela, e insistir deixaria o admin travado.
+    try {
+      await _client.storage.from('emblemas').remove([storagePath]);
+    } catch (_) {}
+  }
+
+  // ====================================================================
+  // QUEM VE O MAPA — excecao por pessoa
+  //
+  // A regra automatica (`pode_ver_mapa` no banco) libera admin, Hakuna
+  // liberado, coordenacao/subcoordenacao e as equipes `seguranca` e
+  // `hakunas`. Esta tabela SOBREPOE, nos dois sentidos.
+  // ====================================================================
+
+  /// Excecoes definidas neste Top: profileId -> pode ver o mapa.
+  ///
+  /// Quem nao esta no mapa segue a regra automatica.
+  Future<Map<String, bool>> excecoesDeMapa(String topId) async {
+    final linhas = await _client
+        .from('top_permissoes')
+        .select('profile_id, ver_mapa')
+        .eq('top_id', topId);
+    return {
+      for (final l in linhas)
+        l['profile_id'] as String: l['ver_mapa'] as bool,
+    };
+  }
+
+  /// Define a excecao. `true` libera, `false` BLOQUEIA quem a regra
+  /// liberaria — e o segundo caso e o que faz isto ser "editar" e nao so
+  /// "conceder".
+  Future<void> definirExcecaoDeMapa({
+    required String topId,
+    required String profileId,
+    required bool verMapa,
+  }) {
+    return _client.from('top_permissoes').upsert({
+      'top_id': topId,
+      'profile_id': profileId,
+      'ver_mapa': verMapa,
+      'definido_por': _client.auth.currentUser?.id,
+      'definido_em': DateTime.now().toUtc().toIso8601String(),
+    }, onConflict: 'top_id,profile_id');
+  }
+
+  /// Remove a excecao: a pessoa volta a seguir a regra automatica.
+  ///
+  /// Nao e o mesmo que `definirExcecaoDeMapa(false)`. Aquilo BLOQUEIA
+  /// explicitamente; isto devolve a decisao ao cargo dela.
+  Future<void> removerExcecaoDeMapa({
+    required String topId,
+    required String profileId,
+  }) {
+    return _client
+        .from('top_permissoes')
+        .delete()
+        .eq('top_id', topId)
+        .eq('profile_id', profileId);
   }
 
   Future<void> deleteTop(String topId) {

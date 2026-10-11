@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:nfc_manager/nfc_manager.dart';
 
 import '../models/participant_tag.dart';
 import '../models/top.dart';
@@ -33,10 +32,38 @@ class _LerTagScreenState extends State<LerTagScreen> {
   bool _nfcDisponivel = true;
   LeituraTag? _resultado;
 
+  /// O que o chip entregou na última aproximação, identificado ou não.
+  ///
+  /// Guardado separado do [_resultado] porque serve quando o resultado é
+  /// ruim: cartão em branco, de outro sistema ou que o celular não
+  /// formata. Mostrar o UID e o tipo transforma "não deu" em "este cartão
+  /// é um MIFARE Classic sem conteúdo" — que é uma informação acionável.
+  LeituraNfc? _chip;
+
+  /// Regras de triagem para pintar a cor na ficha que esta tela abre.
+  ///
+  /// A tela busca as suas se quem a abriu nao as tinha em maos. Sem isto,
+  /// abrir a ficha pela pulseira mostrava o participante **sem cor de
+  /// triagem** — a prioridade dele desaparecia justamente no caminho mais
+  /// rapido, o de encostar o celular no paciente. Vem de `DadosDoTop`, que
+  /// le o SQLite primeiro: funciona sem sinal.
+  late List<TriageRule> _regras = widget.regras;
+
   @override
   void initState() {
     super.initState();
     _verificarNfc();
+    if (_regras.isEmpty) _carregarRegras();
+  }
+
+  Future<void> _carregarRegras() async {
+    try {
+      final regras = await DadosDoTop.instance.regras();
+      if (mounted) setState(() => _regras = regras);
+    } catch (_) {
+      // Sem regras a ficha abre sem cor, que e melhor que nao abrir.
+      // Identificar o paciente nunca pode depender disto.
+    }
   }
 
   Future<void> _verificarNfc() async {
@@ -48,7 +75,8 @@ class _LerTagScreenState extends State<LerTagScreen> {
       final disponibilidade = await NfcService.instance.checkAvailability();
       if (mounted) {
         setState(
-          () => _nfcDisponivel = disponibilidade == NfcAvailability.enabled,
+          () => _nfcDisponivel =
+              disponibilidade == DisponibilidadeNfc.pronto,
         );
       }
     } catch (_) {
@@ -60,15 +88,17 @@ class _LerTagScreenState extends State<LerTagScreen> {
     setState(() {
       _lendo = true;
       _resultado = null;
+      _chip = null;
     });
     try {
-      final conteudo = await NfcService.instance.readTagText();
+      final chip = await NfcService.instance.lerTag();
       final leitura = await TagService.instance.resolver(
-        conteudo,
+        chip.conteudo,
         topId: widget.top.id,
       );
       if (!mounted) return;
       setState(() {
+        _chip = chip;
         _resultado = leitura;
         _lendo = false;
       });
@@ -88,7 +118,7 @@ class _LerTagScreenState extends State<LerTagScreen> {
   void _abrirQr() {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(
-        builder: (_) => LerQrScreen(top: widget.top, regras: widget.regras),
+        builder: (_) => LerQrScreen(top: widget.top, regras: _regras),
       ),
     );
   }
@@ -99,7 +129,7 @@ class _LerTagScreenState extends State<LerTagScreen> {
         builder: (_) => ParticipantFileScreen(
           participante: leitura.participante!,
           top: widget.top,
-          regras: widget.regras,
+          regras: _regras,
         ),
       ),
     );
@@ -175,8 +205,10 @@ class _LerTagScreenState extends State<LerTagScreen> {
                   ),
                 ),
                 const SizedBox(height: 24),
-                if (_resultado != null && !_resultado!.identificou)
+                if (_resultado != null && !_resultado!.identificou) ...[
                   _Aviso(resultado: _resultado!.resultado),
+                  if (_chip != null) _FichaDoChip(chip: _chip!),
+                ],
                 // Com NFC disponível o QR é contingência: o chip da
                 // pulseira pode ter parado de responder mesmo com o sensor
                 // do celular funcionando. Botão discreto, mas presente —
@@ -247,3 +279,50 @@ class _Aviso extends StatelessWidget {
 /// em bloco e o resultado fica em disco.
 Future<ResumoDownload> baixarDadosDoTop(Top top) =>
     DadosDoTop.instance.baixar(top.id);
+
+/// O que o chip é, quando ele não é uma pulseira conhecida.
+///
+/// Só aparece depois de uma leitura que não identificou ninguém. Serve
+/// para quem está com o cartão na mão decidir o que fazer: UID presente e
+/// sem NDEF é cartão em branco ou bloqueado para gravação; nenhum dado é
+/// aproximação que não completou.
+class _FichaDoChip extends StatelessWidget {
+  const _FichaDoChip({required this.chip});
+
+  final LeituraNfc chip;
+
+  @override
+  Widget build(BuildContext context) {
+    if (chip.vazia) return const SizedBox.shrink();
+    final estilo = Theme.of(context).textTheme.labelSmall;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Column(
+        children: [
+          if (chip.uid.isNotEmpty)
+            SelectableText(
+              'UID ${chip.uidLegivel}',
+              style: estilo?.copyWith(fontFamily: 'monospace'),
+            ),
+          Text(
+            '${chip.tipo} · ${chip.padrao} · '
+            '${chip.temNdef ? (chip.gravavel ? "NDEF gravável" : "NDEF protegido") : "sem NDEF"}',
+            textAlign: TextAlign.center,
+            style: estilo,
+          ),
+          if (!chip.temNdef)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'Este cartão não tem conteúdo NDEF. Se é pulseira nova, '
+                'emita por "Emitir pulseiras" no menu do Top.',
+                textAlign: TextAlign.center,
+                style: estilo,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}

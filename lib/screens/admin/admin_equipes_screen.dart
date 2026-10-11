@@ -321,6 +321,15 @@ class _AdminEquipesScreenState extends State<AdminEquipesScreen> {
               _mudarPapel(v, TeamRole.subcoordenador);
             case 'membro':
               _mudarPapel(v, TeamRole.membro);
+            case 'liberar':
+              // `setTeamReleased` existia no serviço e NENHUMA tela a
+              // chamava: a lista mostrava "não liberado" e não oferecia
+              // liberar. Como `is_team_member` exige `released = true`,
+              // quem caísse nesse estado ficava sem chat e sem bloco de
+              // anotações, sem caminho de saída pelo app.
+              AdminService.instance
+                  .setTeamReleased(membershipId: v.id, released: !v.released)
+                  .then((_) => _carregar());
             case 'bloquear':
               AdminService.instance
                   .setTeamBlocked(membershipId: v.id, blocked: !v.blocked)
@@ -346,6 +355,10 @@ class _AdminEquipesScreenState extends State<AdminEquipesScreen> {
             ),
             const PopupMenuDivider(),
           ],
+          PopupMenuItem(
+            value: 'liberar',
+            child: Text(v.released ? 'Suspender (tirar acesso)' : 'LIBERAR'),
+          ),
           PopupMenuItem(
             value: 'bloquear',
             child: Text(v.blocked ? 'Desbloquear' : 'Bloquear'),

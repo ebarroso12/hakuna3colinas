@@ -9,6 +9,7 @@ import '../../services/admin_service.dart';
 import '../../widgets/app_logo.dart';
 import '../../widgets/botao_inicio.dart';
 import '../../widgets/ficha_medica.dart';
+import '../../widgets/imagens_do_top.dart';
 import 'admin_top_members_screen.dart';
 
 /// Criação/edição de um Top.
@@ -272,6 +273,14 @@ class _AdminTopFormScreenState extends State<AdminTopFormScreen> {
                     _emblemaExtensao = null;
                   }),
           ),
+          const SizedBox(height: 20),
+          // As 3 imagens ficam DEPOIS do emblema e antes da
+          // identificação: são a cara do Top, e "a cada Top será tudo
+          // novo". Só funcionam em Top salvo — elas referenciam `top_id`,
+          // e o widget diz isso em vez de mostrar um botão que falha.
+          ImagensDoTop(topId: widget.top?.id),
+          const SizedBox(height: 4),
+
           const SecaoFicha('Identificação do Top'),
           Row(
             children: [

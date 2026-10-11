@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.35+36
+version: 1.0.36+37
 
 environment:
   sdk: ^3.13.1
@@ -38,10 +38,15 @@ dependencies:
   # Backend: auth, banco de dados e posição em tempo real
   supabase_flutter: ^2.8.0
 
-  # Leitura/gravação de NFC (Android + iOS). Emulação/clonagem de cartão
-  # (HCE) é Android-only e implementada via platform channel nativo.
-  nfc_manager: ^4.0.1
-  nfc_manager_ndef: ^1.0.0
+  # Leitura/gravação de NFC (Android + iOS). No Android usa
+  # `NfcAdapter.enableReaderMode`, que entrega o UID e o tipo do chip mesmo
+  # quando a tag não tem NDEF — era o que faltava com o `nfc_manager`, de
+  # onde saímos em 11/10/2026. Emulação de cartão (HCE) é Android-only e
+  # continua por platform channel nativo.
+  flutter_nfc_kit: ^3.6.2
+  # Monta e interpreta os registros NDEF. Vem com o flutter_nfc_kit, mas é
+  # importado direto em `nfc_service.dart`, então entra declarado.
+  ndef: ^0.4.0
 
   # GPS / posição em tempo real dos Hakunas
   geolocator: ^13.0.2
@@ -92,6 +97,22 @@ dependencies:
   # so chegou de carona quebra no dia em que o flutter_map trocar de
   # implementacao.
   url_launcher: ^6.3.3
+  # IMPORTACAO DE LISTA DE PESSOAS.
+  #
+  # CSV e XLSX sao o caminho oficial, por decisao tomada com o dono do
+  # projeto: PDF e para RETENCAO DE DOCUMENTO, nao para dado. Extrair
+  # tabela de PDF nao e confiavel — se for imagem escaneada precisa de
+  # OCR, e OCR erra nome proprio e confunde 0/O e 1/l. Num app que trata
+  # gente, numero do Legendarios errado significa ficha da pessoa errada
+  # no atendimento.
+  file_picker: ^13.1.0
+  # Le .xlsx. Nao le .xls (formato binario antigo do Excel 97-2003) — a
+  # tela avisa em vez de falhar com erro de parse.
+  excel: ^4.0.6
+  # CSV e TXT delimitado. O detector de separador esta em
+  # `ImportadorDePessoas`: planilha brasileira sai com ';' por causa da
+  # virgula decimal, e assumir ',' leria tudo numa coluna so.
+  csv: ^8.0.0
 
 dev_dependencies:
   flutter_test:

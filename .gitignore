@@ -68,3 +68,6 @@ devtools_options.yaml
 android/key.properties
 *.jks
 *.keystore
+
+# Cache do compilador Kotlin, gerado pelo build. Nao e fonte.
+android/.kotlin/

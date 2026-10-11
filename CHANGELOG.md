@@ -11,6 +11,79 @@ Android físico.
 
 ## 11/10/2026
 
+### v1.0.36 — o NFC do app que ja roda em campo, e a AppBar que cortava botao
+
+#### Tres botoes de admin eram invisiveis no celular
+
+Achado antes de voce instalar, e o pior desta rodada porque nao aparece em
+teste nenhum: a AppBar da tela do Top tinha **11 acoes**.
+
+Medi em vez de estimar. Num celular de 360 dp caibem **7**; a oitava
+estoura a Row por 168 px e o Flutter **corta em silencio** o que passa da
+borda direita — em release nao ha aviso, nao ha faixa amarela, nao ha erro.
+
+O que estava cortado, para o admin: **Pulseiras NFC**, **Equipes do Top** e
+**Quem ve o mapa**. Os tres existiam, abriam por codigo, passavam em teste
+e nao davam para tocar no aparelho. Duas dessas telas eu entreguei ontem
+como funcionando.
+
+Agora: ler a pulseira, mapa, participantes, fila e chats ficam como icone;
+o resto vai para um menu com nome escrito. `test/appbar_cabe_no_celular_test.dart`
+mede o teto de verdade e varre todas as telas.
+
+#### NFC: passamos a usar exatamente o que o seu app de campo usa
+
+Voce mandou o APK (`hakunaNFC-Oficial`). Abri: pacote `com.trixx.hakunanfc`,
+Flutter, e o NFC e `flutter_nfc_kit` com `NfcAdapter.enableReaderMode`.
+Troquei o nosso `nfc_manager` por ele.
+
+Nao foi preferencia de pacote. O caminho antigo so sabia ler NDEF: cartao
+em branco, cartao de outro sistema e MIFARE Classic que o chipset nao
+formata voltavam todos como `null`, **indistinguiveis de "nenhuma tag foi
+encostada"**. Com o aparelho na mao e a pessoa esperando, isso e a
+diferenca entre trocar a pulseira e achar que o celular quebrou.
+
+Agora o UID e o tipo do chip vem sempre, antes de olhar conteudo, e a tela
+mostra `UID 04:A2:B3:C4 · mifareClassic · sem NDEF` quando nao identifica
+ninguem. A leitura passou a aceitar registro de **texto** e de **URI** — o
+segundo e o que qualquer outro programa de NFC gravaria para a mesma URL, e
+antes era recusado como formato invalido.
+
+**Ler a pulseira subiu para o primeiro icone** depois da saida. Estava dois
+toques fundo, dentro de Participantes; e o celular que encosta no paciente.
+
+Dito claro: **UID identifica, nao autentica.** Qualquer celular le sem
+senha e se copia com hardware barato. `participant_tags.tag_uid` existe no
+banco e esta vazio — usar UID como identificacao rebaixa a seguranca da
+pulseira e e decisao sua, nao minha.
+
+#### Tambem entrou
+
+- **Importador de planilha** (CSV, XLSX, TXT delimitado), ligado no menu do
+  Top. Nada grava antes de voce revisar linha por linha; da para marcar
+  tudo como cadastro de teste.
+- **Ate 3 imagens por Top**, estilo logo da trilha.
+- **Quem ve o mapa**, pessoa por pessoa, com o terceiro estado que
+  **bloqueia** quem o cargo liberaria.
+- **Liberar** na tela de equipes (o metodo existia sem nenhum chamador).
+- A ficha aberta pela pulseira voltou a ter **cor de triagem**: quem abria
+  `LerTagScreen` sem passar as regras mostrava o participante sem cor, e a
+  prioridade dele desaparecia no caminho mais rapido. Agora a tela busca as
+  regras sozinha, do SQLite.
+
+#### Nao verificado nesta versao
+
+Nada de NFC foi testado em hardware. A troca de plugin compila e passa nos
+testes de logica, mas **encostar o celular numa pulseira so se prova no
+aparelho** — e e justamente o que mudou. Se a leitura falhar, e aqui que se
+olha primeiro.
+
+Push com o app fechado continua nao existindo (exige FCM). O outro app tem
+Firebase Messaging; o nosso nao.
+
+---
+
+
 ### v1.0.35 — a equipe HAKUNAS, alarme para todos, mapa por cargo, bloco editavel
 
 #### A equipe de salvamento faltava no banco
