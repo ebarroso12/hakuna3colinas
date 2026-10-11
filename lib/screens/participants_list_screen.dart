@@ -472,7 +472,7 @@ class _LinhaParticipante extends StatelessWidget {
                 ),
               ),
         onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(
+          MaterialPageRoute<void>(
             builder: (_) => ParticipantFileScreen(
               participante: participante,
               top: top,
@@ -512,7 +512,7 @@ class _BotaoLerTag extends StatelessWidget {
     final cor = Theme.of(context).colorScheme.onSurfaceVariant;
     return InkWell(
       onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(
+        MaterialPageRoute<void>(
           builder: (_) => LerTagScreen(top: top, regras: regras),
         ),
       ),

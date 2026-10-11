@@ -91,7 +91,7 @@ class ParticipantFileScreen extends StatelessWidget {
 
   void _editar(BuildContext context) {
     Navigator.of(context).push(
-      MaterialPageRoute(
+      MaterialPageRoute<void>(
         builder: (_) =>
             ParticipanteFormScreen(top: top, participante: participante),
       ),
@@ -100,7 +100,7 @@ class ParticipantFileScreen extends StatelessWidget {
 
   void _abrirProntuario(BuildContext context) {
     Navigator.of(context).push(
-      MaterialPageRoute(
+      MaterialPageRoute<void>(
         builder: (_) => ProntuarioScreen(top: top, participante: participante),
       ),
     );

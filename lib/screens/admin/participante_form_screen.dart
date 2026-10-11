@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../models/participant.dart';
 import '../../models/top.dart';
+import '../../services/auditoria_service.dart';
 import '../../services/supabase_service.dart';
 import '../../widgets/app_logo.dart';
 import '../../widgets/ficha_medica.dart';
@@ -148,6 +149,41 @@ class _ParticipanteFormScreenState extends State<ParticipanteFormScreen> {
     if (escolhida != null) setState(() => _nascimento = escolhida);
   }
 
+  /// Nomes dos campos cujo valor mudou em relação à ficha carregada.
+  ///
+  /// Serve para o `audit_log` dizer "alteraram comorbidades e tipo
+  /// sanguíneo" em vez de "alteraram a ficha" — a segunda frase não ajuda
+  /// ninguém a investigar nada.
+  List<String> _camposAlterados(Map<String, dynamic> novos) {
+    final antigo = widget.participante!.toMap();
+    final mudou = <String>[];
+    for (final chave in novos.keys) {
+      // `top_id` e `active` não são editáveis nesta tela; comparar só
+      // geraria ruído na lista.
+      if (chave == 'top_id' || chave == 'active') continue;
+      if (!_mesmoValor(antigo[chave], novos[chave])) mudou.add(chave);
+    }
+    return mudou;
+  }
+
+  /// Compara valor antigo e novo tolerando as diferenças de formato que
+  /// existem entre o que vem do banco e o que a tela monta.
+  bool _mesmoValor(Object? a, Object? b) {
+    if (a == null && b == null) return true;
+    // Lista de comorbidades: a ORDEM não é informação, então diferença de
+    // ordem não é alteração.
+    if (a is List && b is List) {
+      final sa = a.map((e) => '$e').toList()..sort();
+      final sb = b.map((e) => '$e').toList()..sort();
+      return sa.join('|') == sb.join('|');
+    }
+    // `birth_date` chega como DateTime do model e sai como 'YYYY-MM-DD'.
+    if (a is DateTime) return a.toIso8601String().split('T').first == '$b';
+    // Números: 70 e 70.0 são o mesmo peso.
+    if (a is num && b is num) return a.toDouble() == b.toDouble();
+    return '$a' == '$b';
+  }
+
   Future<void> _salvar() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
     setState(() => _salvando = true);
@@ -178,14 +214,43 @@ class _ParticipanteFormScreenState extends State<ParticipanteFormScreen> {
         'active': true,
       };
 
+      String participanteId;
       if (_editando) {
         await SupabaseService.instance.atualizarParticipante(
           widget.participante!.id,
           dados,
         );
+        participanteId = widget.participante!.id;
       } else {
-        await SupabaseService.instance.criarParticipante(dados);
+        final criado = await SupabaseService.instance.criarParticipante(dados);
+        participanteId = criado.id;
       }
+
+      // Auditoria da ficha. `AcaoAuditada.fichaAlterada` existia e
+      // **nada no app a usava**: alterar comorbidade, tipo sanguíneo ou
+      // alergia de um paciente não deixava rastro nenhum. Em ficha médica
+      // o que mudou e quem mudou vale tanto quanto o valor atual.
+      //
+      // Depois de salvar, não antes: auditar uma alteração que falhou
+      // seria registrar algo que não aconteceu. E `registrar` nunca lança
+      // — auditoria não pode derrubar o salvamento da ficha.
+      await AuditoriaService.instance.registrar(
+        acao: AcaoAuditada.fichaAlterada,
+        entityType: 'top_participants',
+        entityId: participanteId,
+        topId: widget.top.id,
+        metadata: {
+          'operacao': _editando ? 'alteracao' : 'criacao',
+          // Só os NOMES dos campos alterados, nunca os valores: o
+          // `audit_log` é legível por qualquer admin, e copiar comorbidade
+          // e alergia para lá criaria um segundo prontuário com regra de
+          // acesso mais frouxa que o primeiro.
+          'campos': _editando
+              ? _camposAlterados(dados)
+              : dados.keys.where((k) => dados[k] != null).toList(),
+        },
+      );
+
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } catch (e) {

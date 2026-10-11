@@ -27,7 +27,7 @@ class AdminHomeScreen extends StatelessWidget {
             subtitle: const Text('Liberar entrada por número do Legendários'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AdminAcessosScreen()),
+              MaterialPageRoute<void>(builder: (_) => const AdminAcessosScreen()),
             ),
           ),
           const Divider(height: 1),
@@ -37,7 +37,7 @@ class AdminHomeScreen extends StatelessWidget {
             subtitle: const Text('Papéis, atribuições, dados de triagem'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(
+              MaterialPageRoute<void>(
                 builder: (_) => AdminUsersScreen(isMasterAdmin: isMasterAdmin),
               ),
             ),
@@ -49,7 +49,7 @@ class AdminHomeScreen extends StatelessWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(
               context,
-            ).push(MaterialPageRoute(builder: (_) => const AdminTopsScreen())),
+            ).push(MaterialPageRoute<void>(builder: (_) => const AdminTopsScreen())),
           ),
           if (isMasterAdmin)
             ListTile(
@@ -58,7 +58,7 @@ class AdminHomeScreen extends StatelessWidget {
               subtitle: const Text('Idade e comorbidades por cor'),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(
+                MaterialPageRoute<void>(
                   builder: (_) => const AdminTriageRulesScreen(),
                 ),
               ),

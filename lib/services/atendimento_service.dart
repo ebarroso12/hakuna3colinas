@@ -31,7 +31,16 @@ class AtendimentoService {
   /// Liga os envios à fila. Chamar uma vez, na subida do app.
   void registrarUploaders() {
     SyncService.instance.registerUploader(entityAtendimento, (entrada) async {
-      await SupabaseService.instance.enviarAtendimento(entrada.payload);
+      // A operação importa. `enviarAtendimento` faz
+      // `upsert(ignoreDuplicates: true)`, que é o certo para o registro
+      // novo e **errado** para o encerramento: a linha já existe, o
+      // `ignoreDuplicates` não faz nada e o atendimento ficaria aberto
+      // para sempre sem ninguém notar.
+      if (entrada.operation == OutboxOperation.update) {
+        await SupabaseService.instance.atualizarAtendimento(entrada.payload);
+      } else {
+        await SupabaseService.instance.enviarAtendimento(entrada.payload);
+      }
     });
     SyncService.instance.registerUploader(entityFoto, (entrada) async {
       await SupabaseService.instance.enviarFotoAtendimento(entrada.payload);
@@ -63,6 +72,20 @@ class AtendimentoService {
     await File(caminhoOrigem).copy(destino);
     return destino;
   }
+
+  /// O `client_id` da foto, lido do nome do arquivo.
+  ///
+  /// [guardarFoto] nomeia o arquivo com o `client_id` da foto, e esta
+  /// função desfaz isso. O acoplamento é de propósito e as duas estão
+  /// lado a lado para ficar à vista: é ele que permite `fotosLocais`
+  /// continuar sendo uma lista de caminhos, sem um par caminho+id
+  /// atravessando o modelo, o formulário e a fila.
+  ///
+  /// `atendimento_fotos.client_id` é `uuid` no Postgres, então o nome do
+  /// arquivo tem de ser um uuid — ver o teste de ida e volta em
+  /// `test/services/foto_do_atendimento_test.dart`.
+  static String clientIdDaFoto(String caminhoLocal) =>
+      p.basenameWithoutExtension(caminhoLocal);
 
   /// Registra o atendimento. Devolve o `clientId`, que já identifica o
   /// registro na tela antes de ele existir no servidor.
@@ -99,9 +122,19 @@ class AtendimentoService {
     } catch (_) {}
 
     for (final caminho in atendimento.fotosLocais) {
+      // `client_id` PRÓPRIO de cada foto, e não o do atendimento.
+      //
+      // O bug que isto corrige: todas as fotos iam com o `client_id` do
+      // atendimento, e `atendimento_fotos.client_id` tem índice único. Da
+      // segunda foto em diante o arquivo subia para o Storage e a LINHA
+      // era descartada em silêncio pelo `ignoreDuplicates` — foto clínica
+      // órfã, bytes no servidor que nada referencia.
+      final fotoClientId = clientIdDaFoto(caminho);
       await Outbox.instance.enqueue(
         entity: entityFoto,
+        clientId: fotoClientId,
         payload: {
+          'client_id': fotoClientId,
           'atendimento_client_id': clientId,
           'top_id': atendimento.topId,
           'local_path': caminho,
@@ -140,4 +173,76 @@ class AtendimentoService {
   /// Hakuna saber que tem coisa esperando sinal.
   Future<int> pendentesDeEnvio() =>
       Outbox.instance.pendingCount(entity: entityAtendimento);
+
+  /// Encerra um atendimento.
+  ///
+  /// Até aqui nada fechava atendimento nenhum: o app gravava e deixava
+  /// `aberto` para sempre, porque `status` vinha só do default da coluna e
+  /// `closed_at` nunca era escrito. Numa lista de 30 atendimentos num Top,
+  /// todos abertos, não se distingue quem ainda precisa de atenção.
+  ///
+  /// Vai pela fila como UPDATE, e a chave é o `client_id`: offline o
+  /// atendimento pode nem ter subido ainda, e aí não existe `id` do
+  /// servidor para apontar.
+  Future<void> encerrar({
+    required String clientIdDoAtendimento,
+    required String topId,
+  }) async {
+    final uid = SupabaseService.instance.currentUserId;
+    if (uid == null) {
+      throw StateError('Sessão expirada — não é possível encerrar');
+    }
+    await Outbox.instance.enqueue(
+      entity: entityAtendimento,
+      operation: OutboxOperation.update,
+      topId: topId,
+      payload: {
+        'client_id': clientIdDoAtendimento,
+        'status': 'encerrado',
+        // Hora do aparelho: o atendimento acaba na trilha, não no upload.
+        'closed_at': DateTime.now().toUtc().toIso8601String(),
+        'closed_by': uid,
+      },
+    );
+    unawaited(SyncService.instance.syncNow());
+  }
+
+  /// Caminhos locais das fotos de um atendimento que ainda estão na fila.
+  ///
+  /// São os arquivos no próprio celular. Serve para a ficha mostrar a foto
+  /// **sem rede** — tanto do atendimento que ainda não subiu quanto
+  /// daquele cujo texto já subiu mas a foto não.
+  Future<List<String>> fotosNaFilaDe(String atendimentoClientId) async {
+    final fila = await Outbox.instance.pending(entity: entityFoto, limit: 500);
+    return fila
+        .where((e) => e.payload['atendimento_client_id'] == atendimentoClientId)
+        .map((e) => e.payload['local_path'] as String?)
+        .whereType<String>()
+        .toList();
+  }
+
+  /// Atendimentos deste participante que ainda estão na fila.
+  ///
+  /// O prontuário lia só do servidor. Offline — o estado normal na trilha
+  /// — a busca falhava, caía no `catch` e o Hakuna não via **nem** o
+  /// histórico **nem** o atendimento que ele mesmo tinha registrado cinco
+  /// minutos antes. Com isto, o que está no aparelho aparece sempre, com
+  /// ou sem rede.
+  Future<List<Atendimento>> pendentesDoParticipante({
+    required String topId,
+    required String participantId,
+  }) async {
+    final fila = await Outbox.instance.pending(
+      entity: entityAtendimento,
+      limit: 1000,
+    );
+    final meus = fila.where(
+      (e) =>
+          e.payload['top_id'] == topId &&
+          e.payload['participant_id'] == participantId,
+    );
+    return meus.map((e) => Atendimento.fromMap(e.payload)).toList()
+      // Mais recente primeiro, a mesma ordem do histórico do servidor.
+      ..sort((a, b) => b.openedAt.compareTo(a.openedAt));
+  }
 }

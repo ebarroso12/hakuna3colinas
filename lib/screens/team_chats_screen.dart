@@ -28,7 +28,7 @@ class _TeamChatsScreenState extends State<TeamChatsScreen> {
 
   void _abrir(TeamKey team, {bool isTeamAdmin = false}) {
     Navigator.of(context).push(
-      MaterialPageRoute(
+      MaterialPageRoute<void>(
         builder: (_) => TeamChatScreen(
           top: widget.top,
           team: team,

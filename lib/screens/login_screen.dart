@@ -147,12 +147,12 @@ class _LoginScreenState extends State<LoginScreen> {
               TextButton(
                 onPressed: () => Navigator.of(
                   context,
-                ).push(MaterialPageRoute(builder: (_) => const SignupScreen())),
+                ).push(MaterialPageRoute<void>(builder: (_) => const SignupScreen())),
                 child: const Text('Não tem conta? Cadastre-se'),
               ),
               TextButton(
                 onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(
+                  MaterialPageRoute<void>(
                     builder: (_) => const LoginWithCodeScreen(),
                   ),
                 ),
@@ -164,7 +164,7 @@ class _LoginScreenState extends State<LoginScreen> {
               // para os dois nao competirem na mesma tela.
               FilledButton.tonalIcon(
                 onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(
+                  MaterialPageRoute<void>(
                     builder: (_) => const PrimeiroAcessoScreen(),
                   ),
                 ),

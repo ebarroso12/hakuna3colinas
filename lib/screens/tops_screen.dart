@@ -73,7 +73,7 @@ class _TopsScreenState extends State<TopsScreen> {
           aoEditar: _myProfile == null
               ? null
               : () => Navigator.of(context).push(
-                  MaterialPageRoute(
+                  MaterialPageRoute<void>(
                     builder: (_) => const ChangePasswordScreen(),
                   ),
                 ),
@@ -85,7 +85,7 @@ class _TopsScreenState extends State<TopsScreen> {
               icon: const Icon(Icons.admin_panel_settings_outlined),
               tooltip: 'Administração',
               onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(
+                MaterialPageRoute<void>(
                   builder: (_) => AdminHomeScreen(
                     isMasterAdmin: _myProfile?.isMasterAdmin ?? false,
                   ),
@@ -97,7 +97,7 @@ class _TopsScreenState extends State<TopsScreen> {
             onSelected: (value) {
               if (value == 'change_password') {
                 Navigator.of(context).push(
-                  MaterialPageRoute(
+                  MaterialPageRoute<void>(
                     builder: (_) => const ChangePasswordScreen(),
                   ),
                 );
@@ -163,7 +163,7 @@ class _TopsScreenState extends State<TopsScreen> {
                   ),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
+                    MaterialPageRoute<void>(
                       builder: (_) => TopDetailScreen(top: top),
                     ),
                   ),

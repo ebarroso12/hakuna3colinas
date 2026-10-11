@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../services/alarme_service.dart';
 import '../services/supabase_service.dart';
 import 'login_screen.dart';
 import 'pending_approval_screen.dart';
@@ -35,6 +36,10 @@ class _AuthGateState extends State<AuthGate> {
         if (userId == null) {
           _approvalFuture = null;
           _checkedForUserId = null;
+          // Encerra a escuta de alarmes no logout. Sem isto a assinatura
+          // do usuário anterior continuaria viva e o próximo a logar no
+          // mesmo aparelho receberia alarme de Top que não é dele.
+          AlarmeService.instance.parar();
           return const LoginScreen();
         }
 
@@ -72,6 +77,10 @@ class _AuthGateState extends State<AuthGate> {
                 },
               );
             }
+            // Liga a escuta de alarmes só depois de aprovado: antes
+            // disso a RLS devolveria lista vazia de qualquer forma, e
+            // assinar à toa gasta conexão de quem está no mato.
+            AlarmeService.instance.escutar();
             return const TopsScreen();
           },
         );

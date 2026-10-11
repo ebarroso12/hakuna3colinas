@@ -6,6 +6,7 @@ import '../models/top.dart';
 import '../services/atendimento_service.dart';
 import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
+import '../widgets/fotos_do_atendimento.dart';
 import 'atendimento_form_screen.dart';
 
 /// HISTÓRICO DE ATENDIMENTOS do participante.
@@ -33,6 +34,11 @@ class ProntuarioScreen extends StatefulWidget {
 
 class _ProntuarioScreenState extends State<ProntuarioScreen> {
   List<Atendimento> _atendimentos = [];
+
+  /// Atendimentos que ainda não subiram. Ficam separados do histórico do
+  /// servidor para o Hakuna saber o que já está registrado lá e o que
+  /// depende de sinal — não para esconder nada.
+  List<Atendimento> _naFila = [];
   int _pendentes = 0;
   bool _carregando = true;
   String? _erro;
@@ -48,16 +54,36 @@ class _ProntuarioScreenState extends State<ProntuarioScreen> {
       _carregando = true;
       _erro = null;
     });
+
+    // O que está NO APARELHO primeiro, e fora do try da rede.
+    //
+    // Era o contrário: a busca no servidor vinha antes, e quando ela
+    // falhava — offline, o normal na trilha — o `catch` engolia tudo e o
+    // Hakuna não via nem o histórico nem o atendimento que ele mesmo
+    // acabara de registrar. O prontuário ficava cego justamente onde é
+    // mais necessário.
+    try {
+      final naFila = await AtendimentoService.instance.pendentesDoParticipante(
+        topId: widget.top.id,
+        participantId: widget.participante.id,
+      );
+      if (!mounted) return;
+      setState(() {
+        _naFila = naFila;
+        _pendentes = naFila.length;
+      });
+    } catch (_) {
+      // Falha de disco. Não impede tentar o servidor.
+    }
+
     try {
       final lista = await SupabaseService.instance.fetchAtendimentos(
         topId: widget.top.id,
         participantId: widget.participante.id,
       );
-      final pendentes = await AtendimentoService.instance.pendentesDeEnvio();
       if (!mounted) return;
       setState(() {
         _atendimentos = lista;
-        _pendentes = pendentes;
         _carregando = false;
       });
     } catch (e) {
@@ -66,6 +92,51 @@ class _ProntuarioScreenState extends State<ProntuarioScreen> {
         _erro = '$e';
         _carregando = false;
       });
+    }
+  }
+
+  /// Encerra o atendimento, com confirmação.
+  ///
+  /// Pede confirmação porque não há "reabrir" na tela: desfazer exige
+  /// admin no banco. O encerramento entra na fila, então funciona offline.
+  Future<void> _encerrar(Atendimento a) async {
+    final confirmou = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Encerrar atendimento ${a.numeroRegistro ?? ""}?'),
+        content: const Text(
+          'Marca este atendimento como concluído e registra quem encerrou e '
+          'quando. Não há como reabrir pelo app.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Encerrar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmou != true) return;
+
+    try {
+      await AtendimentoService.instance.encerrar(
+        clientIdDoAtendimento: a.clientId,
+        topId: widget.top.id,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Atendimento encerrado.')),
+      );
+      await _carregar();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível encerrar: $e')),
+      );
     }
   }
 
@@ -137,8 +208,8 @@ class _ProntuarioScreenState extends State<ProntuarioScreen> {
                 leading: const Icon(Icons.cloud_upload_outlined),
                 title: Text('$_pendentes registro(s) aguardando sinal'),
                 subtitle: const Text(
-                  'Já estão salvos no celular. Sobem sozinhos quando houver '
-                  'internet.',
+                  'Já estão salvos no celular e aparecem abaixo. Sobem '
+                  'sozinhos quando houver internet.',
                 ),
               ),
             ),
@@ -154,7 +225,7 @@ class _ProntuarioScreenState extends State<ProntuarioScreen> {
                 ),
               ),
             ),
-          if (_atendimentos.isEmpty && _erro == null)
+          if (_atendimentos.isEmpty && _naFila.isEmpty && _erro == null)
             const Padding(
               padding: EdgeInsets.all(32),
               child: Center(
@@ -164,10 +235,21 @@ class _ProntuarioScreenState extends State<ProntuarioScreen> {
                 ),
               ),
             ),
+          // Os da fila primeiro: são os mais recentes por definição, e é o
+          // que o Hakuna acabou de fazer.
+          ..._naFila.map(
+            (a) => _CartaoAtendimento(
+              atendimento: a,
+              participante: widget.participante,
+              aguardandoSinal: true,
+              aoEncerrar: () => _encerrar(a),
+            ),
+          ),
           ..._atendimentos.map(
             (a) => _CartaoAtendimento(
               atendimento: a,
               participante: widget.participante,
+              aoEncerrar: () => _encerrar(a),
             ),
           ),
         ],
@@ -180,10 +262,19 @@ class _CartaoAtendimento extends StatelessWidget {
   const _CartaoAtendimento({
     required this.atendimento,
     required this.participante,
+    this.aguardandoSinal = false,
+    this.aoEncerrar,
   });
 
   final Atendimento atendimento;
   final Participant participante;
+
+  /// Marca o cartão como "ainda no aparelho". Não esconde nada — o
+  /// registro é o mesmo; só avisa que outro Hakuna ainda não o vê.
+  final bool aguardandoSinal;
+
+  /// Null quando a tela não oferece encerrar (histórico só de leitura).
+  final VoidCallback? aoEncerrar;
 
   @override
   Widget build(BuildContext context) {
@@ -222,6 +313,24 @@ class _CartaoAtendimento extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                if (atendimento.encerrado)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: Icon(
+                      Icons.check_circle,
+                      size: 16,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                if (aguardandoSinal)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: Icon(
+                      Icons.cloud_upload_outlined,
+                      size: 16,
+                      color: Theme.of(context).colorScheme.tertiary,
+                    ),
+                  ),
                 Text(
                   '$data · $hora',
                   style: Theme.of(context).textTheme.labelSmall,
@@ -294,6 +403,17 @@ class _CartaoAtendimento extends StatelessWidget {
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
+                // As fotos. Antes nenhuma tela as mostrava: a câmera
+                // gravava, a fila subia, o Storage guardava e ninguém
+                // conseguia rever. Em registro de ferida isso é metade do
+                // que o atendimento tem a dizer.
+                FutureBuilder<List<String>>(
+                  future: AtendimentoService.instance.fotosNaFilaDe(a.clientId),
+                  builder: (context, snap) => FotosDoAtendimento(
+                    atendimentoId: a.id,
+                    caminhosLocais: snap.data ?? const [],
+                  ),
+                ),
                 if (a.temLocalizacao) ...[
                   const SizedBox(height: 8),
                   Row(
@@ -306,6 +426,29 @@ class _CartaoAtendimento extends StatelessWidget {
                         style: Theme.of(context).textTheme.labelSmall,
                       ),
                     ],
+                  ),
+                ],
+                if (aoEncerrar != null && !a.encerrado) ...[
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: aoEncerrar,
+                      icon: const Icon(Icons.check_circle_outline, size: 18),
+                      label: const Text('Encerrar'),
+                    ),
+                  ),
+                ],
+                if (a.encerrado && a.closedAt != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Encerrado em '
+                    '${a.closedAt!.toLocal().day.toString().padLeft(2, "0")}/'
+                    '${a.closedAt!.toLocal().month.toString().padLeft(2, "0")} '
+                    'às '
+                    '${a.closedAt!.toLocal().hour.toString().padLeft(2, "0")}:'
+                    '${a.closedAt!.toLocal().minute.toString().padLeft(2, "0")}',
+                    style: Theme.of(context).textTheme.labelSmall,
                   ),
                 ],
               ],

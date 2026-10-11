@@ -60,7 +60,7 @@ class _PrimeiroAcessoScreenState extends State<PrimeiroAcessoScreen> {
       );
       if (!mounted) return;
       Navigator.of(context).push(
-        MaterialPageRoute(
+        MaterialPageRoute<void>(
           builder: (_) => CadastroLegendarioScreen(
             numero: numero,
             senhaDoTop: senha,
@@ -177,7 +177,7 @@ class _PrimeiroAcessoScreenState extends State<PrimeiroAcessoScreen> {
               // discreto de proposito - o fluxo normal e o de cima.
               TextButton(
                 onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(
+                  MaterialPageRoute<void>(
                     builder: (_) => const LoginNumeroScreen(),
                   ),
                 ),

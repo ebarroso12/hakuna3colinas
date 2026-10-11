@@ -11,6 +11,158 @@ Android físico.
 
 ## 10/10/2026
 
+### v1.0.31 — revisao completa: 8 defeitos corrigidos e 4 faltas preenchidas
+
+Varredura das 35 telas, 25 servicos e 22 models, cruzada com o banco.
+Nenhuma pagina em branco: todas as telas renderizam conteudo real e tem
+texto de estado vazio. O que havia eram defeitos de INTEGRACAO — nada que
+`flutter analyze` ou teste de unidade pegasse sozinho.
+
+Raciocinio completo em `supabase/revisao_completa_correcoes.sql`.
+
+#### O pior: o alarme nao tinha fila
+
+`sendTopAlert` era `insert` direto no Supabase. Sem sinal — o estado
+normal na trilha — falhava, a tela dizia "nao foi possivel disparar o
+alarme" e o registro era **descartado**. Atendimento, foto, posicao, chat e
+auditoria todos passavam pela fila offline. O alarme, nao. Justamente ele,
+que e usado em acidente.
+
+E o recebimento era pior: o alarme so existia como faixa dentro da tela de
+detalhe do Top. Quem estivesse na lista de participantes, no chat, ou com o
+celular no bolso **nao recebia nada** — sem som, sem vibracao.
+
+Agora: entra na fila com `client_id` e com a hora do APARELHO (offline o
+acidente acontece horas antes do upload), chega em QUALQUER tela por um
+overlay acima do Navigator, com tres toques de vibracao e som do sistema. A
+assinatura e uma so, sem filtro de Top — a RLS ja limita aos Tops em que a
+pessoa e Hakuna liberado, e filtrar era o que causava o defeito.
+
+A mensagem na tela passou a dizer a verdade: "alarme GRAVADO e aguardando
+sinal, use o radio" quando esta na fila, em vez de "disparado".
+
+**Continua sem**: notificacao com o app FECHADO. Exige FCM (Firebase,
+`google-services.json`, servico no servidor). Para quem esta com o app
+fechado, vale o radio.
+
+#### Sinais vitais: perdidos offline E fora da triagem
+
+`recordVitalSigns` tambem ia direto. Offline a medicao era perdida e nao
+aparecia nem na fila: o Hakuna media a pressao, via "registrado" e o dado
+nao existia em lugar nenhum.
+
+Pior que a perda, a incoerencia clinica: `TriageDinamica` escala a cor para
+vermelho a partir de `cache_ultima_afericao`, alimentada so por
+`AtendimentoService`. Entao SpO2 85 medido no formulario de ATENDIMENTO
+pintava a pessoa de vermelho, e o MESMO 85 medido na tela de SINAIS VITAIS
+nao pintava nada. Duas portas para a mesma medida, uma funcionando.
+
+Agora as duas vao pela fila e as duas alimentam o cache. A tela mostra o
+que esta esperando sinal, separado do historico do servidor.
+
+#### Da segunda foto em diante, a linha era descartada
+
+Todas as fotos subiam com o `client_id` do ATENDIMENTO — o mesmo para
+todas. Como `atendimento_fotos.client_id` e unico e o envio usa
+`ignoreDuplicates: true`, o arquivo ia para o Storage e a LINHA era
+ignorada em silencio. Foto clinica orfa: bytes no servidor que nenhuma
+consulta alcanca.
+
+O identificador por foto JA EXISTIA no codigo, no nome do arquivo, e nao
+era levado ao payload. E esse nome tinha um bug proprio: era
+`'<atendimento>-${n+1}'` com n = fotos na tela, entao remover uma foto e
+tirar outra repetia o numero e o `File.copy` **sobrescrevia** a anterior.
+
+Agora e um uuid por foto, usado nos dois lugares. Provado no banco: duas
+fotos do mesmo atendimento gravam **2 linhas**.
+
+#### Nenhuma tela exibia as fotos
+
+Nada em `lib/screens/` lia `atendimento_fotos`. A camera gravava, a fila
+subia, o Storage guardava — e nao havia como rever. Em registro de ferida
+isso e metade do atendimento jogada fora.
+
+O prontuario passa a mostrar miniaturas, com toque para ampliar e zoom. Do
+servidor por URL assinada de 1 hora (o bucket e privado e continua: foto de
+ferida e dado clinico); o que esta na fila vem do arquivo local e
+**funciona sem rede**, que e quando mais importa.
+
+#### Atendimento nunca fechava
+
+`status` vinha so do default da coluna e `closed_at` nunca era escrito.
+Todo atendimento ficava `aberto` para sempre; numa lista de 30 nao se
+distinguia quem ainda precisava de atencao.
+
+Agora da para encerrar, pela fila (funciona offline), gravando quem e
+quando. Coluna nova `closed_by`: sem ela `closed_at` diz que fechou mas nao
+quem, e em prontuario isso nao serve.
+
+Achado no caminho: a policy de UPDATE **nao tinha WITH CHECK**, e sem ele o
+Postgres reaproveita o USING — um Hakuna liberado podia gravar `closed_by`
+com o id de OUTRA pessoa, assinando o fechamento no nome de um colega.
+Corrigido e provado com sessao simulada de Hakuna comum (nao admin):
+
+```
+assinar no nome do colega  -> bloqueado pela RLS
+assinar no proprio nome    -> permitido
+```
+
+Os outros 7 estados (`a_caminho`, `no_local`, ...) seguem sem uso **por
+decisao**: formam um fluxo de despacho que precisa de painel de coordenacao
+e regra de atribuicao. Meio-implementado seria pior que ausente — estado
+que ninguem atualiza mente sobre a situacao do paciente.
+
+#### Prontuario cego sem rede
+
+Lia os atendimentos direto do Supabase, contra a regra do projeto. E o
+contador de pendentes era lido DEPOIS da chamada de rede, no mesmo `try`:
+quando a rede falhava, o `catch` engolia tudo e o Hakuna nao via nem o
+historico nem o atendimento que ele mesmo tinha registrado cinco minutos
+antes. Agora o que esta no aparelho e lido primeiro e fora do try da rede.
+
+#### `audit_log` nao registrava edicao de ficha
+
+`AcaoAuditada.fichaAlterada` existia no enum e NADA no app a usava. Alterar
+comorbidade, tipo sanguineo ou alergia de um paciente nao deixava rastro.
+Agora registra, com os NOMES dos campos que mudaram — nunca os valores:
+`audit_log` e legivel por qualquer admin, e copiar comorbidade e alergia
+para la criaria um segundo prontuario com regra de acesso mais frouxa que o
+primeiro.
+
+#### "Quem esta mais perto?" nao tinha resposta
+
+Havia GPS dos Hakunas, havia alarme com coordenada, e nada cruzava os dois.
+Agora o alarme tem um botao que lista os Hakunas por distancia.
+
+Duas limitacoes ficam DITAS na tela, nao escondidas: a distancia e em linha
+reta (a trilha e sempre mais longa) e a idade da posicao aparece ao lado do
+numero, porque "250 m" de um ponto de 40 minutos atras e ficcao. Ponto com
+mais de 2 horas e descartado em vez de mostrado com ressalva. E usa a
+ULTIMA posicao de cada um, nao a mais proxima da trilha — senao diria que
+alguem esta a 50 m porque passou ali de manha.
+
+#### Analisador em modo estrito
+
+`strict-casts`, `strict-inference` e `strict-raw-types` ligados. Pegou de
+imediato um `dynamic` passando para `.eq()` no codigo novo — e e o mesmo
+tipo de passagem silenciosa que quase deixou um `VitalSigns.fromMap` com
+`map['id'] as int` rodar sobre um payload de fila que nao tem `id` (esse eu
+peguei lendo, nao o analisador). 35 `MaterialPageRoute` sem argumento de
+tipo tambem foram corrigidos.
+
+#### Divida de tipo paga
+
+`client_id` era `text` em `atendimentos`/`atendimento_fotos` e `uuid` nas
+outras. Convertido agora porque as tabelas estao vazias; depois do evento
+nao seria seguro.
+
+Verificado: `analyze` limpo em modo estrito, **322 testes passando** (35
+novos). Provado no banco com RLS valendo e sessao simulada, tudo revertido
+depois (conferido: zero linhas em atendimentos, alarmes, vitais, auditoria).
+
+**Nao verificado em aparelho**: o som e a vibracao do alarme, a camera, o
+NFC, o GPS com tela bloqueada e o `launchUrl` do botao Atualizar.
+
 ### v1.0.30 — versao na gaveta e botao "Atualizar"
 
 Pedido que estava em aberto: "mostre na lateral a versao que esta no

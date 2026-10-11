@@ -49,15 +49,19 @@ void main() {
 
   group('fromMap', () {
     test('lê o formato que o Postgres devolve', () {
+      // O build e `Versao.build + 1`, nao um numero fixo: fixar 32 fez
+      // este teste quebrar no bump seguinte, afirmando que a versao
+      // publicada nao era mais nova quando o que mudou foi o app.
+      final novo = Versao.build + 1;
       final v = VersaoPublicada.fromMap({
-        'version': '1.0.31',
-        'build_number': 32,
+        'version': 'proxima',
+        'build_number': novo,
         'apk_url': 'https://drive.google.com/file/d/abc/view',
         'notes': 'corrige o upsert',
         'published': true,
       });
-      expect(v.nome, '1.0.31');
-      expect(v.build, 32);
+      expect(v.nome, 'proxima');
+      expect(v.build, novo);
       expect(v.apkUrl, 'https://drive.google.com/file/d/abc/view');
       expect(v.notas, 'corrige o upsert');
       expect(v.maisNovaQueEsta, isTrue);
@@ -68,16 +72,17 @@ void main() {
       // double. A coluna é integer hoje; o cast por `num` evita que uma
       // mudança de tipo no banco quebre o parse em campo.
       final v = VersaoPublicada.fromMap({
-        'version': '1.0.31',
+        'version': 'proxima',
         'build_number': 32.0,
         'apk_url': 'https://exemplo/app.apk',
       });
       expect(v.build, 32);
+      expect(v.build, isA<int>());
     });
 
     test('notas ausentes viram null, não erro', () {
       final v = VersaoPublicada.fromMap({
-        'version': '1.0.31',
+        'version': 'proxima',
         'build_number': 32,
         'apk_url': 'https://exemplo/app.apk',
       });

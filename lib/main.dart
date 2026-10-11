@@ -5,10 +5,13 @@ import 'package:flutter/material.dart';
 import 'screens/auth_gate.dart';
 import 'offline/chat_repositorio.dart';
 import 'offline/sync_service.dart';
+import 'services/alarme_service.dart';
 import 'services/atendimento_service.dart';
 import 'services/auditoria_service.dart';
 import 'services/location_service.dart';
+import 'services/sinais_vitais_service.dart';
 import 'services/supabase_service.dart';
+import 'widgets/faixa_de_alarme.dart';
 
 /// Credenciais do Supabase são passadas em tempo de build, nunca commitadas:
 ///   flutter run --dart-define=SUPABASE_URL=https://xxx.supabase.co \
@@ -28,6 +31,8 @@ Future<void> main() async {
   AtendimentoService.instance.registrarUploaders();
   LocationService.instance.registrarUploader();
   AuditoriaService.instance.registrarUploaders();
+  AlarmeService.instance.registrarUploader();
+  SinaisVitaisService.instance.registrarUploader();
   ChatRepositorio.instance.registrarUploaders();
   unawaited(SyncService.instance.start());
 
@@ -52,6 +57,11 @@ class HakunaConnectApp extends StatelessWidget {
     return MaterialApp(
       title: 'Legendario Connect',
       theme: ThemeData(colorSchemeSeed: Colors.teal, useMaterial3: true),
+      // A faixa de alarme fica ACIMA do Navigator, não dentro de uma tela:
+      // é o que faz o alarme aparecer onde o Hakuna estiver, em vez de só
+      // na tela de detalhe do Top. Ver `FaixaDeAlarme`.
+      builder: (context, child) =>
+          FaixaDeAlarme(child: child ?? const SizedBox.shrink()),
       home: const AuthGate(),
     );
   }

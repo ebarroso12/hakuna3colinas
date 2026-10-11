@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/profile.dart';
 import '../models/top.dart';
 import '../models/triage_rule.dart';
+import '../offline/dados_do_top.dart';
 import '../services/supabase_service.dart';
 import '../services/triage_service.dart';
 import '../widgets/app_logo.dart';
@@ -30,9 +31,15 @@ class _TopSenderistasScreenState extends State<TopSenderistasScreen> {
   }
 
   Future<(List<Profile>, List<TriageRule>)> _load() async {
+    // Regras do DISCO, não da rede.
+    //
+    // `DadosDoTop.regras()` lê o cache local e só vai à rede se ele
+    // estiver vazio. Antes esta tela buscava as duas coisas no servidor, e
+    // sem sinal nem a cor de triagem aparecia — perdia-se a informação que
+    // já estava no aparelho por causa da que não estava.
+    final rules = await DadosDoTop.instance.regras();
     final senderistas = await SupabaseService.instance
         .fetchTopSenderistaProfiles(widget.top.id);
-    final rules = await SupabaseService.instance.fetchActiveTriageRules();
     return (senderistas, rules);
   }
 
@@ -50,7 +57,49 @@ class _TopSenderistasScreenState extends State<TopSenderistasScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
-            return Center(child: Text('Erro ao carregar: ${snapshot.error}'));
+            // A lista de perfis vem do servidor e não tem cache local — só
+            // `top_participants` é baixada para o disco. Então aqui não se
+            // finge: diz o que não deu e aponta a tela que FUNCIONA sem
+            // rede, em vez de deixar o Hakuna numa tela de erro sem saída.
+            return Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.wifi_off, size: 40),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Esta lista precisa de internet.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Para atender agora, use "Participantes do Top": ela '
+                    'funciona offline, tem a ficha completa e o registro '
+                    'de atendimento.',
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton.icon(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.arrow_back),
+                    label: const Text('Voltar ao Top'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: () => setState(() => _future = _load()),
+                    child: const Text('Tentar de novo'),
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    '${snapshot.error}',
+                    style: Theme.of(context).textTheme.labelSmall,
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            );
           }
           final (senderistas, rules) = snapshot.data!;
           if (senderistas.isEmpty) {
@@ -67,7 +116,7 @@ class _TopSenderistasScreenState extends State<TopSenderistasScreen> {
                 title: Text(profile.displayLabel),
                 trailing: TriageBadge(color: color),
                 onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
+                  MaterialPageRoute<void>(
                     builder: (_) => VitalSignsScreen(
                       top: widget.top,
                       profile: profile,

@@ -18,6 +18,7 @@ import '../models/top_alert.dart';
 import '../models/triage_rule.dart';
 import '../models/vital_signs.dart';
 import '../offline/falha_de_envio.dart';
+import 'atendimento_service.dart';
 
 /// Traduz os erros mais comuns de autenticação do Supabase pra mensagens
 /// que fazem sentido pro usuário — sem isso ele via a exceção crua (em
@@ -662,6 +663,37 @@ class SupabaseService {
     });
   }
 
+  /// Aplica uma alteração num atendimento que já subiu (hoje: encerrar).
+  ///
+  /// Casa pelo `client_id`, não pelo `id`: offline o aparelho nunca viu o
+  /// `id` que o servidor gerou.
+  ///
+  /// Lança quando não encontra a linha, de propósito. Significa que o
+  /// atendimento ainda não subiu — a fila é FIFO, então o insert vem
+  /// antes, mas ele pode estar atrasado ou em quarentena. Lançar devolve a
+  /// entrada à fila; devolver sucesso em silêncio perderia o
+  /// encerramento, e o atendimento ficaria aberto para sempre.
+  Future<void> atualizarAtendimento(Map<String, dynamic> payload) {
+    return _envioDaFila('encerramento de atendimento', () async {
+      // `as String` explicito: o payload e `Map<String, dynamic>`, e com
+      // `strict-casts` ligado passar `dynamic` para `.eq()` e erro. Era
+      // exatamente esse tipo de passagem silenciosa que deixou um
+      // `map['id'] as int` chegar perto de rodar em campo.
+      final clientId = payload['client_id'] as String;
+      final campos = {...payload}..remove('client_id');
+      final linhas = await _client
+          .from('atendimentos')
+          .update(campos)
+          .eq('client_id', clientId)
+          .select('id');
+      if (linhas.isEmpty) {
+        throw StateError(
+          'Atendimento $clientId ainda nao subiu; encerramento aguarda.',
+        );
+      }
+    });
+  }
+
   /// Sobe uma foto de atendimento: primeiro o arquivo para o Storage,
   /// depois a linha que aponta para ele.
   Future<void> enviarFotoAtendimento(Map<String, dynamic> payload) async {
@@ -691,6 +723,14 @@ class SupabaseService {
     }
     final atendimentoId = linhas.first['id'] as String;
 
+    // `client_id` da própria foto. Entradas antigas da fila (gravadas
+    // antes da correção) não têm o campo; nesse caso cai no nome do
+    // arquivo, que é como o id é gravado desde sempre — ver
+    // `AtendimentoService.clientIdDaFoto`.
+    final fotoClientId =
+        payload['client_id'] as String? ??
+        AtendimentoService.clientIdDaFoto(caminhoLocal);
+
     final nomeNoStorage =
         '${payload['top_id']}/$atendimentoClientId/${arquivo.uri.pathSegments.last}';
     await _client.storage
@@ -707,7 +747,7 @@ class SupabaseService {
           {
             'atendimento_id': atendimentoId,
             'top_id': payload['top_id'],
-            'client_id': atendimentoClientId,
+            'client_id': fotoClientId,
             'local_path': caminhoLocal,
             'storage_path': nomeNoStorage,
             'taken_by': payload['taken_by'],
@@ -868,25 +908,70 @@ class SupabaseService {
         .map((rows) => rows.map((r) => TopAlert.fromMap(r)).toList());
   }
 
-  Future<void> sendTopAlert({
-    required String topId,
-    String? message,
-    double? latitude,
-    double? longitude,
-  }) {
-    final uid = currentUser?.id;
-    if (uid == null) {
-      return Future.error(
-        StateError('Sessão expirada — não é possível disparar o alarme'),
-      );
-    }
-    return _client.from('top_alerts').insert({
-      'top_id': topId,
-      'sender_id': uid,
-      'message': message,
-      'latitude': latitude,
-      'longitude': longitude,
-    });
+  /// Fotos de um atendimento, como URLs assinadas e temporárias.
+  ///
+  /// O bucket `atendimentos` é **privado** — foto de ferida é dado
+  /// clínico, e URL pública seria um prontuário aberto na internet para
+  /// quem adivinhasse o caminho. Por isso cada foto vira um link assinado,
+  /// válido por uma hora: tempo de sobra para olhar na tela e curto o
+  /// bastante para um print do link não virar acesso permanente.
+  ///
+  /// Nada disto existia: as fotos subiam e **nenhuma tela as mostrava**.
+  /// O Hakuna fotografava a ferida e não tinha como revê-la.
+  Future<List<String>> fotosDoAtendimento(String atendimentoId) async {
+    final linhas = await _client
+        .from('atendimento_fotos')
+        .select('storage_path, taken_at')
+        .eq('atendimento_id', atendimentoId)
+        .order('taken_at');
+
+    final caminhos = linhas
+        .map((r) => r['storage_path'] as String?)
+        .whereType<String>()
+        .toList();
+    if (caminhos.isEmpty) return const [];
+
+    // Uma chamada para todas, em vez de uma por foto: são 3 ou 4 fotos por
+    // atendimento e a rede de trilha não sobra para round-trips.
+    //
+    // `createSignedUrlsResult` e não `createSignedUrls`: o segundo está
+    // deprecado justamente porque engole caminho que não existe no bucket,
+    // e aí a lista de URLs sai desalinhada da lista de fotos. Aqui a foto
+    // que não está lá é simplesmente omitida — melhor faltar uma do que
+    // mostrar a foto errada num prontuário.
+    final resultado = await _client.storage
+        .from('atendimentos')
+        .createSignedUrlsResult(caminhos, 3600);
+    return [
+      for (final r in resultado)
+        if (r case SignedUrlSuccess(:final signedUrl)) signedUrl,
+    ];
+  }
+
+  /// Todos os alarmes que este usuário tem direito de ver, em tempo real.
+  ///
+  /// Sem `.eq('top_id', ...)` de propósito: a RLS de `top_alerts` já
+  /// devolve só os Tops em que ele é Hakuna liberado. Filtrar por Top
+  /// aqui é o que fazia o alarme chegar apenas a quem estivesse com
+  /// AQUELE Top aberto na tela.
+  Stream<List<TopAlert>> watchMeusAlarmes() {
+    return _client
+        .from('top_alerts')
+        .stream(primaryKey: ['id'])
+        .order('created_at')
+        .map((rows) => rows.map((r) => TopAlert.fromMap(r)).toList());
+  }
+
+  /// Envio de alarme a partir da fila. Chamado por [AlarmeService].
+  ///
+  /// `upsert(onConflict: 'client_id', ignoreDuplicates: true)` e não
+  /// `insert`: "falhou" inclui o caso em que o insert chegou e só a
+  /// resposta se perdeu, e com `insert` o reenvio criaria um segundo
+  /// alarme para o mesmo acidente.
+  Future<void> enviarAlarme(Map<String, dynamic> payload) async {
+    await _client
+        .from('top_alerts')
+        .upsert(payload, onConflict: 'client_id', ignoreDuplicates: true);
   }
 
   /// Regras de triagem ativas, usadas por qualquer usuário logado pra
@@ -920,34 +1005,13 @@ class SupabaseService {
         );
   }
 
-  Future<void> recordVitalSigns({
-    required String topId,
-    required String profileId,
-    int? heartRate,
-    int? systolicBp,
-    int? diastolicBp,
-    int? spo2,
-    double? temperatureC,
-    int? respiratoryRate,
-    String? notes,
-  }) {
-    final uid = currentUser?.id;
-    if (uid == null) {
-      return Future.error(
-        StateError('Sessão expirada — não é possível registrar sinais vitais'),
-      );
-    }
-    return _client.from('vital_signs').insert({
-      'top_id': topId,
-      'profile_id': profileId,
-      'recorded_by': uid,
-      'heart_rate': heartRate,
-      'systolic_bp': systolicBp,
-      'diastolic_bp': diastolicBp,
-      'spo2': spo2,
-      'temperature_c': temperatureC,
-      'respiratory_rate': respiratoryRate,
-      'notes': notes,
+  /// Envio de sinais vitais a partir da fila. Chamado por
+  /// [SinaisVitaisService] — nenhuma tela chama isto direto.
+  Future<void> enviarSinaisVitais(Map<String, dynamic> payload) async {
+    await _envioDaFila('sinais vitais', () async {
+      await _client
+          .from('vital_signs')
+          .upsert(payload, onConflict: 'client_id', ignoreDuplicates: true);
     });
   }
 }

@@ -45,7 +45,30 @@ class VitalSigns {
   }
 
   /// Resumo compacto pra exibir numa lista (ex: "PA 120/80 · FC 78 · SpO2 97%").
-  String get summary {
+  String get summary => resumoDe(
+    systolicBp: systolicBp,
+    diastolicBp: diastolicBp,
+    heartRate: heartRate,
+    spo2: spo2,
+    temperatureC: temperatureC,
+    respiratoryRate: respiratoryRate,
+  );
+
+  /// O mesmo resumo, a partir de valores soltos.
+  ///
+  /// Existe porque a tela também mostra aferições que ainda estão na
+  /// **fila**, e o payload da fila não tem `id` nem `recorded_by` — passar
+  /// por [fromMap] estouraria no `map['id'] as int`. Duplicar a
+  /// formatação era a outra saída, e aí os dois resumos divergiriam no
+  /// primeiro ajuste.
+  static String resumoDe({
+    int? systolicBp,
+    int? diastolicBp,
+    int? heartRate,
+    int? spo2,
+    double? temperatureC,
+    int? respiratoryRate,
+  }) {
     final parts = <String>[];
     if (systolicBp != null && diastolicBp != null) {
       parts.add('PA $systolicBp/$diastolicBp');
@@ -53,9 +76,19 @@ class VitalSigns {
     if (heartRate != null) parts.add('FC $heartRate');
     if (spo2 != null) parts.add('SpO2 $spo2%');
     if (temperatureC != null) {
-      parts.add('Temp ${temperatureC!.toStringAsFixed(1)}°C');
+      parts.add('Temp ${temperatureC.toStringAsFixed(1)}°C');
     }
     if (respiratoryRate != null) parts.add('FR $respiratoryRate');
     return parts.isEmpty ? 'Sem valores registrados' : parts.join(' · ');
   }
+
+  /// Resumo direto de um payload da fila.
+  static String resumoDoPayload(Map<String, dynamic> p) => resumoDe(
+    systolicBp: p['systolic_bp'] as int?,
+    diastolicBp: p['diastolic_bp'] as int?,
+    heartRate: p['heart_rate'] as int?,
+    spo2: p['spo2'] as int?,
+    temperatureC: (p['temperature_c'] as num?)?.toDouble(),
+    respiratoryRate: p['respiratory_rate'] as int?,
+  );
 }

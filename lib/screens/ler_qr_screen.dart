@@ -125,7 +125,7 @@ class _LerQrScreenState extends State<LerQrScreen> {
 
   void _abrirFicha(LeituraTag leitura) {
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
+      MaterialPageRoute<void>(
         builder: (_) => ParticipantFileScreen(
           participante: leitura.participante!,
           top: widget.top,

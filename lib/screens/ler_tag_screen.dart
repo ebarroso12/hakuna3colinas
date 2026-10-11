@@ -86,7 +86,7 @@ class _LerTagScreenState extends State<LerTagScreen> {
   /// botão "Buscar pelo nome" do QR já devolve o Hakuna para a lista.
   void _abrirQr() {
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
+      MaterialPageRoute<void>(
         builder: (_) => LerQrScreen(top: widget.top, regras: widget.regras),
       ),
     );
@@ -94,7 +94,7 @@ class _LerTagScreenState extends State<LerTagScreen> {
 
   void _abrirFicha(LeituraTag leitura) {
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
+      MaterialPageRoute<void>(
         builder: (_) => ParticipantFileScreen(
           participante: leitura.participante!,
           top: widget.top,

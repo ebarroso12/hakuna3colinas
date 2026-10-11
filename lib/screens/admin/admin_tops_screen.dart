@@ -38,7 +38,7 @@ class _AdminTopsScreenState extends State<AdminTopsScreen> {
         onPressed: () async {
           await Navigator.of(
             context,
-          ).push(MaterialPageRoute(builder: (_) => const AdminTopFormScreen()));
+          ).push(MaterialPageRoute<void>(builder: (_) => const AdminTopFormScreen()));
           _reload();
         },
         child: const Icon(Icons.add),
@@ -71,7 +71,7 @@ class _AdminTopsScreenState extends State<AdminTopsScreen> {
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () async {
                   await Navigator.of(context).push(
-                    MaterialPageRoute(
+                    MaterialPageRoute<void>(
                       builder: (_) => AdminTopFormScreen(top: top),
                     ),
                   );

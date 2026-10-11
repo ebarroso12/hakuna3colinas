@@ -77,6 +77,12 @@ funciona.
 Nomes de coluna no SQLite são **idênticos** aos do Postgres, para o mesmo
 `fromMap` servir às duas origens. Ao adicionar campo, adicione nos dois.
 
+Ainda vêm **só da rede**, e isso é limite conhecido: a lista de perfis de
+`TopSenderistasScreen` e o histórico do servidor em `ProntuarioScreen` (o
+que está na fila local aparece sempre, com ou sem rede) e o mapa em tempo
+real — posição dos outros não existe offline por natureza. As duas telas
+dizem na cara que precisam de internet, em vez de mostrar tela de erro.
+
 `busca_normalizada` e `familia_normalizada` são colunas derivadas,
 gravadas por `TextoBusca` no momento do cache. Não compare contra
 `full_name` ou `familia` crus: `"joao"` não acha `"JOÃO"`.
@@ -105,14 +111,37 @@ perda silenciosa — pior que fila travada, porque na travada alguém percebe.
 Resolvida a causa, "Devolver à fila" reenvia.
 
 ### Nada escreve direto no Supabase — tudo passa pela fila
-Atendimento, foto, posição, **chat** e **auditoria** entram no `outbox` e
-sobem depois. Tela nenhuma chama `insert` no Supabase.
+Atendimento, foto, posição, **chat**, **auditoria**, **alarme** e **sinais
+vitais** entram no `outbox` e sobem depois. Tela nenhuma chama `insert` no
+Supabase.
+
+Alarme e sinais vitais entraram na lista em 10/10/2026 (ver
+`supabase/revisao_completa_correcoes.sql`). Eram as duas últimas escritas
+diretas, e as duas perdiam dado sem rede — o alarme com um aviso na tela, a
+aferição sem aviso nenhum. **O alarme era a função mais crítica do app e a
+única sem caminho offline.** Se aparecer um `insert` direto numa tela, é
+regressão.
+
+Escrita de admin (`AdminService`, criar/editar participante, criar Top) fica
+fora da fila de propósito: é feita com rede, sentado, e enfileirar daria a
+falsa impressão de que funciona no mato.
 
 Toda entidade que passa pela fila precisa de **`client_id` no payload** e
 de `upsert(onConflict: 'client_id', ignoreDuplicates: true)` no envio. O
 motivo: "falhou" inclui o caso em que o insert chegou e a resposta se
 perdeu, e com `insert` o reenvio duplica a linha. Ver
 `supabase/fila_offline_chat_e_auditoria.sql`.
+
+**O `client_id` é por LINHA, não por operação.** As fotos de um atendimento
+iam todas com o `client_id` do atendimento, e da segunda em diante a linha
+era descartada em silêncio pelo `ignoreDuplicates` — arquivo no Storage,
+nada no banco. Cada foto tem o seu (ver `AtendimentoService.clientIdDaFoto`).
+
+**UPDATE pela fila não usa o mesmo caminho do INSERT.** `enviarAtendimento`
+faz `upsert(ignoreDuplicates: true)`, que é certo para registro novo e
+errado para encerramento: a linha já existe e o `ignoreDuplicates` não faz
+nada. O uploader decide por `entrada.operation` — ver
+`AtendimentoService.registrarUploaders` e `atualizarAtendimento`.
 
 Hora dos eventos vem **do aparelho** (`created_at`, `lida_em`,
 `occurred_at`), nunca de `now()` no Postgres: offline a coisa acontece
@@ -134,6 +163,13 @@ inteiro (cache em disco, fallback, auditoria). Há teste travando isso.
 `TriageService` dá a cor de **cadastro** — `f(idade, comorbidades)`, das
 regras do banco. `TriageDinamica` **escala** essa cor para vermelho quando
 a última aferição tem SpO₂ < 90, sistólica > 180 ou diastólica > 110.
+
+As DUAS portas de medição alimentam `cache_ultima_afericao`: o formulário
+de atendimento (`AtendimentoService.registrar`) e a tela de sinais vitais
+(`SinaisVitaisService.registrar`). Até 10/10/2026 só a primeira alimentava,
+e o resultado era clinicamente incoerente — SpO2 85 no atendimento pintava
+de vermelho, o mesmo 85 na outra tela não pintava nada. Ao criar uma
+terceira forma de aferir, alimente o cache também.
 
 Só escala, nunca rebaixa, e **não sobrescreve o cadastro** — sobrepõe na
 leitura. `AlertaVital` (em `atendimento.dart`) é um terceiro conjunto de
@@ -293,14 +329,21 @@ validando uma configuração que não existe mais.
   `direct_messages`, `notifications`, `attendance_members`, `nfc_tags`.
 - **AID de exemplo.** `android/app/src/main/res/xml/apduservice.xml` usa
   `F0010203040506`. Trocar pelo AID real quando definido.
-- **Triagem não usa os sinais vitais de `vital_signs`.** `TriageDinamica` lê
-  só a última aferição vinda de `atendimentos` (cache local). A tela de
-  `vital_signs` grava numa tabela separada que nada reclassifica.
-- **Despacho de atendimento.** 9 estados no schema, o app grava `aberto`.
-- **Lógica de proximidade.** Nada cruza GPS com atendimento: ninguém
-  responde "quem está mais perto?".
-- **Nenhum teste de hardware.** Os 240 testes cobrem lógica. NFC, câmera,
-  GPS com tela bloqueada e permissões só se verificam em aparelho físico.
+- **Despacho de atendimento: 7 dos 9 estados seguem sem uso, por decisão.**
+  O app escreve `aberto` e `encerrado` (ver `AtendimentoService.encerrar`).
+  `reconhecido`, `atribuido`, `a_caminho`, `no_local`, `em_andamento`,
+  `escalado` e `cancelado` formam um fluxo de despacho que precisa de
+  painel de coordenação e de regra de quem atribui o quê — decisão de
+  produto. Meio-implementado seria pior que ausente: estado que ninguém
+  atualiza mente sobre a situação do paciente.
+- **Notificação com o app FECHADO não existe.** O alarme chega em qualquer
+  tela, com som e vibração (`AlarmeService` + `FaixaDeAlarme`), mas só com
+  o app aberto. Push de app fechado exige FCM: projeto Firebase,
+  `google-services.json` e um serviço no servidor para disparar. Para quem
+  está com o app fechado, continua valendo o rádio.
+- **Nenhum teste de hardware.** Os 322 testes cobrem lógica. NFC, câmera,
+  GPS com tela bloqueada, o som do alarme e o `launchUrl` do botão
+  Atualizar só se verificam em aparelho físico.
 - **`occurred_at` em `audit_log` não tem backfill.** As linhas antigas (não
   há nenhuma hoje) ficariam com null; ler sempre
   `coalesce(occurred_at, created_at)`.

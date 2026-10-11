@@ -4,6 +4,7 @@ import '../models/profile.dart';
 import '../models/top.dart';
 import '../models/triage_rule.dart';
 import '../models/vital_signs.dart';
+import '../services/sinais_vitais_service.dart';
 import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
 import '../widgets/triage_badge.dart';
@@ -36,13 +37,33 @@ class _VitalSignsScreenState extends State<VitalSignsScreen> {
   bool _saving = false;
   String? _error;
 
+  /// Aferições deste perfil ainda na fila. Mostradas separadas do
+  /// histórico do servidor: offline o `.stream()` não devolve nada, e sem
+  /// isto o Hakuna salvava a medição e a tela continuava dizendo
+  /// "Nenhum registro ainda" — parecia que não gravou.
+  List<Map<String, dynamic>> _pendentes = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _carregarPendentes();
+  }
+
+  Future<void> _carregarPendentes() async {
+    final lista = await SinaisVitaisService.instance.pendentesDe(
+      topId: widget.top.id,
+      profileId: widget.profile.id,
+    );
+    if (mounted) setState(() => _pendentes = lista);
+  }
+
   Future<void> _save() async {
     setState(() {
       _saving = true;
       _error = null;
     });
     try {
-      await SupabaseService.instance.recordVitalSigns(
+      await SinaisVitaisService.instance.registrar(
         topId: widget.top.id,
         profileId: widget.profile.id,
         heartRate: int.tryParse(_heartRateController.text),
@@ -65,8 +86,17 @@ class _VitalSignsScreenState extends State<VitalSignsScreen> {
       _temperatureController.clear();
       _respiratoryController.clear();
       _notesController.clear();
+      await _carregarPendentes();
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Sinais vitais registrados.')),
+        SnackBar(
+          content: Text(
+            _pendentes.isEmpty
+                ? 'Sinais vitais registrados e enviados.'
+                : 'Sinais vitais GRAVADOS no aparelho. Sobem sozinhos '
+                      'quando a rede voltar.',
+          ),
+        ),
       );
     } catch (e) {
       if (mounted) setState(() => _error = 'Não foi possível salvar: $e');
@@ -221,19 +251,27 @@ class _VitalSignsScreenState extends State<VitalSignsScreen> {
               ),
               builder: (context, snapshot) {
                 final history = snapshot.data ?? [];
-                if (history.isEmpty) {
+                if (history.isEmpty && _pendentes.isEmpty) {
                   return const Center(child: Text('Nenhum registro ainda.'));
                 }
-                return ListView.builder(
-                  itemCount: history.length,
-                  itemBuilder: (context, index) {
-                    final v = history[index];
-                    return ListTile(
-                      leading: const Icon(Icons.monitor_heart),
-                      title: Text(v.summary),
-                      subtitle: Text(v.recordedAt.toLocal().toString()),
-                    );
-                  },
+                return ListView(
+                  children: [
+                    // Pendentes primeiro: é o que o Hakuna acabou de medir.
+                    for (final p in _pendentes)
+                      ListTile(
+                        leading: const Icon(Icons.cloud_upload_outlined),
+                        title: Text(VitalSigns.resumoDoPayload(p)),
+                        subtitle: const Text('Aguardando sinal para enviar'),
+                      ),
+                    if (_pendentes.isNotEmpty && history.isNotEmpty)
+                      const Divider(),
+                    for (final v in history)
+                      ListTile(
+                        leading: const Icon(Icons.monitor_heart),
+                        title: Text(v.summary),
+                        subtitle: Text(v.recordedAt.toLocal().toString()),
+                      ),
+                  ],
                 );
               },
             ),

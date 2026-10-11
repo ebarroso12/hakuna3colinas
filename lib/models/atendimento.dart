@@ -44,6 +44,21 @@ class Atendimento {
   /// Caminhos das fotos na pasta do próprio celular, enquanto não subiram.
   final List<String> fotosLocais;
 
+  /// Um dos valores de `atendimento_status` no Postgres. O app usa dois:
+  /// `aberto` e `encerrado`.
+  ///
+  /// Os outros sete (`reconhecido`, `atribuido`, `a_caminho`, `no_local`,
+  /// `em_andamento`, `escalado`, `cancelado`) existem no banco e seguem
+  /// sem uso: são um fluxo de DESPACHO, que precisa de um painel de
+  /// coordenação e de regra de quem atribui o quê. Isso é decisão de
+  /// produto, não de código, e meio-implementado seria pior que ausente —
+  /// um estado que ninguém atualiza mente sobre a situação do paciente.
+  final String status;
+
+  final DateTime? closedAt;
+
+  bool get encerrado => status == 'encerrado';
+
   Atendimento({
     required this.clientId,
     required this.topId,
@@ -63,6 +78,8 @@ class Atendimento {
     this.latitude,
     this.longitude,
     this.fotosLocais = const [],
+    this.status = 'aberto',
+    this.closedAt,
   });
 
   factory Atendimento.fromMap(Map<String, dynamic> map) {
@@ -84,6 +101,10 @@ class Atendimento {
       latitude: (map['latitude'] as num?)?.toDouble(),
       longitude: (map['longitude'] as num?)?.toDouble(),
       openedAt: DateTime.parse(map['opened_at'] as String),
+      status: map['status'] as String? ?? 'aberto',
+      closedAt: map['closed_at'] == null
+          ? null
+          : DateTime.parse(map['closed_at'] as String),
     );
   }
 
@@ -107,6 +128,10 @@ class Atendimento {
     'latitude': latitude,
     'longitude': longitude,
     'opened_at': openedAt.toUtc().toIso8601String(),
+    // Explícito, e não pelo default da coluna: a entrada da fila é lida de
+    // volta para a tela antes de existir no servidor, e sem o campo o
+    // cartão do prontuário não saberia dizer se está aberto.
+    'status': status,
   };
 
   /// "140x90", como o Hakuna escreve. Null quando falta uma das duas.

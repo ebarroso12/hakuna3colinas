@@ -94,7 +94,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                     ? null
                     : () async {
                         await Navigator.of(context).push(
-                          MaterialPageRoute(
+                          MaterialPageRoute<void>(
                             builder: (_) => AdminUserEditScreen(
                               profile: profile,
                               isMasterAdmin: widget.isMasterAdmin,

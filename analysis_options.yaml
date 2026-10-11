@@ -10,6 +10,16 @@
 include: package:flutter_lints/flutter.yaml
 
 analyzer:
+  # Modo estrito. O analisador padrao do flutter_lints deixa passar
+  # `dynamic` implicito, e foi assim que `VitalSigns.fromMap(payload)`
+  # chegou a ser escrito com um `map['id'] as int` que estouraria em
+  # campo: cast em `Map<String, dynamic>` nao e verificado em compilacao.
+  # Estes tres fecham a maior parte dessa porta.
+  language:
+    strict-casts: true
+    strict-inference: true
+    strict-raw-types: true
+
   exclude:
     - build/**
     - android/**

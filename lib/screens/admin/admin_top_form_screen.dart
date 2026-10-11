@@ -244,7 +244,7 @@ class _AdminTopFormScreenState extends State<AdminTopFormScreen> {
               icon: const Icon(Icons.people_outline),
               tooltip: 'Gerenciar equipe',
               onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(
+                MaterialPageRoute<void>(
                   builder: (_) => AdminTopMembersScreen(top: widget.top!),
                 ),
               ),

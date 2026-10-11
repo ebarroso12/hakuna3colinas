@@ -6,9 +6,9 @@ import 'package:geolocator/geolocator.dart';
 import '../models/hakuna_position.dart';
 import '../models/profile.dart';
 import '../models/top.dart';
-import '../models/top_alert.dart';
 import '../offline/outbox.dart';
 import '../offline/sync_service.dart';
+import '../services/alarme_service.dart';
 import '../services/location_service.dart';
 import '../services/nfc_service.dart';
 import '../services/stats_service.dart';
@@ -236,18 +236,42 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
     }
 
     try {
-      await SupabaseService.instance.sendTopAlert(
+      await AlarmeService.instance.disparar(
         topId: widget.top.id,
-        message: messageController.text.trim().isEmpty
+        mensagem: messageController.text.trim().isEmpty
             ? null
             : messageController.text.trim(),
         latitude: lat,
         longitude: lng,
       );
-    } catch (e) {
+      if (!mounted) return;
+      // O alarme está GRAVADO no aparelho neste ponto, mesmo sem rede. A
+      // mensagem não pode dizer "enviado", porque pode não ter saído — e
+      // não pode dizer "falhou", porque não falhou. Diz o que é verdade e
+      // o que fazer a respeito.
+      final pendentes = await Outbox.instance.pendingCount(
+        entity: AlarmeService.entidade,
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Não foi possível disparar o alarme: $e')),
+        SnackBar(
+          backgroundColor: Colors.red.shade700,
+          duration: const Duration(seconds: 6),
+          content: Text(
+            pendentes == 0
+                ? 'Alarme disparado para os Hakunas do Top.'
+                : 'Alarme GRAVADO e aguardando sinal. Ele sobe sozinho '
+                      'quando a rede voltar — não conte com ele agora, use '
+                      'o rádio.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      // Só chega aqui por sessão expirada ou falha de disco. Falta de
+      // rede não cai mais neste catch — o alarme fica na fila.
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível registrar o alarme: $e')),
       );
     }
   }
@@ -296,7 +320,7 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
               icon: const Icon(Icons.monitor_heart),
               tooltip: 'Sinais vitais dos Senderistas',
               onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(
+                MaterialPageRoute<void>(
                   builder: (_) => TopSenderistasScreen(top: widget.top),
                 ),
               ),
@@ -309,7 +333,7 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
             icon: const Icon(Icons.map_outlined),
             tooltip: 'Mapa dos Hakunas',
             onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(
+              MaterialPageRoute<void>(
                 builder: (_) => MapaTopScreen(
                   top: widget.top,
                   hakunaProfiles: _hakunaProfiles,
@@ -321,7 +345,7 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
             icon: const Icon(Icons.groups),
             tooltip: 'Participantes do Top',
             onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(
+              MaterialPageRoute<void>(
                 builder: (_) => ParticipantsListScreen(top: widget.top),
               ),
             ),
@@ -334,7 +358,7 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
             icon: const Icon(Icons.forum_outlined),
             tooltip: 'Chats do Top',
             onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(
+              MaterialPageRoute<void>(
                 builder: (_) => TeamChatsScreen(top: widget.top),
               ),
             ),
@@ -344,7 +368,7 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
               icon: const Icon(Icons.medical_services_outlined),
               tooltip: 'Chat com os Hakunas',
               onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(
+                MaterialPageRoute<void>(
                   builder: (_) => TopChatScreen(
                     top: widget.top,
                     hakunaProfiles: _hakunaProfiles,
@@ -357,7 +381,7 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
               icon: const Icon(Icons.nfc),
               tooltip: 'Pulseiras NFC',
               onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(
+                MaterialPageRoute<void>(
                   builder: (_) => AdminTagsScreen(top: widget.top),
                 ),
               ),
@@ -367,7 +391,7 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
               icon: const Icon(Icons.groups_2_outlined),
               tooltip: 'Equipes do Top',
               onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(
+                MaterialPageRoute<void>(
                   builder: (_) =>
                       AdminEquipesScreen(top: widget.top, souAdmin: true),
                 ),
@@ -381,7 +405,7 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
         // edita a equipe dele, nao o Top — por isso aqui e admin/master.
         aoEditar: podeEditarTop
             ? () => Navigator.of(context).push(
-                MaterialPageRoute(
+                MaterialPageRoute<void>(
                   builder: (_) => AdminTopFormScreen(top: widget.top),
                 ),
               )
@@ -413,7 +437,6 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
               ),
             ),
           if (isHakuna)
-            _AlertBanner(topId: widget.top.id, hakunaProfiles: _hakunaProfiles),
           if (isHakuna)
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
@@ -563,91 +586,6 @@ class _MyStatsCard extends StatelessWidget {
   }
 }
 
-/// Mostra os alarmes recentes (última hora) do Top que ainda não foram
-/// dispensados nesta sessão. Só aparece enquanto a tela do Top estiver
-/// aberta — não há push notification neste momento.
-class _AlertBanner extends StatefulWidget {
-  const _AlertBanner({required this.topId, required this.hakunaProfiles});
-
-  final String topId;
-  final Map<String, Profile> hakunaProfiles;
-
-  @override
-  State<_AlertBanner> createState() => _AlertBannerState();
-}
-
-class _AlertBannerState extends State<_AlertBanner> {
-  final Set<int> _dismissed = {};
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<List<TopAlert>>(
-      stream: SupabaseService.instance.watchTopAlerts(widget.topId),
-      builder: (context, snapshot) {
-        final cutoff = DateTime.now().subtract(const Duration(hours: 1));
-        final alerts = (snapshot.data ?? [])
-            .where(
-              (a) => !_dismissed.contains(a.id) && a.createdAt.isAfter(cutoff),
-            )
-            .toList();
-        if (alerts.isEmpty) return const SizedBox.shrink();
-
-        return Column(
-          children: alerts.map((alert) {
-            final senderLabel =
-                widget.hakunaProfiles[alert.senderId]?.displayLabel ?? 'Hakuna';
-            return Container(
-              width: double.infinity,
-              margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.red.shade700,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.warning_amber, color: Colors.white),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Alarme — $senderLabel',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        if (alert.message != null)
-                          Text(
-                            alert.message!,
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                        Text(
-                          alert.createdAt.toLocal().toString(),
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 11,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white),
-                    onPressed: () => setState(() => _dismissed.add(alert.id)),
-                  ),
-                ],
-              ),
-            );
-          }).toList(),
-        );
-      },
-    );
-  }
-}
-
 class _StatItem extends StatelessWidget {
   const _StatItem({
     required this.icon,
@@ -728,7 +666,7 @@ class _BotaoFilaOfflineState extends State<_BotaoFilaOffline> {
           : 'Fila do aparelho',
       onPressed: () async {
         await Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const FilaOfflineScreen()),
+          MaterialPageRoute<void>(builder: (_) => const FilaOfflineScreen()),
         );
         await _contar();
       },

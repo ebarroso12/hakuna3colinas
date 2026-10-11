@@ -147,9 +147,16 @@ class _AtendimentoFormScreenState extends State<AtendimentoFormScreen> {
         imageQuality: 80,
       );
       if (arquivo == null) return;
+      // Um `client_id` novo por foto, não `'$_clientId-${_fotos.length+1}'`.
+      //
+      // Dois motivos. O contador repetia nome: tirar 2 fotos, apagar a
+      // primeira e tirar outra gerava `-2` de novo, e o `File.copy`
+      // SOBRESCREVIA a foto que já estava lá. E `atendimento_fotos
+      // .client_id` é `uuid` no banco — `<uuid>-2` não é uuid e seria
+      // recusado no envio.
       final destino = await AtendimentoService.instance.guardarFoto(
         arquivo.path,
-        clientId: '$_clientId-${_fotos.length + 1}',
+        clientId: Outbox.novoClientId(),
       );
       if (mounted) setState(() => _fotos.add(destino));
     } catch (e) {
