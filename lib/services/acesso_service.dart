@@ -276,15 +276,36 @@ class AcessoService {
     required String identificador,
     required String senha,
   }) async {
-    final dados = await _invocar({
-      'acao': 'login',
-      'identificador': identificador.trim(),
-      'senha': senha,
-    });
+    // Funcao SEPARADA, nao uma acao dentro de `acesso`. `acesso` tem 780
+    // linhas e publicar qualquer mudanca nela exige reenviar o arquivo
+    // inteiro — foi assim que ela ja foi destruida uma vez neste projeto.
+    // Login cabe em 100 linhas e e outra preocupacao: separado, um nao
+    // quebra o outro.
+    final Map<String, dynamic> dados;
+    try {
+      final resposta = await _client.functions.invoke(
+        'login',
+        body: {'identificador': identificador.trim(), 'senha': senha},
+      );
+      dados = (resposta.data as Map<String, dynamic>?) ?? const {};
+    } on FunctionException catch (e) {
+      // Senha errada volta 401, e `invoke` LANCA em status fora do 2xx —
+      // o corpo com a mensagem vem dentro de `details`, nao em `data`.
+      // Sem este catch, a recusa normal de login apareceria na tela como
+      // "FunctionException", que e o tipo de erro cru que esta tela
+      // existe para nao mostrar.
+      final detalhes = e.details;
+      if (detalhes is Map && detalhes['error'] != null) {
+        throw AcessoRecusado(detalhes['error'].toString());
+      }
+      throw const AcessoRecusado('Número/e-mail ou senha incorretos.');
+    }
 
     final refresh = dados['refresh_token'] as String?;
     if (refresh == null) {
-      throw const AcessoRecusado('Nao foi possivel entrar.');
+      throw const AcessoRecusado(
+        'Não foi possível entrar. Tente de novo em instantes.',
+      );
     }
 
     // `setSession` com o refresh token, e nao `recoverSession`: e o caminho
