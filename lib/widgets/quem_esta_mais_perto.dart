@@ -112,9 +112,7 @@ class QuemEstaMaisPerto extends StatelessWidget {
                           return ListTile(
                             leading: CircleAvatar(child: Text('${i + 1}')),
                             title: Text(nome),
-                            subtitle: Text(
-                              'posição de ${p.idadeFormatada}',
-                            ),
+                            subtitle: Text('posição de ${p.idadeFormatada}'),
                             trailing: Text(
                               p.distanciaFormatada,
                               style: Theme.of(context).textTheme.titleMedium,

@@ -5,6 +5,7 @@ import '../models/team_message.dart';
 import '../models/top.dart';
 import '../services/supabase_service.dart';
 import 'team_chat_screen.dart';
+import '../widgets/botao_inicio.dart';
 
 /// Lista os chats disponíveis no Top: o geral, aberto a todo participante
 /// aprovado, mais um por equipe em que o usuário esteja liberado.
@@ -42,6 +43,7 @@ class _TeamChatsScreenState extends State<TeamChatsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        actions: const [BotaoInicio()],
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,

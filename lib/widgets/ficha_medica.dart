@@ -45,10 +45,8 @@ class SecaoFicha extends StatelessWidget {
       padding: const EdgeInsets.only(top: 24, bottom: 10),
       child: Text(
         titulo.toUpperCase(),
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-          fontWeight: FontWeight.bold,
-          letterSpacing: 0.5,
-        ),
+        style: Theme.of(context).textTheme.titleSmall
+            ?.copyWith(fontWeight: FontWeight.bold, letterSpacing: 0.5),
       ),
     );
   }
@@ -82,9 +80,8 @@ class PreviaImc extends StatelessWidget {
       padding: const EdgeInsets.only(top: 8),
       child: Text(
         'IMC ${imc.toStringAsFixed(1)} · ${faixa?.label ?? ""}',
-        style: Theme.of(
-          context,
-        ).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.bold),
+        style: Theme.of(context).textTheme.labelMedium
+            ?.copyWith(fontWeight: FontWeight.bold),
       ),
     );
   }
@@ -158,9 +155,7 @@ class SeletorComorbidades extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final extras = selecionadas.where(
-      (c) => !comorbidadesComuns.contains(c),
-    );
+    final extras = selecionadas.where((c) => !comorbidadesComuns.contains(c));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

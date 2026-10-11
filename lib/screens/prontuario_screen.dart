@@ -6,6 +6,7 @@ import '../models/top.dart';
 import '../services/atendimento_service.dart';
 import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
+import '../widgets/botao_inicio.dart';
 import '../widgets/fotos_do_atendimento.dart';
 import 'atendimento_form_screen.dart';
 
@@ -142,15 +143,15 @@ class _ProntuarioScreenState extends State<ProntuarioScreen> {
         topId: widget.top.id,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Atendimento encerrado.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Atendimento encerrado.')));
       await _carregar();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Não foi possível encerrar: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Não foi possível encerrar: $e')));
     }
   }
 
@@ -189,6 +190,7 @@ class _ProntuarioScreenState extends State<ProntuarioScreen> {
           ],
         ),
         actions: [
+          const BotaoInicio(),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _carregando ? null : _carregar,

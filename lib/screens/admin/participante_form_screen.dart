@@ -4,8 +4,9 @@ import 'package:flutter/services.dart';
 import '../../models/participant.dart';
 import '../../models/top.dart';
 import '../../services/auditoria_service.dart';
-import '../../services/supabase_service.dart';
+import '../../services/participante_service.dart';
 import '../../widgets/app_logo.dart';
+import '../../widgets/botao_inicio.dart';
 import '../../widgets/ficha_medica.dart';
 
 /// Cadastro e edição da ficha de um participante.
@@ -188,8 +189,9 @@ class _ParticipanteFormScreenState extends State<ParticipanteFormScreen> {
     if (!(_formKey.currentState?.validate() ?? false)) return;
     setState(() => _salvando = true);
     try {
+      // `top_id` e `registered_by` saem do `ParticipanteService`: aqui é a
+      // ficha, lá é a identidade da linha.
       final dados = {
-        'top_id': widget.top.id,
         'full_name': _nome.text.trim(),
         'nickname': _texto(_apelido),
         'familia': _texto(_familia),
@@ -214,15 +216,26 @@ class _ParticipanteFormScreenState extends State<ParticipanteFormScreen> {
         'active': true,
       };
 
-      String participanteId;
+      // Pela FILA, não direto no Supabase.
+      //
+      // Esta tela é aberta de duas telas de campo — "Novo" na lista de
+      // participantes e "Editar" dentro da ficha. Quando gravava direto,
+      // salvar sem sinal falhava e a ficha inteira era perdida: nome,
+      // comorbidade, alergia, tudo digitado no mato e jogado fora num
+      // toque. Agora vai para o aparelho e sobe quando a rede voltar.
+      final String participanteId;
       if (_editando) {
-        await SupabaseService.instance.atualizarParticipante(
-          widget.participante!.id,
-          dados,
+        await ParticipanteService.instance.atualizar(
+          id: widget.participante!.id,
+          topId: widget.top.id,
+          dados: dados,
         );
         participanteId = widget.participante!.id;
       } else {
-        final criado = await SupabaseService.instance.criarParticipante(dados);
+        final criado = await ParticipanteService.instance.criar(
+          topId: widget.top.id,
+          dados: dados,
+        );
         participanteId = criado.id;
       }
 
@@ -267,6 +280,7 @@ class _ParticipanteFormScreenState extends State<ParticipanteFormScreen> {
       appBar: AppBar(
         title: Text(_editando ? 'Editar ficha' : 'Novo participante'),
         actions: [
+          const BotaoInicio(),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             child: FilledButton(
@@ -564,4 +578,3 @@ class _ParticipanteFormScreenState extends State<ParticipanteFormScreen> {
     );
   }
 }
-

@@ -11,6 +11,7 @@ import '../../services/qr_token_service.dart';
 import '../../services/supabase_service.dart';
 import '../../services/tag_service.dart';
 import '../../widgets/app_logo.dart';
+import '../../widgets/botao_inicio.dart';
 
 /// Vincular, gravar, revogar e auditar as pulseiras NFC do Top.
 ///
@@ -349,6 +350,7 @@ class _AdminTagsScreenState extends State<AdminTagsScreen> {
           ],
         ),
         actions: [
+          const BotaoInicio(),
           IconButton(icon: const Icon(Icons.refresh), onPressed: _carregar),
           const AppLogoTrailing(),
         ],

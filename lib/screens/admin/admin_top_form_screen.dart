@@ -7,6 +7,7 @@ import '../../models/top.dart';
 import '../../services/acesso_service.dart';
 import '../../services/admin_service.dart';
 import '../../widgets/app_logo.dart';
+import '../../widgets/botao_inicio.dart';
 import '../../widgets/ficha_medica.dart';
 import 'admin_top_members_screen.dart';
 
@@ -239,6 +240,7 @@ class _AdminTopFormScreenState extends State<AdminTopFormScreen> {
       appBar: AppBar(
         title: Text(_isEditing ? 'Editar Top' : 'Novo Top'),
         actions: [
+          const BotaoInicio(),
           if (_isEditing)
             IconButton(
               icon: const Icon(Icons.people_outline),
@@ -481,9 +483,9 @@ class _BlocoSenhaDoTopState extends State<_BlocoSenhaDoTop> {
       await _mostrar(r);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Não foi possível gerar: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Não foi possível gerar: $e')));
       }
     } finally {
       if (mounted) setState(() => _gerando = false);
@@ -501,7 +503,10 @@ class _BlocoSenhaDoTopState extends State<_BlocoSenhaDoTop> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(r.topNome, style: const TextStyle(fontWeight: FontWeight.bold)),
+            Text(
+              r.topNome,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 16),
             Center(
               child: SelectableText(
@@ -538,9 +543,9 @@ class _BlocoSenhaDoTopState extends State<_BlocoSenhaDoTop> {
             onPressed: () async {
               await Clipboard.setData(ClipboardData(text: r.senha));
               if (ctx.mounted) {
-                ScaffoldMessenger.of(ctx).showSnackBar(
-                  const SnackBar(content: Text('Senha copiada')),
-                );
+                ScaffoldMessenger.of(
+                  ctx,
+                ).showSnackBar(const SnackBar(content: Text('Senha copiada')));
               }
             },
             icon: const Icon(Icons.copy),

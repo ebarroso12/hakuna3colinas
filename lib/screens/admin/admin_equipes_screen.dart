@@ -6,6 +6,7 @@ import '../../models/team_message.dart';
 import '../../models/top.dart';
 import '../../services/admin_service.dart';
 import '../../widgets/app_logo.dart';
+import '../../widgets/botao_inicio.dart';
 import '../../widgets/emblemas.dart';
 
 /// Monta as equipes de um Top: quem está em qual, e quem coordena.
@@ -209,6 +210,7 @@ class _AdminEquipesScreenState extends State<AdminEquipesScreen> {
           ],
         ),
         actions: [
+          const BotaoInicio(),
           IconButton(icon: const Icon(Icons.refresh), onPressed: _carregar),
           const AppLogoTrailing(),
         ],

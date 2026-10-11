@@ -14,6 +14,7 @@ import '../offline/outbox.dart';
 import '../services/atendimento_service.dart';
 import '../services/supabase_service.dart';
 import '../services/triage_dinamica.dart';
+import '../widgets/botao_inicio.dart';
 
 /// REGISTRO DE ATENDIMENTO.
 ///
@@ -277,6 +278,7 @@ class _AtendimentoFormScreenState extends State<AtendimentoFormScreen> {
       appBar: AppBar(
         title: const Text('Registro de atendimento'),
         actions: [
+          const BotaoInicio(),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             child: FilledButton(

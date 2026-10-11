@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
+import '../widgets/botao_inicio.dart';
 import '../widgets/password_field.dart';
 
 /// Troca a própria senha — só funciona logado. A senha é digitada aqui
@@ -58,7 +59,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Trocar senha'),
-        actions: const [AppLogoTrailing()],
+        actions: const [BotaoInicio(), AppLogoTrailing()],
       ),
       body: Padding(
         padding: const EdgeInsets.all(24),

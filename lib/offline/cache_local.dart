@@ -53,55 +53,84 @@ class CacheLocal {
 
       final lote = txn.batch();
       for (final p in participantes) {
-        lote.insert(Tabelas.participantes, {
-          ColunasParticipante.id: p.id,
-          ColunasParticipante.topId: p.topId,
-          ColunasParticipante.fullName: p.fullName,
-          ColunasParticipante.nickname: p.nickname,
-          ColunasParticipante.familia: p.familia,
-          ColunasParticipante.familiaNormalizada: TextoBusca.normalizar(
-            p.familia,
-          ),
-          ColunasParticipante.participantCode: p.participantCode,
-          ColunasParticipante.phone: p.phone,
-          ColunasParticipante.birthDate: p.birthDate
-              ?.toIso8601String()
-              .split('T')
-              .first,
-          ColunasParticipante.cidade: p.cidade,
-          ColunasParticipante.estado: p.estado,
-          ColunasParticipante.emergencyContact: p.emergencyContact,
-          ColunasParticipante.heightCm: p.heightCm,
-          ColunasParticipante.weightKg: p.weightKg,
-          ColunasParticipante.bloodType: p.bloodType,
-          ColunasParticipante.biotipo: p.biotipo,
-          ColunasParticipante.cirurgias: p.cirurgias,
-          ColunasParticipante.observacaoHakuna: p.observacaoHakuna,
-          ColunasParticipante.atividadeFisica: p.atividadeFisicaSemanal,
-          // SQLite não tem array: o text[] do Postgres vira JSON.
-          ColunasParticipante.comorbidades: jsonEncode(p.comorbidades),
-          ColunasParticipante.alergias: p.alergias,
-          ColunasParticipante.planoSaude: p.planoSaude,
-          ColunasParticipante.medicamentos: p.medicamentosContinuos,
-          ColunasParticipante.restricoes: p.restricoesFisicas,
-          ColunasParticipante.tagUid: p.tagUid,
-          ColunasParticipante.notes: p.notes,
-          ColunasParticipante.active: p.active ? 1 : 0,
-          ColunasParticipante.baixadoEm: agora,
-          // Normalizado UMA vez, aqui. A busca compara contra esta coluna
-          // em vez de remover acento de 215 nomes a cada tecla digitada.
-          ColunasParticipante.buscaNormalizada: TextoBusca.chaveDe(
-            nome: p.fullName,
-            apelido: p.nickname,
-            familia: p.familia,
-            codigo: p.participantCode,
-          ),
-        }, conflictAlgorithm: ConflictAlgorithm.replace);
+        lote.insert(
+          Tabelas.participantes,
+          _linhaDeParticipante(p, agora),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
       }
       await lote.commit(noResult: true);
     });
 
     return participantes.length;
+  }
+
+  /// Monta a linha do SQLite a partir de um [Participant].
+  ///
+  /// Extraido de `salvarParticipantes` para `salvarUmParticipante` poder
+  /// usar o MESMO mapeamento. Duas copias divergiriam na primeira coluna
+  /// nova, e a divergencia apareceria como campo que some ao cadastrar
+  /// offline e volta ao sincronizar — o tipo de bug que ninguem liga a
+  /// duas funcoes parecidas.
+  Map<String, Object?> _linhaDeParticipante(Participant p, int agora) => {
+    ColunasParticipante.id: p.id,
+    ColunasParticipante.topId: p.topId,
+    ColunasParticipante.fullName: p.fullName,
+    ColunasParticipante.nickname: p.nickname,
+    ColunasParticipante.familia: p.familia,
+    ColunasParticipante.familiaNormalizada: TextoBusca.normalizar(p.familia),
+    ColunasParticipante.participantCode: p.participantCode,
+    ColunasParticipante.phone: p.phone,
+    ColunasParticipante.birthDate: p.birthDate
+        ?.toIso8601String()
+        .split('T')
+        .first,
+    ColunasParticipante.cidade: p.cidade,
+    ColunasParticipante.estado: p.estado,
+    ColunasParticipante.emergencyContact: p.emergencyContact,
+    ColunasParticipante.heightCm: p.heightCm,
+    ColunasParticipante.weightKg: p.weightKg,
+    ColunasParticipante.bloodType: p.bloodType,
+    ColunasParticipante.biotipo: p.biotipo,
+    ColunasParticipante.cirurgias: p.cirurgias,
+    ColunasParticipante.observacaoHakuna: p.observacaoHakuna,
+    ColunasParticipante.atividadeFisica: p.atividadeFisicaSemanal,
+    // SQLite não tem array: o text[] do Postgres vira JSON.
+    ColunasParticipante.comorbidades: jsonEncode(p.comorbidades),
+    ColunasParticipante.alergias: p.alergias,
+    ColunasParticipante.planoSaude: p.planoSaude,
+    ColunasParticipante.medicamentos: p.medicamentosContinuos,
+    ColunasParticipante.restricoes: p.restricoesFisicas,
+    ColunasParticipante.tagUid: p.tagUid,
+    ColunasParticipante.notes: p.notes,
+    ColunasParticipante.active: p.active ? 1 : 0,
+    ColunasParticipante.baixadoEm: agora,
+    // Normalizado UMA vez, aqui. A busca compara contra esta coluna
+    // em vez de remover acento de 215 nomes a cada tecla digitada.
+    ColunasParticipante.buscaNormalizada: TextoBusca.chaveDe(
+      nome: p.fullName,
+      apelido: p.nickname,
+      familia: p.familia,
+      codigo: p.participantCode,
+    ),
+  };
+
+  /// Grava UM participante no cache, sem apagar o resto do Top.
+  ///
+  /// `salvarParticipantes` apaga os do Top antes de inserir — ela e para o
+  /// download completo. Esta e para o cadastro e a edicao feitos NO
+  /// APARELHO: o participante tem de aparecer na lista na hora, com ou sem
+  /// rede, e nao quando o download seguinte acontecer.
+  ///
+  /// `ConflictAlgorithm.replace` porque edicao e cadastro usam o mesmo
+  /// caminho: o id vem do aparelho e ja existe no caso da edicao.
+  Future<void> salvarUmParticipante(Participant p) async {
+    final db = await _db;
+    await db.insert(
+      Tabelas.participantes,
+      _linhaDeParticipante(p, DateTime.now().millisecondsSinceEpoch),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
   /// Participantes do Top, do cache.
@@ -165,9 +194,7 @@ class CacheLocal {
       whereArgs: [topId],
     );
     final valor = linhas.first['quando'] as int?;
-    return valor == null
-        ? null
-        : DateTime.fromMillisecondsSinceEpoch(valor);
+    return valor == null ? null : DateTime.fromMillisecondsSinceEpoch(valor);
   }
 
   Participant _participanteDe(Map<String, Object?> l) {

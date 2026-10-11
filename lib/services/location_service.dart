@@ -187,15 +187,11 @@ class LocationService {
   /// rastreamento é o app ao abrir, não o sistema operacional. A diferença
   /// prática é que a trilha fica com um buraco do tamanho do tempo em que o
   /// app esteve morto — não dá para fingir que não fica.
-  Future<String?> retomarSeDevia({
-    void Function(Object error)? onError,
-  }) async {
+  Future<String?> retomarSeDevia({void Function(Object error)? onError}) async {
     if (isTracking) return _activeTopId;
     String? topId;
     try {
-      topId = await CacheLocal.instance.lerEstado(
-        ColunasEstado.topRastreando,
-      );
+      topId = await CacheLocal.instance.lerEstado(ColunasEstado.topRastreando);
     } catch (_) {
       return null;
     }

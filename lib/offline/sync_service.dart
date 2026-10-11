@@ -103,7 +103,25 @@ class SyncService {
   ///
   /// Seguro de chamar a qualquer momento: se já houver uma sincronização em
   /// andamento, esta chamada não faz nada em vez de enviar tudo duas vezes.
-  Future<SyncReport> syncNow({int lote = 200}) async {
+  Future<SyncReport> syncNow({int lote = 200}) {
+    // Guarda a rodada em andamento para quem precisa esperar por ela.
+    //
+    // Em produção ninguém espera: os serviços chamam `unawaited(syncNow())`
+    // porque a tela não pode travar aguardando rede. Em teste isso vira
+    // uma rodada que continua viva depois do `tearDown` e esbarra no banco
+    // já fechado — `DatabaseException(database_closed)`, que parece erro de
+    // produção e não é. Com esta referência o teste aguarda
+    // `SyncService.instance.rodadaEmAndamento` antes de fechar o banco.
+    final rodada = _syncNow(lote: lote);
+    rodadaEmAndamento = rodada;
+    return rodada;
+  }
+
+  /// A última rodada disparada, inclusive as `unawaited`. Só para teste.
+  @visibleForTesting
+  Future<SyncReport>? rodadaEmAndamento;
+
+  Future<SyncReport> _syncNow({int lote = 200}) async {
     if (_sincronizando) {
       return SyncReport(
         enviados: 0,

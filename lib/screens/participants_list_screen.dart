@@ -7,11 +7,14 @@ import '../models/top.dart';
 import '../models/triage_rule.dart';
 import '../offline/dados_do_top.dart';
 import '../offline/texto_busca.dart';
+import '../services/exclusao_service.dart';
 import '../services/supabase_service.dart';
 import '../services/triage_dinamica.dart';
 import '../services/triage_service.dart';
 import '../widgets/app_logo.dart';
+import '../widgets/barra_de_selecao.dart';
 import '../widgets/barra_inferior.dart';
+import '../widgets/botao_inicio.dart';
 import '../widgets/cabecalho_usuario.dart';
 import '../widgets/emblemas.dart';
 import 'admin/participante_form_screen.dart';
@@ -50,6 +53,105 @@ class _ParticipantsListScreenState extends State<ParticipantsListScreen> {
   Map<String, Afericao> _afericoes = const {};
 
   Profile? _meuPerfil;
+
+  /// Ids marcados para apagar. Vazio = fora do modo de seleção.
+  ///
+  /// Só o admin master entra nesse modo. Esta é a tela que o Hakuna usa em
+  /// campo, com a mão ocupada — um caminho de exclusão aberto para todos
+  /// aqui seria pedir para alguém apagar um paciente sem querer.
+  final Set<String> _marcados = {};
+  final Map<String, String> _nomesMarcados = {};
+  bool _excluindo = false;
+
+  bool get _souMaster => _meuPerfil?.isMasterAdmin ?? false;
+  bool get _selecionando => _marcados.isNotEmpty;
+
+  void _alternarMarca(Participant p) {
+    setState(() {
+      if (_marcados.remove(p.id)) {
+        _nomesMarcados.remove(p.id);
+      } else {
+        _marcados.add(p.id);
+        _nomesMarcados[p.id] = p.fullName;
+      }
+    });
+  }
+
+  void _limparSelecao() => setState(() {
+    _marcados.clear();
+    _nomesMarcados.clear();
+  });
+
+  /// Marca todos os que estão VISÍVEIS, não os 216.
+  ///
+  /// É o que faz o botão ser útil junto com a busca: filtra por "TESTE",
+  /// marca todos, apaga. Marcar a lista inteira a partir de uma tela
+  /// filtrada seria a forma mais fácil de alguém apagar o Top completo
+  /// achando que apagou três nomes.
+  void _marcarVisiveis(List<Participant> visiveis) {
+    setState(() {
+      for (final p in visiveis) {
+        _marcados.add(p.id);
+        _nomesMarcados[p.id] = p.fullName;
+      }
+    });
+  }
+
+  Future<void> _apagarMarcados() async {
+    final ids = _marcados.toList();
+    setState(() => _excluindo = true);
+    try {
+      final deps = await ExclusaoService.instance.dependenciasDeSenderistas(
+        ids,
+      );
+      if (!mounted) return;
+
+      final decisao = await confirmarExclusao(
+        context,
+        nomes: {for (final id in ids) id: _nomesMarcados[id] ?? id},
+        dependencias: deps,
+        // Senderista TEM desativar: `active = false` tira das listas e
+        // mantém o prontuário inteiro. É a resposta certa para quem já
+        // foi atendido.
+        podeDesativar: true,
+      );
+
+      final liberados = ids
+          .where((id) => deps[id]?.podeApagar ?? false)
+          .toList();
+      final bloqueados = ids
+          .where((id) => !(deps[id]?.podeApagar ?? false))
+          .toList();
+
+      String? mensagem;
+      if (decisao == DecisaoDaExclusao.apagar) {
+        final n = await ExclusaoService.instance.apagarSenderistas(liberados);
+        mensagem = '$n senderista(s) apagado(s).';
+      } else if (decisao == DecisaoDaExclusao.desativar) {
+        await ExclusaoService.instance.desativarSenderistas(bloqueados);
+        mensagem =
+            '${bloqueados.length} desativado(s). O prontuário foi mantido.';
+      }
+      if (mensagem == null) return;
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(mensagem)));
+      _limparSelecao();
+      await _carregar();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(ExclusaoService.mensagemDeErro(e)),
+          duration: const Duration(seconds: 8),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _excluindo = false);
+    }
+  }
+
   bool _carregando = true;
   String? _erro;
 
@@ -128,9 +230,9 @@ class _ParticipantsListScreenState extends State<ParticipantsListScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Não deu para baixar agora: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Não deu para baixar agora: $e')));
     }
     await _carregar();
   }
@@ -176,6 +278,7 @@ class _ParticipantsListScreenState extends State<ParticipantsListScreen> {
           numeroTop: widget.top.topNumber,
         ),
         actions: [
+          const BotaoInicio(),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Recarregar',
@@ -183,6 +286,21 @@ class _ParticipantsListScreenState extends State<ParticipantsListScreen> {
           ),
           const AppLogoTrailing(),
         ],
+        // A barra de seleção entra como `bottom`, não no lugar do título:
+        // a seta de voltar e o botão de início continuam acessíveis. Numa
+        // tela que apaga gente, a saída não pode desaparecer.
+        bottom: _selecionando
+            ? PreferredSize(
+                preferredSize: const Size.fromHeight(56),
+                child: BarraDeSelecao(
+                  marcados: _marcados.length,
+                  total: lista.length,
+                  aoMarcarTodos: () => _marcarVisiveis(lista),
+                  aoLimpar: _limparSelecao,
+                  aoApagar: _excluindo ? () {} : _apagarMarcados,
+                ),
+              )
+            : null,
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () async {
@@ -203,6 +321,17 @@ class _ParticipantsListScreenState extends State<ParticipantsListScreen> {
       ),
       body: Column(
         children: [
+          if (_souMaster && !_selecionando)
+            Container(
+              width: double.infinity,
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Text(
+                'Admin master: toque e segure um nome para marcar e apagar. '
+                'Com a busca ativa, "marcar todos" pega só os filtrados.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
           _avisoDados(),
           _avisoCriticos(),
           Padding(
@@ -312,6 +441,9 @@ class _ParticipantsListScreenState extends State<ParticipantsListScreen> {
         gravidade: _gravidadeDe(lista[i]),
         regras: _regras,
         top: widget.top,
+        selecionando: _selecionando,
+        marcado: _marcados.contains(lista[i].id),
+        aoMarcar: _souMaster ? () => _alternarMarca(lista[i]) : null,
       ),
     );
   }
@@ -418,12 +550,21 @@ class _LinhaParticipante extends StatelessWidget {
     required this.gravidade,
     required this.regras,
     required this.top,
+    this.selecionando = false,
+    this.marcado = false,
+    this.aoMarcar,
   });
 
   final Participant participante;
   final Gravidade gravidade;
   final List<TriageRule> regras;
   final Top top;
+  final bool selecionando;
+  final bool marcado;
+
+  /// Null quando quem está olhando não é o admin master — e aí não há
+  /// toque longo nem checkbox.
+  final VoidCallback? aoMarcar;
 
   @override
   Widget build(BuildContext context) {
@@ -439,7 +580,13 @@ class _LinhaParticipante extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 6),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-        leading: emblemaPara(ehLegendario: ehLegendario),
+        selected: marcado,
+        leading: selecionando
+            ? Checkbox(
+                value: marcado,
+                onChanged: aoMarcar == null ? null : (_) => aoMarcar!(),
+              )
+            : emblemaPara(ehLegendario: ehLegendario),
         title: Text(
           participante.fullName.toUpperCase(),
           style: const TextStyle(fontWeight: FontWeight.w600),
@@ -471,15 +618,18 @@ class _LinhaParticipante extends StatelessWidget {
                   ),
                 ),
               ),
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => ParticipantFileScreen(
-              participante: participante,
-              top: top,
-              regras: regras,
-            ),
-          ),
-        ),
+        onLongPress: aoMarcar,
+        onTap: selecionando
+            ? aoMarcar
+            : () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => ParticipantFileScreen(
+                    participante: participante,
+                    top: top,
+                    regras: regras,
+                  ),
+                ),
+              ),
       ),
     );
   }

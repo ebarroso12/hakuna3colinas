@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../models/profile.dart';
 import '../../services/admin_service.dart';
 import '../../widgets/app_logo.dart';
+import '../../widgets/botao_inicio.dart';
 
 const _knownComorbidities = ['diabetes', 'hipertensao', 'cirurgia_previa'];
 
@@ -123,6 +124,7 @@ class _AdminUserEditScreenState extends State<AdminUserEditScreen> {
       appBar: AppBar(
         title: Text(widget.profile.displayLabel),
         actions: [
+          const BotaoInicio(),
           if (!widget.profile.isMasterAdmin)
             IconButton(
               icon: const Icon(Icons.delete_outline),

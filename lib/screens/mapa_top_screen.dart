@@ -9,6 +9,7 @@ import '../models/profile.dart';
 import '../models/top.dart';
 import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
+import '../widgets/botao_inicio.dart';
 
 /// Mapa com a posição dos Hakunas do Top, em tempo real.
 ///
@@ -153,6 +154,7 @@ class _MapaTopScreenState extends State<MapaTopScreen> {
           ],
         ),
         actions: [
+          const BotaoInicio(),
           IconButton(
             icon: Icon(
               _seguirTodos ? Icons.my_location : Icons.location_searching,

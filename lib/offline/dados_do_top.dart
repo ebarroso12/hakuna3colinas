@@ -107,6 +107,14 @@ class DadosDoTop {
 
   Future<Participant?> participante(String id) => _cache.participante(id);
 
+  /// Grava um participante cadastrado ou editado NO APARELHO.
+  ///
+  /// Sem apagar o resto do Top: `baixar` e para o download completo, esta
+  /// e para o que o Hakuna acabou de digitar. Ver
+  /// `ParticipanteService._salvar`.
+  Future<void> salvarUmParticipante(Participant p) =>
+      _cache.salvarUmParticipante(p);
+
   /// Quando este Top foi baixado. Null = nunca — a tela precisa avisar.
   Future<DateTime?> baixadoEm(String topId) => _cache.baixadoEm(topId);
 

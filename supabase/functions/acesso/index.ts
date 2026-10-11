@@ -646,5 +646,102 @@ Deno.serve(async (req) => {
     return json({ ok: true })
   }
 
+  // ---------------------------------------------------------------
+  // APAGAR_USUARIOS - exclusao em massa, SO admin master
+  //
+  // Por que passa por aqui e nao por um `delete` do app:
+  //
+  // `profiles.id` referencia `auth.users(id) ON DELETE CASCADE`. Apagar a
+  // linha de `profiles` pelo app NAO apaga o usuario do auth — deixa um
+  // ORFAO que continua conseguindo fazer login e cai num app sem perfil,
+  // numa tela de erro sem saida. O caminho certo e o inverso: apagar o
+  // `auth.users`, e o perfil vai em cascata. Isso exige service_role, que
+  // nunca pode estar dentro do APK.
+  //
+  // A protecao de prontuario esta em `dependencias_do_perfil`, no banco, e
+  // e conferida AQUI tambem — nao so na tela. Tela e conveniencia; a
+  // fronteira e o servidor.
+  // ---------------------------------------------------------------
+  if (acao === 'apagar_usuarios') {
+    if (perfil?.is_master_admin !== true) {
+      return json({ error: 'apenas o administrador master' }, 403)
+    }
+
+    const ids = Array.isArray(corpo.ids)
+      ? corpo.ids.map((v: unknown) => String(v)).filter((v: string) => v)
+      : []
+    if (ids.length === 0) return json({ error: 'nenhum id recebido' }, 400)
+    // Teto por chamada: evita um toque errado varrer a base inteira e
+    // mantem a requisicao dentro do tempo da Edge Function.
+    if (ids.length > 50) {
+      return json({ error: 'no maximo 50 por vez' }, 400)
+    }
+    if (ids.includes(user.id)) {
+      return json({ error: 'nao da para apagar a propria conta' }, 400)
+    }
+
+    const { data: deps, error: erroDeps } = await admin.rpc(
+      'dependencias_do_perfil',
+      { p_ids: ids },
+    )
+    if (erroDeps) {
+      return json({ error: `falha ao conferir dependencias: ${erroDeps.message}` }, 500)
+    }
+
+    const porId = new Map<string, Record<string, unknown>>()
+    for (const d of (deps ?? [])) {
+      porId.set(String(d.profile_id), d)
+    }
+
+    const apagados: string[] = []
+    const recusados: { id: string; motivo: string }[] = []
+
+    for (const id of ids) {
+      const d = porId.get(id)
+      if (!d) {
+        recusados.push({ id, motivo: 'perfil nao encontrado' })
+        continue
+      }
+      if (d.pode_apagar !== true) {
+        // Mensagem com o NUMERO, nao "nao foi possivel": e a diferenca
+        // entre o admin entender e o admin tentar de novo.
+        const partes: string[] = []
+        const n = (k: string) => Number(d[k] ?? 0)
+        if (n('atendimentos_feitos') > 0) {
+          partes.push(`${n('atendimentos_feitos')} atendimento(s) registrado(s)`)
+        }
+        if (n('atendimentos_fechados') > 0) {
+          partes.push(`${n('atendimentos_fechados')} atendimento(s) encerrado(s)`)
+        }
+        if (n('afericoes_feitas') > 0) {
+          partes.push(`${n('afericoes_feitas')} afericao(oes) feita(s)`)
+        }
+        if (n('afericoes_proprias') > 0) {
+          partes.push(`${n('afericoes_proprias')} afericao(oes) propria(s)`)
+        }
+        if (n('auditoria') > 0) partes.push(`${n('auditoria')} registro(s) de auditoria`)
+        if (n('tags_emitidas') > 0) partes.push(`${n('tags_emitidas')} pulseira(s)`)
+        if (n('alarmes') > 0) partes.push(`${n('alarmes')} alarme(s)`)
+        recusados.push({
+          id,
+          motivo: partes.length > 0
+            ? `tem ${partes.join(', ')} — desative em vez de apagar`
+            : 'e o administrador master',
+        })
+        continue
+      }
+
+      // Apaga o auth.users; o profile cai em cascata.
+      const { error } = await admin.auth.admin.deleteUser(id)
+      if (error) {
+        recusados.push({ id, motivo: error.message })
+        continue
+      }
+      apagados.push(id)
+    }
+
+    return json({ ok: true, apagados, recusados })
+  }
+
   return json({ error: 'acao desconhecida' }, 400)
 })

@@ -114,8 +114,7 @@ class _CartaoDeAlarme extends StatelessWidget {
             IconButton(
               icon: const Icon(Icons.close, color: Colors.white),
               tooltip: 'Dispensar',
-              onPressed: () =>
-                  AlarmeService.instance.descartar(alarme.id),
+              onPressed: () => AlarmeService.instance.descartar(alarme.id),
             ),
           ],
         ),

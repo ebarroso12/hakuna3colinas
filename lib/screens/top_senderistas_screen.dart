@@ -7,6 +7,7 @@ import '../offline/dados_do_top.dart';
 import '../services/supabase_service.dart';
 import '../services/triage_service.dart';
 import '../widgets/app_logo.dart';
+import '../widgets/botao_inicio.dart';
 import '../widgets/triage_badge.dart';
 import 'vital_signs_screen.dart';
 
@@ -48,7 +49,7 @@ class _TopSenderistasScreenState extends State<TopSenderistasScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text('Senderistas · ${widget.top.name}'),
-        actions: const [AppLogoTrailing()],
+        actions: const [BotaoInicio(), AppLogoTrailing()],
       ),
       body: FutureBuilder<(List<Profile>, List<TriageRule>)>(
         future: _future,

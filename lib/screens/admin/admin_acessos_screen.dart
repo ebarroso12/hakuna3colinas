@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../services/acesso_service.dart';
 import '../../widgets/app_logo.dart';
+import '../../widgets/botao_inicio.dart';
 
 /// Pedidos de acesso ao app.
 ///
@@ -136,6 +137,7 @@ class _AdminAcessosScreenState extends State<AdminAcessosScreen> {
       appBar: AppBar(
         title: const Text('Pedidos de acesso'),
         actions: [
+          const BotaoInicio(),
           IconButton(icon: const Icon(Icons.refresh), onPressed: _recarregar),
           const AppLogoTrailing(),
         ],

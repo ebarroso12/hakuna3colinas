@@ -146,10 +146,9 @@ class _FotosDoAtendimentoState extends State<FotosDoAtendimento> {
                 fit: BoxFit.cover,
                 errorBuilder: (_, _, _) =>
                     const ColoredBox(color: Colors.black12),
-                loadingBuilder: (context, child, progresso) =>
-                    progresso == null ? child : const ColoredBox(
-                      color: Colors.black12,
-                    ),
+                loadingBuilder: (context, child, progresso) => progresso == null
+                    ? child
+                    : const ColoredBox(color: Colors.black12),
               ),
               local: false,
             ),

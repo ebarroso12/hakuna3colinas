@@ -4,6 +4,7 @@ import '../../models/profile.dart';
 import '../../models/top.dart';
 import '../../services/admin_service.dart';
 import '../../widgets/app_logo.dart';
+import '../../widgets/botao_inicio.dart';
 
 /// Gestão de quem está liberado como Hakuna e quem está inscrito como
 /// Senderista num Top — "delegar função" e "trocar atribuição de todos".
@@ -68,7 +69,7 @@ class _AdminTopMembersScreenState extends State<AdminTopMembersScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text('Equipe · ${widget.top.name}'),
-        actions: const [AppLogoTrailing()],
+        actions: const [BotaoInicio(), AppLogoTrailing()],
       ),
       body: FutureBuilder<_MembersData>(
         future: _future,

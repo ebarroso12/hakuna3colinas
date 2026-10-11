@@ -7,6 +7,7 @@ import '../models/triage_rule.dart';
 import '../services/qr_token_service.dart';
 import '../services/tag_service.dart';
 import 'participant_file_screen.dart';
+import '../widgets/botao_inicio.dart';
 
 /// LER QR — contingência de quando a pulseira não responde.
 ///
@@ -69,7 +70,10 @@ class _LerQrScreenState extends State<LerQrScreen> {
 
     final conteudo = captura.barcodes
         .map((b) => b.rawValue)
-        .firstWhere((v) => v != null && v.trim().isNotEmpty, orElse: () => null);
+        .firstWhere(
+          (v) => v != null && v.trim().isNotEmpty,
+          orElse: () => null,
+        );
     if (conteudo == null) return;
 
     setState(() {
@@ -153,6 +157,7 @@ class _LerQrScreenState extends State<LerQrScreen> {
       appBar: AppBar(
         title: const Text('Ler QR da pulseira'),
         actions: [
+          const BotaoInicio(),
           IconButton(
             tooltip: 'Lanterna',
             icon: const Icon(Icons.flashlight_on),
@@ -198,7 +203,10 @@ class _LerQrScreenState extends State<LerQrScreen> {
         width: 240,
         height: 240,
         decoration: BoxDecoration(
-          border: Border.all(color: Colors.white.withValues(alpha: 0.9), width: 3),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.9),
+            width: 3,
+          ),
           borderRadius: BorderRadius.circular(16),
         ),
       ),
@@ -294,7 +302,9 @@ class _LerQrScreenState extends State<LerQrScreen> {
             children: [
               Icon(icone, color: corTexto),
               const SizedBox(width: 10),
-              Expanded(child: Text(texto, style: TextStyle(color: corTexto))),
+              Expanded(
+                child: Text(texto, style: TextStyle(color: corTexto)),
+              ),
               ?acao,
             ],
           ),
@@ -312,8 +322,10 @@ class _LerQrScreenState extends State<LerQrScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(semPermissao ? Icons.no_photography : Icons.videocam_off,
-                size: 56),
+            Icon(
+              semPermissao ? Icons.no_photography : Icons.videocam_off,
+              size: 56,
+            ),
             const SizedBox(height: 12),
             Text(
               semPermissao

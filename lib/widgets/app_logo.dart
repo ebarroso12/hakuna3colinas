@@ -59,10 +59,7 @@ class AppLogoAbreGaveta extends StatelessWidget {
       // sentido dentro de um Scaffold com gaveta, e falhar alto no
       // desenvolvimento é melhor que um botão que não faz nada em campo.
       onPressed: () => Scaffold.of(context).openDrawer(),
-      icon: Badge(
-        isLabelVisible: novidade,
-        child: const AppLogo(size: 32),
-      ),
+      icon: Badge(isLabelVisible: novidade, child: const AppLogo(size: 32)),
     );
   }
 }

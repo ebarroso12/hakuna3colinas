@@ -7,6 +7,7 @@ import '../models/vital_signs.dart';
 import '../services/sinais_vitais_service.dart';
 import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
+import '../widgets/botao_inicio.dart';
 import '../widgets/triage_badge.dart';
 
 /// Registro e histórico de sinais vitais de um Senderista específico num Top.
@@ -123,6 +124,7 @@ class _VitalSignsScreenState extends State<VitalSignsScreen> {
       appBar: AppBar(
         title: Text(widget.profile.displayLabel),
         actions: [
+          const BotaoInicio(),
           const AppLogoTrailing(),
           Padding(
             padding: const EdgeInsets.only(right: 12),

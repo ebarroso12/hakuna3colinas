@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../offline/outbox.dart';
 import '../offline/sync_service.dart';
 import '../widgets/app_logo.dart';
+import '../widgets/botao_inicio.dart';
 
 /// FILA DO APARELHO — o que ainda não subiu, e o que foi recusado.
 ///
@@ -66,9 +67,8 @@ class _FilaOfflineScreenState extends State<FilaOfflineScreen> {
   Future<void> _devolverTudo() async {
     final quantas = await Outbox.instance.requeueAll();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$quantas devolvidas à fila.')),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text('$quantas devolvidas à fila.')));
     await _carregar();
     await _sincronizar();
   }
@@ -121,6 +121,7 @@ class _FilaOfflineScreenState extends State<FilaOfflineScreen> {
       appBar: AppBar(
         title: const Text('Fila do aparelho'),
         actions: [
+          const BotaoInicio(),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Recarregar',

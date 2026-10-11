@@ -6,6 +6,7 @@ import '../models/top.dart';
 import '../offline/chat_repositorio.dart';
 import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
+import '../widgets/botao_inicio.dart';
 
 /// Chat em tempo real entre os Hakunas liberados de um Top. Cada mensagem
 /// é visível pra todo Hakuna do mesmo evento assim que é enviada — a mesma
@@ -68,7 +69,7 @@ class _TopChatScreenState extends State<TopChatScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text('Chat · ${widget.top.name}'),
-        actions: const [AppLogoTrailing()],
+        actions: const [BotaoInicio(), AppLogoTrailing()],
       ),
       body: Column(
         children: [
@@ -155,9 +156,7 @@ class _TopChatScreenState extends State<TopChatScreen> {
                                     style: Theme.of(context)
                                         .textTheme
                                         .labelSmall
-                                        ?.copyWith(
-                                          fontStyle: FontStyle.italic,
-                                        ),
+                                        ?.copyWith(fontStyle: FontStyle.italic),
                                   ),
                                 ],
                               ),

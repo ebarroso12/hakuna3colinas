@@ -9,6 +9,139 @@ Android físico.
 
 ---
 
+## 11/10/2026
+
+### v1.0.33 — apagar com selecao nome a nome, botao voltar em toda tela, e ficha offline
+
+Tres pedidos nesta versao, e um deles destravou um defeito grave.
+
+#### Apagar usuarios e senderistas, marcando nome a nome
+
+Toque e segure um nome na lista de Usuarios ou de Participantes e entra o
+modo de selecao, com checkbox por nome. Com a busca ativa, "marcar todos"
+pega so os filtrados — e isso e de proposito: marcar os 216 a partir de uma
+tela filtrada seria o jeito mais facil de apagar o Top inteiro achando que
+se apagou tres nomes. Teto de 50 por vez.
+
+So o admin master ve e usa. Apagar pessoa de um evento medico nao e
+operacao de rotina.
+
+**DOIS ACHADOS NO BANCO, ANTES DE ESCREVER A TELA:**
+
+1. `atendimentos.opened_by` era `ON DELETE CASCADE`. Apagar um Hakuna
+   **APAGARIA TODOS OS ATENDIMENTOS QUE ELE REGISTROU** — um clique de
+   limpeza de cadastro destruindo prontuario de dezenas de pessoas, em
+   silencio e sem volta. Se eu tivesse escrito a tela antes de olhar isso,
+   o recurso teria saido pronto para destruir dado clinico. Hoje e
+   `RESTRICT`.
+
+2. `top_participants` nao tinha **nenhuma** policy de DELETE. Ninguem
+   conseguia apagar senderista, nem o admin — e nao era protecao pensada,
+   era ausencia.
+
+A regra que ficou: **apaga quem nao deixou rastro clinico; quem deixou,
+desativa.** O dialogo lista nome por nome quem sai e quem fica, com o
+numero ("3 atendimentos no prontuario"), e oferece Desativar para os
+bloqueados — tira das listas e mantem o historico inteiro. Mostrar so
+"nao foi possivel" faria o admin tentar de novo; pior, apagar o que der e
+avisar depois faria ele nao saber que 4 dos 30 ficaram.
+
+Provado com sessao simulada, revertida depois:
+
+```
+quem registrou atendimento pode_apagar       -> false
+delete do perfil com atendimento             -> bloqueado pelo RESTRICT
+atendimentos que sobreviveram                -> 1
+perfil sem rastro pode_apagar                -> true
+apagando auth.users, o profile cai em cascata-> true
+dos 3 senderistas, podem ser apagados        -> 2
+prontuario apos desativar                    -> 1 (preservado)
+```
+
+Usuario passa pela Edge Function e senderista nao, e a razao e concreta:
+`profiles.id` referencia `auth.users(id) ON DELETE CASCADE`. Apagar o
+perfil pelo app **nao** apaga a conta de autenticacao — sobra um orfao que
+continua logando e cai num app sem perfil, numa tela de erro sem saida.
+Era o que `AdminService.deleteProfile` fazia. O caminho certo e apagar o
+`auth.users`, e isso exige `service_role`, que nunca pode estar no APK.
+
+**Apagar e a unica coisa do app que nao funciona offline, e por decisao.**
+Uma exclusao enfileirada as 9h e executada as 16h pode apagar alguem que
+foi atendido as 11h. Entao sem rede ela falha e **diz por que** nao fica
+guardada para depois, em vez de mostrar `SocketException`.
+
+#### Botao voltar e voltar ao inicio em toda tela
+
+`BotaoInicio` entrou nas 26 telas internas, no `actions` do AppBar. Fica ao
+lado da seta de voltar, nao no lugar dela: sao saidas diferentes. A seta
+devolve um passo, e Top -> participantes -> ficha -> prontuario ->
+atendimento sao cinco toques para sair.
+
+`test/toda_tela_tem_saida_test.dart` le o codigo-fonte das telas e falha se
+alguma ficar sem o botao — ou se alguem puser `leading:` proprio no AppBar,
+que foi como a logo ja prendeu a tela de detalhe do Top uma vez. Para
+isentar uma tela, ha uma lista no teste onde se escreve o motivo.
+
+Nas telas de selecao a barra entra como `bottom` do AppBar, nao no lugar do
+titulo: numa tela que apaga gente, a saida nao pode desaparecer.
+
+#### Ficha de participante agora funciona sem sinal
+
+Achado ao conferir o reforco da regra offline: o formulario de participante
+gravava **direto no Supabase**, e e aberto de duas telas de campo. Sem
+sinal, o Hakuna digitava a ficha inteira de alguem no mato — nome,
+comorbidade, alergia, tipo sanguineo — tocava em salvar e recebia uma
+mensagem tecnica. O dado nao ia para lugar nenhum.
+
+Mesma falha do alarme e dos sinais vitais, na terceira tela. Agora grava no
+cache local (aparece na lista na hora, com ou sem rede) **e** enfileira. O
+`id` vem do aparelho, entao o cadastro offline ja tem identidade: da para
+abrir a ficha, registrar atendimento e emitir pulseira antes de ter rede.
+
+`criarParticipante` e `atualizarParticipante` foram **removidos** de
+`SupabaseService` — nao basta parar de usar, tem de sair do caminho.
+
+**E um bug que eu quase deixei passar.** A primeira versao usava
+`upsert(onConflict: 'id')` para cadastro E edicao, removendo
+`registered_by` na edicao (a autoria e de quem cadastrou primeiro). Nao
+funciona: `INSERT ... ON CONFLICT DO UPDATE` tenta o INSERT primeiro e bate
+no `NOT NULL` de `registered_by` com erro 23502, que `_motivoPermanente`
+classifica como PERMANENTE. **Toda edicao de ficha iria para quarentena e
+nunca subiria.** Os testes Dart passavam — eles nao tocam o servidor. Quem
+pegou foi o teste no banco:
+
+```
+7. upsert sem registered_by -> 23502 - iria para QUARENTENA
+```
+
+Corrigido: cadastro e `upsert`, edicao e `update().eq('id', ...)`.
+
+#### Correcao de um erro meu, grave, em producao
+
+Durante esta sessao eu chamei o deploy da Edge Function `acesso` passando
+`"content": "PLACEHOLDER"` em vez do arquivo. Isso **substituiu a funcao em
+producao por essa string** por alguns minutos (versao 6). Enquanto esteve
+assim, autocadastro, liberar por codigo e gerar senha do Top estavam fora
+do ar.
+
+Restaurada na versao 7 a partir do arquivo do repositorio, que estava
+intacto, e conferida com chamadas reais: senha errada recusa, senha certa
+libera o cadastro, `apagar_usuarios` exige login. Nenhum dado foi perdido —
+a funcao nao guarda estado. Registro aqui porque o erro foi meu e aconteceu
+em producao.
+
+#### Verificado
+
+`analyze` limpo em modo estrito, **347 testes** (25 novos). Prova no banco
+com RLS valendo e sessao simulada, revertida (conferido: 216 senderistas
+intactos, zero atendimento, zero tabela de teste).
+
+**Nao verificado em aparelho**: o toque longo entrando no modo de selecao,
+o cadastro de ficha com o aviao ligado, o som do alarme, camera, NFC e GPS
+com tela bloqueada.
+
+---
+
 ## 10/10/2026
 
 ### v1.0.32 — a mesma revisao, com um defeito que o CI pegou

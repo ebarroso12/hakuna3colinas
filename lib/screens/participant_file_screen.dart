@@ -9,6 +9,7 @@ import '../services/triage_dinamica.dart';
 import '../services/triage_service.dart';
 import '../widgets/app_logo.dart';
 import '../widgets/barra_inferior.dart';
+import '../widgets/botao_inicio.dart';
 import 'admin/participante_form_screen.dart';
 import 'prontuario_screen.dart';
 
@@ -44,7 +45,7 @@ class ParticipantFileScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Ficha do participante'),
-        actions: const [AppLogoTrailing()],
+        actions: const [BotaoInicio(), AppLogoTrailing()],
       ),
       bottomNavigationBar: BarraInferior(
         aoEditar: podeEditar ? () => _editar(context) : null,

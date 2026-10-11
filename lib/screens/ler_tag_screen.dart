@@ -11,6 +11,7 @@ import '../services/qr_token_service.dart';
 import '../services/tag_service.dart';
 import 'ler_qr_screen.dart';
 import 'participant_file_screen.dart';
+import '../widgets/botao_inicio.dart';
 
 /// LER TAG — encosta o celular na pulseira e abre a ficha de quem é.
 ///
@@ -107,7 +108,10 @@ class _LerTagScreenState extends State<LerTagScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Ler tag')),
+      appBar: AppBar(
+        actions: const [BotaoInicio()],
+        title: const Text('Ler tag'),
+      ),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(24),

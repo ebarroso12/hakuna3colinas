@@ -77,9 +77,24 @@ class _CadastroLegendarioScreenState extends State<CadastroLegendarioScreen> {
   @override
   void dispose() {
     for (final c in [
-      _nome, _familia, _apelido, _telefone, _cidade, _estado, _emergencia,
-      _altura, _peso, _biotipo, _cirurgias, _atividade, _alergias, _plano,
-      _medicacao, _restricoes, _senha, _senhaRepetida,
+      _nome,
+      _familia,
+      _apelido,
+      _telefone,
+      _cidade,
+      _estado,
+      _emergencia,
+      _altura,
+      _peso,
+      _biotipo,
+      _cirurgias,
+      _atividade,
+      _alergias,
+      _plano,
+      _medicacao,
+      _restricoes,
+      _senha,
+      _senhaRepetida,
     ]) {
       c.dispose();
     }
@@ -520,9 +535,8 @@ class _CadastroLegendarioScreenState extends State<CadastroLegendarioScreen> {
         children: [
           Text(
             'Passo 2 de 2',
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: scheme.onPrimaryContainer,
-            ),
+            style: Theme.of(context).textTheme.labelMedium
+                ?.copyWith(color: scheme.onPrimaryContainer),
           ),
           const SizedBox(height: 4),
           Text(
@@ -544,9 +558,8 @@ class _CadastroLegendarioScreenState extends State<CadastroLegendarioScreen> {
           const SizedBox(height: 6),
           Text(
             'Não é você? Volte e confira o número.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: scheme.onPrimaryContainer,
-            ),
+            style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(color: scheme.onPrimaryContainer),
           ),
         ],
       ),

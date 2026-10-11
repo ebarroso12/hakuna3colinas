@@ -6,6 +6,7 @@ import '../models/team_message.dart';
 import '../models/top.dart';
 import '../offline/chat_repositorio.dart';
 import '../services/supabase_service.dart';
+import '../widgets/botao_inicio.dart';
 
 /// Chat de uma equipe dentro de um Top. [TeamKey.geral] é o chat geral.
 class TeamChatScreen extends StatefulWidget {
@@ -101,6 +102,7 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
     final myId = SupabaseService.instance.currentUser?.id;
     return Scaffold(
       appBar: AppBar(
+        actions: const [BotaoInicio()],
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,

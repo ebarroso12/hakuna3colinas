@@ -92,7 +92,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 autocorrect: false,
                 decoration: const InputDecoration(
                   labelText: 'Número do Legendários ou e-mail',
-                  helperText: 'Legendário entra com o número. '
+                  helperText:
+                      'Legendário entra com o número. '
                       'Admin e equipe, com o e-mail.',
                 ),
               ),
@@ -145,9 +146,9 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 12),
               TextButton(
-                onPressed: () => Navigator.of(
-                  context,
-                ).push(MaterialPageRoute<void>(builder: (_) => const SignupScreen())),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => const SignupScreen()),
+                ),
                 child: const Text('Não tem conta? Cadastre-se'),
               ),
               TextButton(

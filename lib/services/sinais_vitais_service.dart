@@ -111,9 +111,7 @@ class SinaisVitaisService {
     final fila = await Outbox.instance.pending(entity: entidade, limit: 500);
     return fila
         .map((e) => e.payload)
-        .where(
-          (p) => p['top_id'] == topId && p['profile_id'] == profileId,
-        )
+        .where((p) => p['top_id'] == topId && p['profile_id'] == profileId)
         .toList();
   }
 }

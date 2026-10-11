@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../models/triage_rule.dart';
 import '../../services/admin_service.dart';
 import '../../widgets/app_logo.dart';
+import '../../widgets/botao_inicio.dart';
 
 /// Edição das regras de triagem por cor (idade + nº de comorbidades).
 /// Exclusiva do admin master — o banco rejeita a escrita de qualquer outro
@@ -28,7 +29,7 @@ class _AdminTriageRulesScreenState extends State<AdminTriageRulesScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Regras de triagem'),
-        actions: const [AppLogoTrailing()],
+        actions: const [BotaoInicio(), AppLogoTrailing()],
       ),
       body: FutureBuilder<List<TriageRule>>(
         future: _future,

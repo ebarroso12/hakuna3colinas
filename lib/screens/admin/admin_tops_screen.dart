@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../models/top.dart';
 import '../../services/supabase_service.dart';
 import '../../widgets/app_logo.dart';
+import '../../widgets/botao_inicio.dart';
 import 'admin_top_form_screen.dart';
 
 /// Lista de todos os Tops pro admin criar/editar. A RLS já libera SELECT
@@ -32,13 +33,13 @@ class _AdminTopsScreenState extends State<AdminTopsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Tops'),
-        actions: const [AppLogoTrailing()],
+        actions: const [BotaoInicio(), AppLogoTrailing()],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
-          await Navigator.of(
-            context,
-          ).push(MaterialPageRoute<void>(builder: (_) => const AdminTopFormScreen()));
+          await Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const AdminTopFormScreen()),
+          );
           _reload();
         },
         child: const Icon(Icons.add),

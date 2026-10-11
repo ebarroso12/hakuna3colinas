@@ -122,9 +122,30 @@ aferição sem aviso nenhum. **O alarme era a função mais crítica do app e a
 única sem caminho offline.** Se aparecer um `insert` direto numa tela, é
 regressão.
 
-Escrita de admin (`AdminService`, criar/editar participante, criar Top) fica
-fora da fila de propósito: é feita com rede, sentado, e enfileirar daria a
-falsa impressão de que funciona no mato.
+**Ficha de participante entrou na fila em 11/10/2026.** O formulário
+gravava direto e é aberto de DUAS telas de campo — "Novo" na lista de
+participantes e "Editar" dentro da ficha. Sem sinal, salvar falhava e a
+ficha inteira (nome, comorbidade, alergia) era perdida. Hoje o caminho é
+`ParticipanteService.criar` / `.atualizar`, que grava no cache local **e**
+enfileira; `criarParticipante`/`atualizarParticipante` foram removidos de
+`SupabaseService` para ninguém reintroduzir o atalho.
+
+O `id` do participante é gerado NO APARELHO (`top_participants.id` aceita
+uuid de fora). Resolve duas coisas: cadastro offline já tem identidade —
+dá para abrir a ficha, atender e emitir pulseira antes de ter rede — e o
+próprio id é a chave de idempotência do envio.
+
+Cadastro e edição NÃO usam o mesmo verbo no envio, e isso é o que faz a
+edição funcionar. Cadastro é `upsert(onConflict: 'id')`; edição é
+`update().eq('id', ...)` sem `registered_by` (a autoria é de quem cadastrou
+primeiro). Upsert na edição **não funciona**: o `INSERT ... ON CONFLICT`
+tenta o INSERT primeiro, bate no `NOT NULL` de `registered_by` com 23502,
+que `_motivoPermanente` classifica como PERMANENTE — e a edição vai para
+quarentena e nunca sobe. Verificado no banco; por pouco não saiu assim.
+
+Escrita de admin que **sobra** fora da fila: `AdminService` (papéis, Tops,
+equipes) e a **exclusão**. Exclusão é a única exceção deliberada — ver
+abaixo.
 
 Toda entidade que passa pela fila precisa de **`client_id` no payload** e
 de `upsert(onConflict: 'client_id', ignoreDuplicates: true)` no envio. O
@@ -146,6 +167,48 @@ nada. O uploader decide por `entrada.operation` — ver
 Hora dos eventos vem **do aparelho** (`created_at`, `lida_em`,
 `occurred_at`), nunca de `now()` no Postgres: offline a coisa acontece
 horas antes do upload.
+
+### Apagar é a única coisa que NÃO funciona offline, e é decisão
+
+Tudo o mais grava no aparelho e sobe depois. Apagar usuário ou senderista
+exige rede e **falha dizendo isso** (`ExclusaoService.mensagemDeErro`), por
+três motivos:
+
+1. É irreversível e chegaria atrasado. Uma exclusão enfileirada às 9h e
+   executada às 16h pode apagar alguém que foi atendido às 11h.
+2. A conferência de prontuário é feita no servidor — depende de contar
+   atendimento, aferição e auditoria, que o aparelho não tem inteiros.
+3. Não é tarefa de campo: apaga-se cadastro sentado, com internet.
+
+**Só o admin master apaga.** `profiles_delete_master` e
+`top_participants_delete_master` (esta última não existia: ninguém
+conseguia apagar senderista, nem o admin).
+
+**A regra é: apaga quem não deixou rastro clínico; quem deixou, desativa.**
+`dependencias_do_perfil` e `dependencias_do_senderista` contam o que seria
+perdido, e a tela lista nome por nome quem sai e quem fica, com o motivo.
+
+Dois achados que vieram antes de escrever a tela, em
+`supabase/exclusao_protegida.sql`:
+
+- `atendimentos.opened_by` era `ON DELETE CASCADE`. Apagar um Hakuna
+  **apagaria todos os atendimentos que ele registrou**. Hoje é `RESTRICT`.
+- Apagar `profiles` deixa o `auth.users` órfão (a pessoa loga e cai num app
+  sem perfil). A direção certa é apagar o `auth.users` e deixar o perfil
+  cair em cascata — e isso exige `service_role`, daí a ação
+  `apagar_usuarios` na Edge Function.
+
+### Toda tela tem saída
+
+Seta de voltar (automática) **e** `BotaoInicio` no `actions` do AppBar, que
+volta à tela inicial de uma vez. São saídas diferentes: a seta devolve um
+passo, e Top → participantes → ficha → prontuário → atendimento são cinco
+toques para sair.
+
+`test/toda_tela_tem_saida_test.dart` lê o código-fonte das telas e falha se
+alguma ficar sem o botão, ou se alguém puser `leading:` próprio no AppBar —
+que foi como a logo já prendeu a tela de detalhe do Top uma vez. Para
+isentar uma tela, há uma lista no teste onde se escreve o motivo.
 
 ### Auditoria vai para duas tabelas, e não é redundância
 `tag_leituras` recebe **toda** leitura de pulseira, inclusive as que falham.

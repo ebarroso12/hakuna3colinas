@@ -119,10 +119,7 @@ class SupabaseService {
   /// descarta dado clínico de verdade; errar para "transitória" só atrasa,
   /// e o teto de tentativas do [SyncService] é a rede de segurança para
   /// esse caso.
-  Future<void> _envioDaFila(
-    String oQue,
-    Future<void> Function() acao,
-  ) async {
+  Future<void> _envioDaFila(String oQue, Future<void> Function() acao) async {
     try {
       await acao();
     } on PostgrestException catch (e) {
@@ -384,14 +381,20 @@ class SupabaseService {
         StateError('Sessão expirada — não é possível publicar posição'),
       );
     }
-    return _client.from('hakuna_positions').upsert({
-      'top_id': topId,
-      'profile_id': uid,
-      'latitude': latitude,
-      'longitude': longitude,
-      'recorded_at': ?recordedAt,
-      'client_id': ?clientId,
-    }, onConflict: 'client_id', ignoreDuplicates: true);
+    return _client
+        .from('hakuna_positions')
+        .upsert(
+          {
+            'top_id': topId,
+            'profile_id': uid,
+            'latitude': latitude,
+            'longitude': longitude,
+            'recorded_at': ?recordedAt,
+            'client_id': ?clientId,
+          },
+          onConflict: 'client_id',
+          ignoreDuplicates: true,
+        );
   }
 
   /// Perfis (nome + número do Legendários) dos Hakunas liberados num Top,
@@ -790,32 +793,14 @@ class SupabaseService {
     return rows.map((r) => Participant.fromMap(r)).toList();
   }
 
-  /// Cadastra um participante no Top.
-  ///
-  /// `registered_by` e obrigatorio na tabela e sai de quem esta logado -
-  /// e o que permite saber depois quem colocou cada pessoa no Top.
-  Future<Participant> criarParticipante(Map<String, dynamic> dados) async {
-    final linhas = await _client.from('top_participants').insert({
-      ...dados,
-      'registered_by': currentUser?.id,
-    }).select();
-    return Participant.fromMap(linhas.first);
-  }
-
-  Future<void> atualizarParticipante(
-    String participantId,
-    Map<String, dynamic> dados,
-  ) async {
-    // top_id e registered_by nao se alteram numa edicao: mudar o Top de um
-    // participante levaria o historico clinico dele junto pro lugar errado.
-    final limpos = {...dados}
-      ..remove('top_id')
-      ..remove('registered_by');
-    await _client
-        .from('top_participants')
-        .update(limpos)
-        .eq('id', participantId);
-  }
+  // `criarParticipante` e `atualizarParticipante` foram REMOVIDOS em
+  // 11/10/2026. Escreviam direto no Supabase, e o formulario que os
+  // chamava e aberto de duas telas de campo: salvar sem sinal falhava e a
+  // ficha inteira — nome, comorbidade, alergia — era perdida.
+  //
+  // O caminho agora e `ParticipanteService.criar` / `.atualizar`, que grava
+  // no aparelho e enfileira. Nao reintroduzir atalho daqui: o envio e
+  // `enviarParticipante`, chamado pelo SyncService.
 
   Future<Participant?> fetchParticipant(String participantId) async {
     final rows = await _client
@@ -906,6 +891,73 @@ class SupabaseService {
         .eq('top_id', topId)
         .order('created_at', ascending: false)
         .map((rows) => rows.map((r) => TopAlert.fromMap(r)).toList());
+  }
+
+  /// Envio de ficha de participante a partir da fila.
+  ///
+  /// CADASTRO e EDIÇÃO tomam caminhos diferentes, e isso não é escolha de
+  /// estilo — é o que faz a edição funcionar:
+  ///
+  /// - **Cadastro**: `upsert(onConflict: 'id')` com o payload inteiro. Se
+  ///   dois envios do mesmo cadastro chegarem (resposta perdida), o
+  ///   segundo atualiza com os mesmos dados em vez de criar outra pessoa.
+  ///
+  /// - **Edição**: `update().eq('id', ...)`, nunca upsert. A autoria
+  ///   (`registered_by`) é de quem cadastrou primeiro, não de quem editou
+  ///   por último, então ela sai do corpo — e aí o upsert **não serve**:
+  ///   `INSERT ... ON CONFLICT DO UPDATE` tenta o INSERT primeiro e bate
+  ///   no `NOT NULL` de `registered_by`, com erro 23502, que
+  ///   `_motivoPermanente` classifica como PERMANENTE. A edição iria para
+  ///   quarentena e nunca subiria.
+  ///
+  ///   Não é hipótese: foi exatamente o que o teste no banco mostrou, e
+  ///   por pouco não saiu assim. Quem editou fica registrado no
+  ///   `audit_log` (ação `ficha_alterada`).
+  Future<void> enviarParticipante(Map<String, dynamic> payload) {
+    return _envioDaFila('ficha de participante', () async {
+      // `as String` explicito: com `strict-casts` ligado, `dynamic` nao
+      // passa para `.eq()`.
+      final id = payload['id'] as String;
+      final jaExiste = await _client
+          .from('top_participants')
+          .select('id')
+          .eq('id', id)
+          .limit(1);
+
+      if (jaExiste.isEmpty) {
+        await _client
+            .from('top_participants')
+            .upsert(payload, onConflict: 'id');
+        return;
+      }
+
+      // Campos nulos continuam no corpo de propósito: é assim que limpar
+      // um valor (apagar "alergias", por exemplo) chega ao servidor.
+      final corpo = {...payload}
+        ..remove('registered_by')
+        // `id` e `top_id` não se alteram numa edição: mudar o Top de um
+        // participante levaria o histórico clínico dele para o lugar
+        // errado.
+        ..remove('id')
+        ..remove('top_id');
+
+      final linhas = await _client
+          .from('top_participants')
+          .update(corpo)
+          .eq('id', id)
+          .select('id');
+
+      if (linhas.isEmpty) {
+        // Existia na consulta e não existe mais: alguém apagou o
+        // participante entre as duas chamadas. Lançar devolve a entrada à
+        // fila, e na próxima tentativa a consulta dirá que não existe e o
+        // caminho de cadastro recria a ficha. Devolver sucesso em silêncio
+        // perderia a edição.
+        throw StateError(
+          'Participante $id desapareceu durante a edicao; tenta de novo.',
+        );
+      }
+    });
   }
 
   /// Fotos de um atendimento, como URLs assinadas e temporárias.

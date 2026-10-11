@@ -9,6 +9,7 @@ import 'services/alarme_service.dart';
 import 'services/atendimento_service.dart';
 import 'services/auditoria_service.dart';
 import 'services/location_service.dart';
+import 'services/participante_service.dart';
 import 'services/sinais_vitais_service.dart';
 import 'services/supabase_service.dart';
 import 'widgets/faixa_de_alarme.dart';
@@ -33,6 +34,7 @@ Future<void> main() async {
   AuditoriaService.instance.registrarUploaders();
   AlarmeService.instance.registrarUploader();
   SinaisVitaisService.instance.registrarUploader();
+  ParticipanteService.instance.registrarUploader();
   ChatRepositorio.instance.registrarUploaders();
   unawaited(SyncService.instance.start());
 

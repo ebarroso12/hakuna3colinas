@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../widgets/app_logo.dart';
+import '../../widgets/botao_inicio.dart';
 import 'admin_tops_screen.dart';
 import 'admin_triage_rules_screen.dart';
 import 'admin_acessos_screen.dart';
@@ -17,7 +18,7 @@ class AdminHomeScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Administração'),
-        actions: const [AppLogoTrailing()],
+        actions: const [BotaoInicio(), AppLogoTrailing()],
       ),
       body: ListView(
         children: [
@@ -27,7 +28,9 @@ class AdminHomeScreen extends StatelessWidget {
             subtitle: const Text('Liberar entrada por número do Legendários'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const AdminAcessosScreen()),
+              MaterialPageRoute<void>(
+                builder: (_) => const AdminAcessosScreen(),
+              ),
             ),
           ),
           const Divider(height: 1),
@@ -47,9 +50,9 @@ class AdminHomeScreen extends StatelessWidget {
             title: const Text('Tops'),
             subtitle: const Text('Criar, editar, gerenciar equipe'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.of(
-              context,
-            ).push(MaterialPageRoute<void>(builder: (_) => const AdminTopsScreen())),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const AdminTopsScreen()),
+            ),
           ),
           if (isMasterAdmin)
             ListTile(

@@ -15,6 +15,7 @@ import '../services/stats_service.dart';
 import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
 import '../widgets/barra_inferior.dart';
+import '../widgets/botao_inicio.dart';
 import 'admin/admin_equipes_screen.dart';
 import 'admin/admin_tags_screen.dart';
 import 'admin/admin_top_form_screen.dart';
@@ -315,6 +316,7 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
       appBar: AppBar(
         title: Text(widget.top.name),
         actions: [
+          const BotaoInicio(),
           if (isHakuna)
             IconButton(
               icon: const Icon(Icons.monitor_heart),
@@ -437,21 +439,21 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
               ),
             ),
           if (isHakuna)
-          if (isHakuna)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-              child: FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: Colors.red,
-                  foregroundColor: Colors.white,
-                ),
-                onPressed: _sendAlert,
-                icon: const Icon(Icons.warning_amber),
-                label: const Text(
-                  'EMERGÊNCIA — acidente / atendimento crítico',
+            if (isHakuna)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: _sendAlert,
+                  icon: const Icon(Icons.warning_amber),
+                  label: const Text(
+                    'EMERGÊNCIA — acidente / atendimento crítico',
+                  ),
                 ),
               ),
-            ),
           if (isHakuna)
             Padding(
               padding: const EdgeInsets.all(12),
