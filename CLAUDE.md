@@ -651,11 +651,15 @@ validando uma configuração que não existe mais.
   painel de coordenação e de regra de quem atribui o quê — decisão de
   produto. Meio-implementado seria pior que ausente: estado que ninguém
   atualiza mente sobre a situação do paciente.
-- **Notificação com o app FECHADO não existe.** O alarme chega em qualquer
-  tela, com som e vibração (`AlarmeService` + `FaixaDeAlarme`), mas só com
-  o app aberto. Push de app fechado exige FCM: projeto Firebase,
-  `google-services.json` e um serviço no servidor para disparar. Para quem
-  está com o app fechado, continua valendo o rádio.
+- **Notificação com o app FECHADO não existe.** O alarme chega em
+  qualquer tela, com som e vibração (`AlarmeService` + `FaixaDeAlarme`),
+  mas só com o app aberto: o Realtime é um WebSocket do processo, e
+  processo morto é conexão morta. Quem acorda app fechado no Android é o
+  sistema, a pedido do FCM — não há outro caminho. **O levantamento
+  completo do que falta está em `docs/push_com_app_fechado.md`**: as
+  quatro peças, o SQL da tabela `dispositivos`, o que só o dono do projeto
+  pode fazer (criar o Firebase) e o que o push NÃO resolve. Para quem está
+  com o app fechado, continua valendo o rádio.
 - **Nenhum teste de hardware.** Os 322 testes cobrem lógica. NFC, câmera,
   GPS com tela bloqueada, o som do alarme e o `launchUrl` do botão
   Atualizar só se verificam em aparelho físico.
