@@ -75,6 +75,7 @@ jobs:
         run: flutter test
 
       - name: Prepara o keystore de producao (se o secret existir)
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         id: assinatura
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -109,7 +110,26 @@ jobs:
             echo "Sem keystore: o APK sai assinado com a chave de DEBUG."
           fi
 
+      # ---------------------------------------------------------------
+      # O APK SO E COMPILADO EM TAG.
+      #
+      # Este repositorio e PRIVADO, e minuto de Actions em repo privado e
+      # faturado. O fluxo de release faz dois pushes seguidos (main e
+      # depois a tag), e as duas execucoes compilavam o mesmo APK: ~11 min
+      # cada, ~22 min por versao. Foi assim nas v1.0.34, .35 e .36 — tres
+      # versoes num dia, metade do gasto jogada fora. Apontado pelo dono
+      # do projeto em 11/10/2026.
+      #
+      # `analyze` e `test` continuam rodando em TODO push na main: sao os
+      # passos baratos e sao a rede que pega erro antes da tag (foi o que
+      # pegou o `p.basenameWithoutExtension` dependente de SO na v1.0.31,
+      # que passava no Windows e quebrava no Linux). O que ficou so na tag
+      # e o Gradle, que e o caro.
+      #
+      # Para gerar APK sem criar tag, use "Run workflow" na aba Actions
+      # (`workflow_dispatch`).
       - name: Build do APK (release)
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         env:
           # Vazios quando os secrets nao existem — e o build.gradle.kts cai
           # no fallback de debug. Config pela metade nao assina: ele exige
@@ -124,6 +144,7 @@ jobs:
             --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
 
       - name: Diz com qual chave o APK foi assinado
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         run: |
           APK=build/app/outputs/flutter-apk/app-release.apk
 
@@ -156,12 +177,14 @@ jobs:
           fi
 
       - name: Renomeia para o padrao de distribuicao
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         run: |
           mv build/app/outputs/flutter-apk/app-release.apk \
              "build/app/outputs/flutter-apk/${{ steps.versao.outputs.arquivo }}"
           ls -lh "build/app/outputs/flutter-apk/${{ steps.versao.outputs.arquivo }}"
 
       - name: Publica o APK como artifact
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.versao.outputs.arquivo }}
