@@ -134,6 +134,30 @@ class _AdminEquipesScreenState extends State<AdminEquipesScreen> {
     }
   }
 
+  /// Executa uma mudança de equipe e DIZ se ela falhou.
+  ///
+  /// Antes era `.then((_) => _carregar())` sem `await` e sem
+  /// `catchError`: recusa da RLS ou queda de rede virava um erro de future
+  /// não tratado, a lista se redesenhava igual, e o admin via o botão
+  /// "LIBERAR" simplesmente não fazer nada. Liberação silenciosamente
+  /// perdida é grave: `is_team_member` exige `released`, então a pessoa
+  /// fica sem chat e sem bloco de anotações achando que foi liberada.
+  /// Achado por revisão em 11/10/2026.
+  Future<void> _aplicar(Future<void> Function() acao, String oQue) async {
+    try {
+      await acao();
+      await _carregar();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Não foi possível $oQue: $e'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    }
+  }
+
   Future<void> _mudarPapel(TeamMembership v, TeamRole novo) async {
     try {
       await AdminService.instance.setTeamRole(membershipId: v.id, papel: novo);
@@ -327,13 +351,21 @@ class _AdminEquipesScreenState extends State<AdminEquipesScreen> {
               // liberar. Como `is_team_member` exige `released = true`,
               // quem caísse nesse estado ficava sem chat e sem bloco de
               // anotações, sem caminho de saída pelo app.
-              AdminService.instance
-                  .setTeamReleased(membershipId: v.id, released: !v.released)
-                  .then((_) => _carregar());
+              _aplicar(
+                () => AdminService.instance.setTeamReleased(
+                  membershipId: v.id,
+                  released: !v.released,
+                ),
+                v.released ? 'retirar a liberação' : 'liberar',
+              );
             case 'bloquear':
-              AdminService.instance
-                  .setTeamBlocked(membershipId: v.id, blocked: !v.blocked)
-                  .then((_) => _carregar());
+              _aplicar(
+                () => AdminService.instance.setTeamBlocked(
+                  membershipId: v.id,
+                  blocked: !v.blocked,
+                ),
+                v.blocked ? 'desbloquear' : 'bloquear',
+              );
             case 'remover':
               _remover(v);
           }

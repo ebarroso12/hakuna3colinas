@@ -11,6 +11,96 @@ Android físico.
 
 ## 11/10/2026
 
+### v1.0.37 — dez defeitos achados por revisao, um deles grave
+
+Rodei revisao de codigo no commit da v1.0.36. Dez achados, todos
+confirmados por mim antes de corrigir. Dois merecem destaque.
+
+#### P0 — o importador trocava o NOME pelo NUMERO, em silencio
+
+Com o cabecalho mais comum que existe, `Nº;Nome;Familia`, o resultado era:
+
+    nome = "12345"   numero = null   problemas = []
+    colunas ignoradas: [Nome]
+
+O numero entrava como nome da pessoa, a coluna `Nome` de verdade era
+descartada, ninguem ficava com `participant_code` — e `problemas` vinha
+**vazio**, entao a tela de revisao mostrava as 216 linhas como boas e ja
+marcadas. Era perda silenciosa de dado de todo mundo, no primeiro uso.
+
+A causa: casamento de cabecalho por prefixo nos DOIS sentidos.
+`normalizar('Nº')` da `'n'`, o primeiro grupo de sinonimos e o de nome, e
+`'nome'.startsWith('n')` e verdadeiro.
+
+Corrigido com igualdade primeiro e depois sinonimo como **palavra
+inteira**, o mais longo ganhando — o que de quebra resolve "Nome da
+familia", que antes virava nome. E entrou uma rede embaixo que **nao
+depende** do cabecalho ter acertado: nome composto so de digitos e
+recusado, porque ninguem se chama "12345".
+
+Sete testes novos travam isso.
+
+#### P1 — o teste de guarda da AppBar que eu escrevi na v1.0.36 era falso
+
+Ele procurava o primeiro `actions: [` do arquivo. Em
+`top_detail_screen.dart` isso e um AlertDialog na linha 171 — a AppBar
+fica 160 linhas abaixo e **nunca era medida**. Contava 4 e passava sempre.
+Uma oitava acao na barra passaria batido, que e exatamente o que o teste
+existia para impedir.
+
+Reescrito com casamento de parenteses, pulando string e comentario, e
+procurando `actions:` **so dentro de** `AppBar(`/`SliverAppBar(`. Agora
+tem auto-teste (o contador conta o que eu digo que conta, inclusive o caso
+do dialog) e eu verifiquei que ele REPROVA: com uma oitava acao
+provisoria, falhou com `{top_detail_screen.dart: 8}`.
+
+#### Os outros oito
+
+- **Reimportar a planilha criava duplicata.** `criar` gera id novo a cada
+  chamada e `(top_id, participant_code)` nao e unico; com duas fichas do
+  mesmo numero, `participante_elegivel` resolve com `limit 1` e o
+  autocadastro podia ligar a conta a ficha vazia enquanto comorbidade e
+  alergia ficavam na outra. Agora a tela confere contra quem ja esta no
+  Top (por numero e por nome), **desmarca** e escreve o motivo.
+- **O dialogo prometia equipe e nao entregava.** O bloco que chamava
+  `addTeamMember` dependia de `criado.linkedProfileId`, que e sempre nulo
+  — codigo morto. Agora o numero da planilha e casado contra as contas que
+  existem, a equipe e aplicada de verdade a quem tem conta, e quem nao tem
+  aparece listado por nome como pendente.
+- **Equipe/cargo nao reconhecidos deixaram de retirar a pessoa.** Viraram
+  aviso. Perder nome, numero e familia de alguem porque a planilha dizia
+  "Cozinha" era trocar o essencial pelo acessorio.
+- **Trocar a imagem do Top mostrava a antiga.** Caminho fixo no Storage =
+  URL fixa, e `ImageCache` e CDN sao indexados por URL. Agora a URL leva
+  selo de versao (`?v=<enviado_em>`) e o cache da borda caiu para 60 s.
+- **Trocar PNG por JPG deixava arquivo orfao** e publicamente acessivel,
+  que "Apagar" nunca mais removia. O caminho perdeu a extensao; o formato
+  vai no `contentType`.
+- **`top_imagens` existia so no banco de producao.** Nada em `supabase/`
+  criava a tabela — rebuild do schema daria uma tela que carrega para
+  sempre sem erro, porque o widget engole o erro de leitura de proposito.
+  Migracao escrita a partir do que esta em producao, nao de memoria:
+  `supabase/top_imagens.sql`.
+- **Timeout de NFC virou codigo cru na tela.** A troca de plugin tirou a
+  mensagem em portugues: o caso mais comum de todos (ninguem encostou em
+  30 s) aparecia como `PlatformException(408, polling tag timeout, null,
+  null)`. Os sete codigos do plugin foram traduzidos para o que a pessoa
+  precisa fazer.
+- **Membro comum via um botao de tres pontos que nao fazia nada** (o menu
+  nao tinha item nenhum para ele), e o **LIBERAR** na tela de equipes era
+  `.then()` sem `await` nem `catchError` — recusa da RLS nao aparecia e o
+  admin achava que havia liberado. Liberacao perdida em silencio deixa a
+  pessoa sem chat e sem bloco de anotacoes.
+
+#### Nao verificado nesta versao
+
+Continua sem teste de hardware: NFC, camera e GPS. E o importador nunca
+rodou com planilha de verdade — rodou com 32 testes, o que nao e a mesma
+coisa.
+
+---
+
+
 ### v1.0.36 — o NFC do app que ja roda em campo, e a AppBar que cortava botao
 
 #### Tres botoes de admin eram invisiveis no celular

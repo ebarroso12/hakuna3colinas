@@ -14,6 +14,7 @@ class TopImagem {
     required this.storagePath,
     this.id,
     this.legenda,
+    this.enviadoEm,
   });
 
   final String? id;
@@ -26,12 +27,29 @@ class TopImagem {
   final String storagePath;
   final String? legenda;
 
+  /// Quando esta posição foi gravada pela última vez.
+  ///
+  /// Serve de **selo de versão na URL**. O caminho no Storage é fixo por
+  /// posição, então trocar a imagem não muda a URL pública — e tanto o
+  /// `ImageCache` do Flutter quanto o CDN do Storage são indexados por
+  /// URL. Sem este selo, o admin trocava a imagem com sucesso e continuava
+  /// vendo a antiga, concluindo que o envio falhou. Achado por revisão em
+  /// 11/10/2026.
+  final DateTime? enviadoEm;
+
+  /// Sufixo de versão para pendurar na URL pública.
+  String get selo =>
+      enviadoEm == null ? '' : '?v=${enviadoEm!.millisecondsSinceEpoch}';
+
   factory TopImagem.fromMap(Map<String, dynamic> map) => TopImagem(
     id: map['id'] as String?,
     topId: map['top_id'] as String,
     ordem: (map['ordem'] as num).toInt(),
     storagePath: map['storage_path'] as String,
     legenda: map['legenda'] as String?,
+    enviadoEm: map['enviado_em'] == null
+        ? null
+        : DateTime.parse(map['enviado_em'] as String),
   );
 
   Map<String, dynamic> toMap() => {

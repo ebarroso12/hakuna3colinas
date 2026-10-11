@@ -326,6 +326,82 @@ HCE **não** passa por aqui — segue em `nfc_hce_service.dart`, por canal
 nativo, Android-only. `minSdk` do plugin é 24, igual ao do Flutter: não
 houve bump.
 
+### Importador de planilha: cabeçalho é a parte perigosa
+
+`ImportadorDePessoas._campoDe` decide qual coluna é qual campo, e é a
+função mais arriscada do importador — ela erra em silêncio.
+
+Havia casamento por prefixo nos **dois sentidos**
+(`n.startsWith(s) || s.startsWith(n)`). `normalizar('Nº')` devolve `'n'`,
+o primeiro grupo de sinônimos é o de nome, e `'nome'.startsWith('n')` é
+verdadeiro. Com `Nº | Nome | Família` o resultado era `nome = "12345"`,
+`numero = null`, coluna `Nome` descartada — e **`problemas` vazio**, então
+a tela de revisão mostrava tudo como bom e já marcado. Achado por revisão
+em 11/10/2026, antes do primeiro uso.
+
+Hoje são duas passadas: **igualdade** (é por aqui que passam os curtos —
+`n`, `no`, `uf`, `cod`, `tel`) e depois **sinônimo como palavra inteira**,
+o mais longo ganhando. É o que faz "Nome da família" cair em família e não
+em nome. **Não reintroduzir prefixo**: "Código da camiseta" começa com
+"codigo" e cairia em número.
+
+Embaixo disso há uma rede que **não depende** do mapeamento ter acertado:
+nome composto só de dígitos é recusado. Se um cabeçalho novo enganar o
+`_campoDe` amanhã, a linha é recusada em vez de entrar calada.
+
+`problemas` **bloqueia**; `avisos` **não**. Entra em `problemas` só o que
+compromete identidade (sem nome, nome que é número, número inválido ou
+repetido). Equipe e cargo vão para `avisos`: a importação nem consegue
+aplicá-los a quem não tem conta, e retirar a pessoa por causa disso é
+trocar o essencial pelo acessório.
+
+**Equipe só é aplicável a quem já tem conta.** `top_team_members.profile_id`
+referencia `profiles`, e planilha não cria conta. A tela casa o número da
+planilha contra as contas existentes; quem não tem aparece listado por
+nome como pendente. Antes isso era prometido no diálogo e o código que
+faria era inalcançável — `criar` devolve ficha com `linked_profile_id`
+nulo, sempre.
+
+**Reimportar é o caminho natural e criava duplicata.** `criar` gera id novo
+a cada chamada e `(top_id, participant_code)` não é único; com duas fichas
+do mesmo número, `participante_elegivel` resolve com `limit 1` e o
+autocadastro podia ligar a conta à ficha vazia enquanto comorbidade e
+alergia ficavam na outra. A tela confere contra quem já está no Top (por
+número e por nome), desmarca e escreve o motivo — desmarcar sem explicar
+parece defeito da tela, e o admin marca de novo.
+
+### Imagem de Top: caminho fixo exige selo de versão
+
+`tops/<id>/imagem<ordem>`, **sem extensão**. Com extensão, trocar um PNG
+por um JPG gravava outro arquivo e deixava o anterior órfão no bucket —
+publicamente acessível e impossível de apagar depois, porque
+`apagarImagemDoTop` só conhece o `storage_path` da linha, que já aponta
+para o arquivo novo.
+
+Caminho fixo significa **URL pública fixa**, e `ImageCache` do Flutter e
+CDN são indexados por URL. Sem `TopImagem.selo` (`?v=<enviado_em>`) o
+admin trocava a imagem com sucesso e continuava vendo a antiga — parece
+falha de upload. Os dois achados são de 11/10/2026, por revisão, antes de
+existir qualquer linha.
+
+A tabela vive em `supabase/top_imagens.sql`. Ela foi criada direto em
+produção e ficou **só lá** por um dia: nada no repositório a criava, e
+`ImagensDoTop._carregar` engole o erro de leitura de propósito, então um
+schema reconstruído daria uma tela que nunca mostra imagem e nunca diz por
+quê.
+
+### NFC: erro do plugin não vai cru para a tela
+
+`ErroDeNfc` traduz os códigos do canal nativo (408 timeout, 406/503 tag
+afastada, 405 não suportado, 404 NFC desligado, 400 NDEF corrompido, 500
+comunicação). O 408 é o **mais comum de todos** — é simplesmente ninguém
+ter encostado a pulseira em 30 segundos, e aparecia como
+`PlatformException(408, polling tag timeout, null, null)`.
+
+O `nfc_manager` lançava `TimeoutException` com texto em português; a troca
+de plugin tirou isso sem reposição, e passou. Ao mexer no serviço de NFC,
+confira se o caminho de erro continua traduzido.
+
 ### Sete ações é o teto da AppBar
 
 Medido em 11/10/2026, não estimado: a oitava `IconButton` estoura a Row da
@@ -345,10 +421,23 @@ sentado, antes do evento; **ler** a pulseira é tarefa de campo e por isso
 é o primeiro ícone depois da saída.
 
 `test/appbar_cabe_no_celular_test.dart` mede o teto de verdade (360 e
-320 dp) e varre `lib/screens` contando as ações declaradas. Ao medir,
-derrube a árvore entre as iterações: o `RenderFlex` reporta o estouro uma
-vez por instância, e reusar o render object engole o erro — a primeira
-versão do teste mediu 14 por causa disso.
+320 dp) e varre `lib/screens`. Dois erros já cometidos nele, os dois
+dignos de nota:
+
+1. Ao medir, **derrube a árvore entre as iterações**: o `RenderFlex`
+   reporta o estouro uma vez por instância, e reusar o render object
+   engole o erro — a primeira versão mediu 14.
+2. A varredura por **indentação não media nada**. `indexWhere` pegava o
+   primeiro `actions: [` do arquivo, que em `top_detail_screen.dart` é um
+   AlertDialog na linha 171; a AppBar, 160 linhas abaixo, nunca era
+   contada. O teste passava sempre, e uma oitava ação passaria batida.
+   Hoje é casamento de parênteses, pulando string e comentário, e só
+   procura `actions:` **dentro de** `AppBar(`/`SliverAppBar(`.
+
+O teste tem auto-teste do próprio contador, e isso não é zelo excessivo:
+foi o auto-teste que pegou a vírgula do spread sendo contada duas vezes.
+**Guarda que não é verificado é pior que guarda nenhum** — ele dá a
+impressão de cobertura.
 
 ### Toda tela tem saída
 

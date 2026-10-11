@@ -197,13 +197,26 @@ void main() {
       expect(r.pessoas.every((p) => p.problemas.isEmpty), isTrue);
     });
 
-    test('equipe desconhecida vira problema, não silêncio', () {
+    // Este teste MUDOU em 11/10/2026, por revisão, e o motivo tem de ficar
+    // escrito: antes ele exigia `valida == false`, ou seja, exigia que a
+    // pessoa fosse RETIDA por causa da coluna "equipe".
+    //
+    // Estava errado. Equipe exige conta no app (`top_team_members`
+    // referencia `profiles`), e planilha não cria conta — então a equipe
+    // nem sempre é aplicável de todo jeito. Perder o nome, o número e a
+    // família de alguém porque a planilha dizia "Cozinha" é trocar o
+    // essencial pelo acessório. Agora é AVISO: aparece na tela, não
+    // bloqueia.
+    test('equipe desconhecida vira AVISO e não retém a pessoa', () {
       final r = ImportadorDePessoas.lerCsv(
         bytesDe('Nome;Equipe\nA;Cozinha\n'),
       );
-      expect(r.pessoas.single.problemas.single, contains('Cozinha'));
-      expect(r.pessoas.single.equipe, isNull);
-      expect(r.pessoas.single.valida, isFalse);
+      final p = r.pessoas.single;
+      expect(p.avisos.single, contains('Cozinha'));
+      expect(p.problemas, isEmpty);
+      expect(p.equipe, isNull, reason: 'não inventa equipe');
+      expect(p.valida, isTrue, reason: 'a pessoa entra; a equipe não');
+      expect(p.selecionada, isTrue);
     });
 
     test('reconhece cargo, inclusive abreviado', () {
@@ -222,21 +235,30 @@ void main() {
       expect(r.pessoas[3].cargo, TeamRole.membro);
     });
 
-    test('cargo SEM equipe é problema: não há onde aplicar', () {
+    test('cargo SEM equipe é AVISO, e o cargo é descartado', () {
+      // Mesma correção da equipe: avisa e descarta o campo, em vez de
+      // retirar a pessoa da importação. O cargo vai a null de propósito —
+      // guardar "coordenador" sem equipe seria guardar dado que nenhuma
+      // tela sabe aplicar.
       final r = ImportadorDePessoas.lerCsv(
         bytesDe('Nome;Cargo\nA;coordenador\n'),
       );
-      expect(
-        r.pessoas.single.problemas,
-        contains('cargo informado sem equipe'),
-      );
+      final p = r.pessoas.single;
+      expect(p.avisos, contains('cargo informado sem equipe'));
+      expect(p.problemas, isEmpty);
+      expect(p.cargo, isNull);
+      expect(p.valida, isTrue);
     });
 
-    test('cargo desconhecido vira problema', () {
+    test('cargo desconhecido vira AVISO, e a equipe sobrevive', () {
       final r = ImportadorDePessoas.lerCsv(
         bytesDe('Nome;Equipe;Cargo\nA;voz;Chefe Supremo\n'),
       );
-      expect(r.pessoas.single.problemas.first, contains('Chefe Supremo'));
+      final p = r.pessoas.single;
+      expect(p.avisos.first, contains('Chefe Supremo'));
+      expect(p.problemas, isEmpty);
+      expect(p.equipe, TeamKey.voz, reason: 'cargo ruim não derruba equipe');
+      expect(p.valida, isTrue);
     });
   });
 
@@ -290,6 +312,94 @@ void main() {
       expect(r.erro, isNotNull);
       expect(r.erro, contains('.xls'));
       expect(r.pessoas, isEmpty);
+    });
+  });
+
+  group('cabecalho que ja corrompeu a importacao', () {
+    // A planilha mais comum que existe: Nº na coluna A, Nome na B.
+    //
+    // Com o casamento por prefixo bidirecional que havia aqui,
+    // `normalizar('Nº')` dava `'n'`, `'nome'.startsWith('n')` era
+    // verdadeiro, e a coluna A reivindicava NOME. A coluna `Nome` de
+    // verdade era entao descartada por ja ter dono, ninguem ficava com
+    // `participant_code` — e `problemas` vinha VAZIO, entao a tela de
+    // revisao mostrava tudo como bom e ja marcado.
+    //
+    // Era perda silenciosa de dado de 216 pessoas. Achado por revisao em
+    // 11/10/2026, antes do primeiro uso.
+    test('"Nº | Nome | Familia" mapeia cada coluna no seu campo', () {
+      final r = ImportadorDePessoas.lerCsv(
+        bytesDe('Nº;Nome;Família\n12345;Joao da Silva;Leao\n'),
+      );
+      expect(r.colunasIgnoradas, isEmpty);
+      final p = r.pessoas.single;
+      expect(p.nome, 'JOAO DA SILVA');
+      expect(p.numero, '12345');
+      expect(p.familia, 'LEAO');
+      expect(p.problemas, isEmpty);
+      expect(p.valida, isTrue);
+    });
+
+    test('"N°" e "N" sozinhos tambem sao numero, nao nome', () {
+      for (final cabecalho in ['N°', 'N', 'No']) {
+        final r = ImportadorDePessoas.lerCsv(
+          bytesDe('$cabecalho;Nome\n987;Maria\n'),
+        );
+        final p = r.pessoas.single;
+        expect(p.numero, '987', reason: 'cabecalho "$cabecalho"');
+        expect(p.nome, 'MARIA', reason: 'cabecalho "$cabecalho"');
+      }
+    });
+
+    test('"Nome da familia" e familia, nao nome — o mais longo ganha', () {
+      final r = ImportadorDePessoas.lerCsv(
+        bytesDe('Nome completo;Nome da família\nJoao;Leao\n'),
+      );
+      expect(r.colunasIgnoradas, isEmpty);
+      final p = r.pessoas.single;
+      expect(p.nome, 'JOAO');
+      expect(p.familia, 'LEAO');
+    });
+
+    test('"Nome do participante" continua caindo em nome', () {
+      final r = ImportadorDePessoas.lerCsv(
+        bytesDe('Nome do participante\nJoao da Silva\n'),
+      );
+      expect(r.pessoas.single.nome, 'JOAO DA SILVA');
+    });
+
+    test('"Nº Legendario" no singular e no plural', () {
+      for (final cabecalho in [
+        'Nº Legendário',
+        'Nº Legendários',
+        'Número do Legendário',
+      ]) {
+        final r = ImportadorDePessoas.lerCsv(
+          bytesDe('Nome;$cabecalho\nJoao;555\n'),
+        );
+        expect(
+          r.pessoas.single.numero,
+          '555',
+          reason: 'cabecalho "$cabecalho"',
+        );
+      }
+    });
+
+    // Esta recusa NAO depende de o mapeamento de cabecalho ter acertado.
+    // E a rede embaixo: se um cabecalho novo enganar o `_campoDe` amanha,
+    // a linha e recusada aqui em vez de entrar calada como participante
+    // chamado "12345".
+    test('nome so com numeros e RECUSADO, nao importado', () {
+      final r = ImportadorDePessoas.lerCsv(bytesDe('Participante\n12345\n'));
+      final p = r.pessoas.single;
+      expect(p.nome, '12345');
+      expect(p.valida, isFalse);
+      expect(p.problemas.single, contains('trocada'));
+    });
+
+    test('nome de verdade com numero no meio passa', () {
+      final r = ImportadorDePessoas.lerCsv(bytesDe('Nome\nJoao da Silva 2\n'));
+      expect(r.pessoas.single.valida, isTrue);
     });
   });
 }

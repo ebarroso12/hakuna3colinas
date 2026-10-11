@@ -106,9 +106,16 @@ class _LerTagScreenState extends State<LerTagScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _lendo = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Não foi possível ler a tag: $e')));
+      // `ErroDeNfc` já vem em português e diz o que fazer. Prefixar com
+      // "Não foi possível ler a tag" criaria redundância, e o caso mais
+      // comum (ninguém encostou em 30 s) não é nem uma falha.
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e is ErroDeNfc ? e.mensagem : 'Não foi possível ler a tag: $e',
+          ),
+        ),
+      );
     }
   }
 

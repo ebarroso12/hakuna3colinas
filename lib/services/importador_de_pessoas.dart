@@ -24,6 +24,7 @@ class PessoaImportada {
     this.equipe,
     this.cargo,
     this.problemas = const [],
+    this.avisos = const [],
   });
 
   final int linhaNoArquivo;
@@ -36,8 +37,32 @@ class PessoaImportada {
   TeamKey? equipe;
   TeamRole? cargo;
 
-  /// O que impede ou merece atenção. Lista vazia = linha limpa.
+  /// O que IMPEDE a importação. Lista vazia = linha pode entrar.
+  ///
+  /// Entra aqui só o que compromete a identidade da pessoa: sem nome, nome
+  /// que é número, número inválido, número repetido dentro do arquivo.
   List<String> problemas;
+
+  /// O que o admin precisa SABER, sem a linha deixar de entrar.
+  ///
+  /// Separado de [problemas] em 11/10/2026, por revisão. Equipe e cargo não
+  /// reconhecidos estavam em `problemas`, então a pessoa era retida por
+  /// causa de um campo que a importação **nem aplica** — equipe exige
+  /// conta no app (`top_team_members.profile_id`), e planilha não cria
+  /// conta. Perder o nome, o número e a família de alguém por causa da
+  /// palavra errada na coluna "equipe" é trocar o essencial pelo
+  /// acessório.
+  List<String> avisos;
+
+  /// Já está neste Top, e por isso a tela desmarca a linha.
+  ///
+  /// Reimportar a planilha atualizada era o caminho natural e criava
+  /// **duplicata**: `criar` gera id novo a cada chamada e
+  /// `(top_id, participant_code)` não é índice único. Com duas linhas do
+  /// mesmo número, `participante_elegivel` resolve com `limit 1` e o
+  /// autocadastro podia ligar a conta à ficha vazia enquanto comorbidade e
+  /// alergia ficavam na outra.
+  String? jaExiste;
 
   /// Só importa linha com nome. Sem nome não há pessoa — e um
   /// `participant_code` órfão é pior que uma linha a menos.
@@ -94,9 +119,18 @@ class ImportadorDePessoas {
   static const _sinonimos = <String, List<String>>{
     'nome': ['nome', 'nome completo', 'nomecompleto', 'participante', 'pessoa'],
     'numero': [
+      // 'n' e 'no' sao o que sobra de "Nº" e "N°" depois de `normalizar`.
+      // Precisam estar aqui como IGUALDADE: era por falta deles que o
+      // cabecalho mais comum de todos, o "Nº" da primeira coluna, caia em
+      // `nome` pelo casamento por prefixo. Ver o comentario em `_campoDe`.
+      'n',
+      'no',
       'numero',
+      'numero legendario',
       'numero legendarios',
+      'n legendario',
       'n legendarios',
+      'no legendario',
       'no legendarios',
       'num',
       'codigo',
@@ -164,19 +198,59 @@ class ImportadorDePessoas {
     return t.replaceAll(RegExp(r'\s+'), ' ').trim();
   }
 
+  /// De qual campo é este cabeçalho de coluna.
+  ///
+  /// Duas passadas, e a ordem importa:
+  ///
+  /// 1. **Igualdade** com um sinônimo. É por aqui que passam os curtos —
+  ///    `n`, `no`, `uf`, `cod`, `tel`.
+  /// 2. **Sinônimo como palavra inteira** dentro do cabeçalho, e o
+  ///    **mais longo ganha**. Resolve "Nome do participante" → nome e,
+  ///    o que importa mais, "Nome da família" → familia e não nome.
+  ///
+  /// Aqui havia um casamento por prefixo nos DOIS sentidos
+  /// (`n.startsWith(s) || s.startsWith(n)`), e ele corrompia a importação
+  /// mais comum que existe. `normalizar('Nº')` devolve `'n'`; o primeiro
+  /// grupo de sinônimos é o de nome; `'nome'.startsWith('n')` é verdadeiro.
+  /// Resultado, com a planilha `Nº | Nome | Família`:
+  ///
+  ///   nome = "12345"   numero = null   problemas = []
+  ///
+  /// O número entrava como nome da pessoa, a coluna `Nome` de verdade ia
+  /// para "colunas ignoradas", ninguém ficava com `participant_code` — e
+  /// `problemas` vinha **vazio**, então a tela de revisão mostrava as 216
+  /// linhas como boas e já marcadas. Achado em 11/10/2026, por revisão,
+  /// antes do primeiro uso. Travado em
+  /// `test/services/importador_de_pessoas_test.dart`.
+  ///
+  /// Prefixo em um sentido só também não serve: "Código da camiseta"
+  /// começa com "codigo" e cairia em número. Palavra inteira + o mais
+  /// longo é o critério que erra menos — e o que ele não resolve aparece
+  /// em "colunas ignoradas", onde o admin vê.
   static String? _campoDe(String cabecalho) {
     final n = normalizar(cabecalho);
     if (n.isEmpty) return null;
+
     for (final e in _sinonimos.entries) {
       if (e.value.contains(n)) return e.key;
     }
-    // Casamento por prefixo, para "nome do participante" cair em nome.
+
+    final palavras = n.split(' ').toSet();
+    String? melhorCampo;
+    var melhorTamanho = 0;
     for (final e in _sinonimos.entries) {
       for (final s in e.value) {
-        if (n.startsWith(s) || s.startsWith(n)) return e.key;
+        // Sinônimo de até 3 letras só vale por igualdade: 'n' dentro de
+        // qualquer cabeçalho não diz nada.
+        if (s.length < 4) continue;
+        if (!s.split(' ').every(palavras.contains)) continue;
+        if (s.length > melhorTamanho) {
+          melhorTamanho = s.length;
+          melhorCampo = e.key;
+        }
       }
     }
-    return null;
+    return melhorCampo;
   }
 
   /// Descobre o separador de um CSV/TXT.
@@ -347,6 +421,21 @@ class ImportadorDePessoas {
 
       if ((p.nome ?? '').isEmpty) {
         problemas.add('sem nome');
+      } else if (RegExp(r'^[0-9\s.\-/]+$').hasMatch(p.nome!)) {
+        // Rede de segurança contra COLUNA TROCADA, não contra nome
+        // estranho. Ninguém se chama "12345": nome só com dígito quer
+        // dizer que a coluna de número caiu no lugar da de nome, e foi
+        // exatamente o que o casamento de cabeçalho fazia com a planilha
+        // `Nº | Nome | Família` (ver `_campoDe`).
+        //
+        // Esta checagem não depende do mapeamento de coluna ter acertado,
+        // e é isso que a torna útil: se um cabeçalho novo enganar o
+        // `_campoDe` amanhã, a linha é recusada aqui em vez de entrar
+        // calada como participante chamado "12345".
+        problemas.add(
+          'nome só com números ("${p.nome}") — a coluna de nome parece '
+          'trocada com a de número',
+        );
       }
 
       // Número: só dígito, 1 a 12 — a MESMA regra de
@@ -372,11 +461,16 @@ class ImportadorDePessoas {
         }
       }
 
+      // Equipe e cargo vão para `avisos`, não para `problemas`: eles não
+      // impedem a pessoa de existir no Top, e a importação sozinha não
+      // consegue aplicá-los de todo jeito (equipe exige conta no app).
+      final avisos = <String>[];
+
       final equipeBruta = valor('equipe');
       if (equipeBruta != null) {
         final e = _equipes[normalizar(equipeBruta).replaceAll(' ', '')];
         if (e == null) {
-          problemas.add('equipe não reconhecida: "$equipeBruta"');
+          avisos.add('equipe não reconhecida: "$equipeBruta"');
         } else {
           p.equipe = e;
         }
@@ -386,7 +480,7 @@ class ImportadorDePessoas {
       if (cargoBruto != null) {
         final c = _cargos[normalizar(cargoBruto).replaceAll(' ', '')];
         if (c == null) {
-          problemas.add('cargo não reconhecido: "$cargoBruto"');
+          avisos.add('cargo não reconhecido: "$cargoBruto"');
         } else {
           p.cargo = c;
         }
@@ -394,7 +488,8 @@ class ImportadorDePessoas {
 
       // Cargo sem equipe não tem onde ser aplicado.
       if (p.cargo != null && p.equipe == null) {
-        problemas.add('cargo informado sem equipe');
+        avisos.add('cargo informado sem equipe');
+        p.cargo = null;
       }
 
       // UF de 2 letras. Não bloqueia: é dado de cadastro, não de
@@ -406,6 +501,7 @@ class ImportadorDePessoas {
       }
 
       p.problemas = problemas;
+      p.avisos = avisos;
       p.selecionada = p.valida;
       pessoas.add(p);
     }

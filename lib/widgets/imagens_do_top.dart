@@ -223,9 +223,16 @@ class _Quadro extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cores = Theme.of(context).colorScheme;
-    final url = imagem == null
+    // `selo` é obrigatório aqui, não enfeite. O caminho no Storage é fixo
+    // por posição, então a URL pública não muda quando a imagem muda — e o
+    // `ImageCache` do Flutter e o CDN são indexados por URL. Sem o selo, o
+    // admin trocava a imagem, o envio dava certo, e o quadro continuava
+    // mostrando a antiga: parece falha de upload. Achado por revisão em
+    // 11/10/2026.
+    final base = imagem == null
         ? null
         : AdminService.instance.urlEmblema(imagem!.storagePath);
+    final url = base == null ? null : '$base${imagem!.selo}';
 
     return AspectRatio(
       aspectRatio: 1,

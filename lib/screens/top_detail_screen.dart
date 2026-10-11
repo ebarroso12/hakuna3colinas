@@ -695,6 +695,13 @@ class _MenuDoTop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Membro de midia ou producao nao e Hakuna nem admin: para ele o menu
+    // nao tem UM item. `PopupMenuButton.showButtonMenu` protege com
+    // `if (items.isNotEmpty)`, entao o botao aparecia, respondia ao toque
+    // e nao fazia nada — que e pior que nao existir. Achado por revisao
+    // em 11/10/2026.
+    if (!isHakuna && !podeEditarTop) return const SizedBox.shrink();
+
     return PopupMenuButton<String>(
       icon: const Icon(Icons.more_vert),
       tooltip: 'Mais opcoes do Top',

@@ -1,9 +1,11 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
+import '../../models/profile.dart';
 import '../../models/team.dart';
 import '../../models/team_message.dart';
 import '../../models/top.dart';
+import '../../offline/dados_do_top.dart';
 import '../../services/admin_service.dart';
 import '../../services/importador_de_pessoas.dart';
 import '../../services/participante_service.dart';
@@ -43,6 +45,21 @@ class _AdminImportarScreenState extends State<AdminImportarScreen> {
   /// que entra marcado sai depois num clique em "apagar testes".
   bool _comoTeste = false;
 
+  /// Contas que já existem no app, por número do Legendários.
+  ///
+  /// Equipe e cargo da planilha só podem ser aplicados a quem TEM conta:
+  /// `top_team_members.profile_id` referencia `profiles`, e planilha não
+  /// cria conta. Antes isto era prometido no diálogo de confirmação e
+  /// nunca acontecia — `ParticipanteService.criar` devolve uma ficha com
+  /// `linked_profile_id` nulo, então o bloco que chamava `addTeamMember`
+  /// era código morto. Achado por revisão em 11/10/2026.
+  Map<String, String> _perfilPorNumero = {};
+  bool _perfisCarregados = false;
+
+  /// Quem já está neste Top: por número e por nome normalizado.
+  Map<String, String> _jaNoTopPorNumero = {};
+  Map<String, String> _jaNoTopPorNome = {};
+
   Future<void> _escolherArquivo() async {
     setState(() => _lendo = true);
     try {
@@ -65,12 +82,18 @@ class _AdminImportarScreenState extends State<AdminImportarScreen> {
           ? ImportadorDePessoas.lerXlsx(bytes)
           : ImportadorDePessoas.lerCsv(bytes);
 
+      await _marcarQuemJaExiste(leitura);
+
       if (!mounted) return;
       setState(() {
         _leitura = leitura;
         _nomeDoArquivo = arquivo.name;
         _gravados = 0;
       });
+
+      // Depois de mostrar a lista, não antes: carregar perfis precisa de
+      // rede, e a revisão do arquivo não pode esperar por ela.
+      _carregarPerfis();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -80,6 +103,92 @@ class _AdminImportarScreenState extends State<AdminImportarScreen> {
       if (mounted) setState(() => _lendo = false);
     }
   }
+
+  /// Desmarca quem já está neste Top.
+  ///
+  /// Reimportar a planilha atualizada é o caminho natural — e era o que
+  /// criava duplicata: `ParticipanteService.criar` gera id novo a cada
+  /// chamada, e `(top_id, participant_code)` **não** é índice único. Com
+  /// duas fichas do mesmo número, `participante_elegivel` resolve com
+  /// `limit 1`, e o autocadastro podia ligar a conta à ficha vazia
+  /// enquanto comorbidade e alergia ficavam na outra. Achado por revisão
+  /// em 11/10/2026, antes do primeiro uso.
+  ///
+  /// Lê do SQLite (`DadosDoTop`), então funciona sem sinal. Desmarca, não
+  /// remove: se o admin quiser mesmo uma segunda pessoa de mesmo nome, ele
+  /// marca de novo — e vê o motivo escrito ao lado.
+  Future<void> _marcarQuemJaExiste(LeituraDoArquivo leitura) async {
+    try {
+      final existentes = await DadosDoTop.instance.participantes(
+        widget.top.id,
+      );
+      _jaNoTopPorNumero = {
+        for (final e in existentes)
+          if ((e.participantCode ?? '').isNotEmpty)
+            e.participantCode!: e.fullName,
+      };
+      _jaNoTopPorNome = {
+        for (final e in existentes)
+          ImportadorDePessoas.normalizar(e.fullName): e.fullName,
+      };
+    } catch (_) {
+      // Sem cache local não dá para conferir. Não vale impedir a
+      // importação por isso — mas o aviso no topo da tela diz que a
+      // conferência não foi feita, em vez de dar a entender que foi.
+      _jaNoTopPorNumero = {};
+      _jaNoTopPorNome = {};
+      return;
+    }
+
+    for (final p in leitura.pessoas) {
+      final numero = p.numero;
+      final nome = p.nome;
+
+      if (numero != null && _jaNoTopPorNumero.containsKey(numero)) {
+        p.jaExiste =
+            'já está no Top com este número: ${_jaNoTopPorNumero[numero]}';
+      } else if (nome != null &&
+          _jaNoTopPorNome.containsKey(ImportadorDePessoas.normalizar(nome))) {
+        p.jaExiste = 'já está no Top com este nome';
+      }
+      if (p.jaExiste != null) p.selecionada = false;
+    }
+  }
+
+  /// Casa o número da planilha com contas que já existem no app.
+  ///
+  /// É o que torna equipe e cargo aplicáveis. Quem não tem conta entra como
+  /// ficha de participante e a equipe fica pendente — dito na tela, não
+  /// escondido.
+  Future<void> _carregarPerfis() async {
+    try {
+      final perfis = await AdminService.instance.fetchAllProfiles();
+      if (!mounted) return;
+      setState(() {
+        _perfilPorNumero = {
+          for (final Profile perfil in perfis)
+            if (perfil.legendariosNumber.isNotEmpty)
+              perfil.legendariosNumber: perfil.id,
+        };
+        _perfisCarregados = true;
+      });
+    } catch (_) {
+      // Sem rede não há como saber quem tem conta. A tela diz que equipe e
+      // cargo não serão aplicados nesta importação.
+      if (mounted) setState(() => _perfisCarregados = false);
+    }
+  }
+
+  /// Quantas linhas marcadas têm equipe E conta — as que de fato entram em
+  /// alguma equipe.
+  int get _equipesAplicaveis => _marcadas
+      .where((p) => p.equipe != null && _perfilPorNumero[p.numero] != null)
+      .length;
+
+  /// Marcadas com equipe na planilha mas sem conta no app.
+  int get _equipesPendentes => _marcadas
+      .where((p) => p.equipe != null && _perfilPorNumero[p.numero] == null)
+      .length;
 
   List<PessoaImportada> get _marcadas =>
       (_leitura?.pessoas ?? []).where((p) => p.selecionada).toList();
@@ -109,11 +218,33 @@ class _AdminImportarScreenState extends State<AdminImportarScreen> {
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
             const SizedBox(height: 8),
-            const Text(
-              'Quem tiver equipe e cargo na planilha também é incluído na '
-              'equipe, já liberado. Sem liberar, a pessoa não tem chat nem '
-              'bloco de anotações.',
-            ),
+            // Isto aqui prometia que "quem tiver equipe e cargo na
+            // planilha também é incluído na equipe" — e não era verdade:
+            // o código que faria isso era inalcançável. Agora o texto diz
+            // o que de fato acontece, com os números desta importação.
+            if (_equipesAplicaveis > 0)
+              Text(
+                'Entram em equipe agora: $_equipesAplicaveis '
+                '(já têm conta no app, casadas pelo nº do Legendários).',
+              ),
+            if (_equipesPendentes > 0)
+              Text(
+                'Com equipe na planilha mas SEM conta no app: '
+                '$_equipesPendentes. A ficha entra; a equipe não. '
+                'Elas entram na equipe pela tela "Equipes do Top", depois '
+                'de criarem conta.',
+                style: TextStyle(
+                  color: Theme.of(ctx).colorScheme.error,
+                ),
+              ),
+            if (!_perfisCarregados)
+              Text(
+                'Não deu para consultar as contas do app (sem rede). '
+                'Nenhuma equipe será aplicada nesta importação.',
+                style: TextStyle(
+                  color: Theme.of(ctx).colorScheme.error,
+                ),
+              ),
           ],
         ),
         actions: [
@@ -136,13 +267,16 @@ class _AdminImportarScreenState extends State<AdminImportarScreen> {
     });
 
     final falhas = <String>[];
+    final equipesFalhas = <String>[];
+    final semConta = <String>[];
+    var equipesAplicadas = 0;
     for (final p in marcadas) {
       try {
         // Pelo `ParticipanteService`, não por insert direto: assim a
         // ficha vai para o cache local e para a fila, igual ao cadastro
         // feito à mão. Se a rede cair no meio da importação, o que já
         // entrou sobe depois em vez de se perder.
-        final criado = await ParticipanteService.instance.criar(
+        await ParticipanteService.instance.criar(
           topId: widget.top.id,
           dados: {
             'full_name': p.nome,
@@ -156,16 +290,25 @@ class _AdminImportarScreenState extends State<AdminImportarScreen> {
           },
         );
 
-        // Equipe e cargo, quando a planilha trouxe.
+        // Equipe e cargo, quando a planilha trouxe E a pessoa tem conta.
+        //
+        // O perfil vem do casamento por NÚMERO do Legendários contra as
+        // contas que já existem (`_perfilPorNumero`), não de
+        // `criado.linkedProfileId`: `ParticipanteService.criar` monta a
+        // ficha a partir de `dados`, que nunca carrega
+        // `linked_profile_id`, então aquele campo é SEMPRE nulo aqui e o
+        // bloco inteiro era código morto — enquanto o diálogo de
+        // confirmação prometia a inclusão na equipe. Achado por revisão em
+        // 11/10/2026.
         //
         // `released: true` de propósito: o admin acabou de dizer, na
         // planilha, que a pessoa é daquela equipe. Entrar não-liberada
-        // exigiria ele abrir a tela de equipes e liberar 200 nomes um por
-        // um — e `is_team_member` exige `released`, então sem isso a
-        // pessoa fica sem chat e sem anotações.
-        if (p.equipe != null) {
-          final perfil = criado.linkedProfileId;
-          if (perfil != null) {
+        // exigiria abrir a tela de equipes e liberar 200 nomes um a um — e
+        // `is_team_member` exige `released`, então sem isso a pessoa fica
+        // sem chat e sem bloco de anotações.
+        final perfil = _perfilPorNumero[p.numero];
+        if (p.equipe != null && perfil != null) {
+          try {
             await AdminService.instance.addTeamMember(
               topId: widget.top.id,
               profileId: perfil,
@@ -173,10 +316,14 @@ class _AdminImportarScreenState extends State<AdminImportarScreen> {
               papel: p.cargo ?? TeamRole.membro,
               released: true,
             );
+            equipesAplicadas++;
+          } catch (e) {
+            // A ficha já entrou; perder a equipe não justifica contar a
+            // pessoa como falha. Vai para a lista de pendências, com nome.
+            equipesFalhas.add('${p.nome}: $e');
           }
-          // Sem `linked_profile_id` não há como vincular à equipe: a
-          // pessoa ainda não tem conta. A equipe entra quando ela se
-          // cadastrar — e isso está dito no resumo, não escondido.
+        } else if (p.equipe != null) {
+          semConta.add(p.nome ?? 'linha ${p.linhaNoArquivo}');
         }
 
         if (mounted) setState(() => _gravados++);
@@ -212,6 +359,47 @@ class _AdminImportarScreenState extends State<AdminImportarScreen> {
                   Padding(
                     padding: const EdgeInsets.only(bottom: 4),
                     child: Text(f, style: const TextStyle(fontSize: 12)),
+                  ),
+              ],
+              const SizedBox(height: 12),
+              Text(
+                equipesAplicadas > 0
+                    ? '$equipesAplicadas entraram em equipe, já liberadas.'
+                    : 'Nenhuma equipe foi aplicada.',
+                style: const TextStyle(fontSize: 12),
+              ),
+              if (semConta.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  '${semConta.length} tinham equipe na planilha mas não '
+                  'têm conta no app, então a equipe NÃO foi aplicada. A '
+                  'ficha entrou. Inclua pela tela "Equipes do Top" depois '
+                  'que criarem conta:',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(ctx).colorScheme.error,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  semConta.join(', '),
+                  style: const TextStyle(fontSize: 11),
+                ),
+              ],
+              if (equipesFalhas.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  '${equipesFalhas.length} ficha(s) entraram mas a equipe '
+                  'foi recusada pelo servidor:',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(ctx).colorScheme.error,
+                  ),
+                ),
+                for (final f in equipesFalhas)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(f, style: const TextStyle(fontSize: 11)),
                   ),
               ],
               const SizedBox(height: 12),
@@ -446,12 +634,32 @@ class _LinhaImportada extends StatelessWidget {
             '${partes.isEmpty ? "" : " · ${partes.join(" · ")}"}',
             style: Theme.of(context).textTheme.labelSmall,
           ),
+          // Já está no Top: a linha vem DESMARCADA, e o motivo tem de
+          // estar escrito. Caixa desmarcada sem explicação parece defeito
+          // da tela, e o admin marca de novo — criando a duplicata que o
+          // desmarque existe para evitar.
+          if (pessoa.jaExiste != null)
+            Text(
+              '⊘ ${pessoa.jaExiste}',
+              style: TextStyle(
+                fontSize: 11,
+                color: cores.tertiary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           // O MOTIVO, não "linha inválida". "número repetido (igual ao da
           // linha 14)" é acionável; "erro" não é.
           for (final problema in pessoa.problemas)
             Text(
               '⚠ $problema',
               style: TextStyle(fontSize: 11, color: cores.error),
+            ),
+          // Avisos NÃO impedem a linha de entrar. Ficam em outra cor para
+          // não se confundirem com o que bloqueia.
+          for (final aviso in pessoa.avisos)
+            Text(
+              'ℹ $aviso',
+              style: TextStyle(fontSize: 11, color: cores.onSurfaceVariant),
             ),
         ],
       ),

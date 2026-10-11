@@ -178,6 +178,17 @@ class AdminService {
   // `emblema_path` continua sendo a principal; estas sao as outras.
   // ====================================================================
 
+  /// `Content-Type` a partir da extensao escolhida na galeria.
+  ///
+  /// O arquivo no Storage nao tem extensao (ver `enviarImagemDoTop`), entao
+  /// o tipo precisa ir declarado — sem ele o Storage assume
+  /// `application/octet-stream` e o navegador baixa em vez de mostrar.
+  static String _tipoDaExtensao(String extensao) => switch (extensao) {
+    '.png' => 'image/png',
+    '.webp' => 'image/webp',
+    _ => 'image/jpeg',
+  };
+
   /// As imagens extras de um Top, em ordem.
   Future<List<TopImagem>> imagensDoTop(String topId) async {
     final linhas = await _client
@@ -190,10 +201,16 @@ class AdminService {
 
   /// Sobe (ou troca) a imagem de uma posicao.
   ///
-  /// O caminho no Storage inclui a POSICAO, nao um id aleatorio: trocar a
-  /// imagem 2 sobrescreve o arquivo dela em vez de deixar o antigo
-  /// orfao no bucket. Sem isso, cada troca deixaria lixo que ninguem
-  /// apaga — e o bucket cresce para sempre.
+  /// O caminho e `tops/<id>/imagem<ordem>`, **sem extensao**, e e isso que
+  /// faz a troca sobrescrever de verdade. Com a extensao no nome, trocar um
+  /// PNG por um JPG na mesma posicao gravava `imagem2.jpg` e deixava
+  /// `imagem2.png` no bucket: orfao, ainda acessivel por URL publica, e
+  /// impossivel de apagar depois — `apagarImagemDoTop` so conhece o
+  /// `storage_path` da linha, que agora aponta para o outro arquivo.
+  /// Achado por revisao em 11/10/2026, antes de existir qualquer linha.
+  ///
+  /// Sem extensao, quem diz o formato e o `contentType`, que o Storage
+  /// guarda e devolve no `Content-Type` da resposta.
   Future<TopImagem> enviarImagemDoTop({
     required String topId,
     required int ordem,
@@ -204,13 +221,21 @@ class AdminService {
     if (ordem < 1 || ordem > 3) {
       throw ArgumentError('a ordem tem de ser 1, 2 ou 3');
     }
-    final caminho = 'tops/$topId/imagem$ordem$extensao';
+    final caminho = 'tops/$topId/imagem$ordem';
     await _client.storage
         .from('emblemas')
         .uploadBinary(
           caminho,
           bytes,
-          fileOptions: const FileOptions(upsert: true),
+          fileOptions: FileOptions(
+            upsert: true,
+            contentType: _tipoDaExtensao(extensao),
+            // 60 s em vez do 1 h padrao: a URL publica e fixa por posicao,
+            // e cache longo no CDN manteria a imagem antiga servida depois
+            // da troca. O selo de versao (`TopImagem.selo`) resolve no
+            // cliente; isto resolve na borda.
+            cacheControl: '60',
+          ),
         );
 
     final linha = await _client

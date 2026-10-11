@@ -1,6 +1,32 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_nfc_kit/flutter_nfc_kit.dart';
 import 'package:ndef/ndef.dart' as ndef;
+
+/// Falha de NFC já traduzida para quem está com o celular na mão.
+///
+/// O plugin devolve `PlatformException(408, "Polling tag timeout")` e
+/// companhia. Jogado na tela, vira
+/// "Não foi possível ler a tag: PlatformException(408, polling tag
+/// timeout, null, null)" — e o caso 408 é o **mais comum de todos**: é
+/// simplesmente ninguém ter encostado a pulseira em 30 segundos. Mostrar
+/// código de erro para quem está atendendo alguém no mato é inútil.
+///
+/// O serviço anterior (`nfc_manager`) lançava `TimeoutException` com texto
+/// em português; a troca de plugin tirou isso sem reposição. Achado por
+/// revisão em 11/10/2026.
+class ErroDeNfc implements Exception {
+  const ErroDeNfc(this.mensagem, {this.codigo});
+
+  /// Texto pronto para a tela. Sem código, sem nome de classe.
+  final String mensagem;
+
+  /// Código do plugin, para log e para quem investiga depois.
+  final String? codigo;
+
+  @override
+  String toString() => mensagem;
+}
 
 /// Estado do leitor NFC no aparelho.
 ///
@@ -128,15 +154,20 @@ class NfcService {
     await _exigirLeitor();
 
     try {
-      final tag = await FlutterNfcKit.poll(
-        timeout: _esperaDaTag,
-        // Som e vibração são do app, não do sistema: a tela de leitura dá
-        // o retorno junto com o resultado, e o bipe do Android chegava
-        // antes de se saber se a tag valia algo.
-        androidPlatformSound: false,
-        iosAlertMessage: 'Encoste o celular na pulseira',
-        iosMultipleTagMessage: 'Mais de uma tag perto. Deixe só uma.',
-      );
+      final NFCTag tag;
+      try {
+        tag = await FlutterNfcKit.poll(
+          timeout: _esperaDaTag,
+          // Som e vibração são do app, não do sistema: a tela de leitura
+          // dá o retorno junto com o resultado, e o bipe do Android
+          // chegava antes de se saber se a tag valia algo.
+          androidPlatformSound: false,
+          iosAlertMessage: 'Encoste o celular na pulseira',
+          iosMultipleTagMessage: 'Mais de uma tag perto. Deixe só uma.',
+        );
+      } on PlatformException catch (e) {
+        throw _traduzir(e);
+      }
 
       String? conteudo;
       if (tag.ndefAvailable ?? false) {
@@ -172,11 +203,16 @@ class NfcService {
     await _exigirLeitor();
 
     try {
-      final tag = await FlutterNfcKit.poll(
-        timeout: _esperaDaTag,
-        androidPlatformSound: false,
-        iosAlertMessage: 'Encoste o celular na pulseira para gravar',
-      );
+      final NFCTag tag;
+      try {
+        tag = await FlutterNfcKit.poll(
+          timeout: _esperaDaTag,
+          androidPlatformSound: false,
+          iosAlertMessage: 'Encoste o celular na pulseira para gravar',
+        );
+      } on PlatformException catch (e) {
+        throw _traduzir(e);
+      }
 
       if (!(tag.ndefAvailable ?? false)) {
         throw StateError(
@@ -188,12 +224,46 @@ class NfcService {
         throw StateError('Esta tag está protegida contra gravação.');
       }
 
-      await FlutterNfcKit.writeNDEFRecords([
-        ndef.TextRecord(text: text, language: 'pt'),
-      ]);
+      try {
+        await FlutterNfcKit.writeNDEFRecords([
+          ndef.TextRecord(text: text, language: 'pt'),
+        ]);
+      } on PlatformException catch (e) {
+        throw _traduzir(e);
+      }
     } finally {
       await _encerrar();
     }
+  }
+
+  /// Traduz o código do plugin para o que a pessoa precisa fazer.
+  ///
+  /// Os códigos vêm do canal nativo do `flutter_nfc_kit` (conferidos no
+  /// fonte do plugin, 3.6.2). O que não estiver mapeado volta com o texto
+  /// original anexado — melhor um código estranho na tela que uma
+  /// mensagem genérica esconder a causa de quem for investigar.
+  static ErroDeNfc _traduzir(PlatformException e) {
+    final mensagem = switch (e.code) {
+      '408' =>
+        'Nenhuma pulseira foi encostada. Toque em LER TAG e encoste o '
+            'celular na pulseira, nas costas do aparelho.',
+      '406' => 'A tag saiu de perto antes de responder. Encoste de novo.',
+      '503' => 'A tag saiu de perto no meio da leitura. Encoste de novo.',
+      '405' =>
+        'Esta tag não aceita o comando. Se é pulseira nova, emita por '
+            '"Emitir pulseiras" no menu do Top.',
+      '404' =>
+        'NFC está desligado ou indisponível. Ative em Configurações > '
+            'Conexões > NFC.',
+      '400' =>
+        'O conteúdo da tag está corrompido. Use o QR da pulseira, ou '
+            'busque pelo nome.',
+      '500' =>
+        'Falha de comunicação com a tag. Encoste de novo, mais firme e '
+            'por mais tempo.',
+      _ => 'Falha de NFC (${e.code}): ${e.message ?? "sem detalhe"}',
+    };
+    return ErroDeNfc(mensagem, codigo: e.code);
   }
 
   Future<void> _exigirLeitor() async {
