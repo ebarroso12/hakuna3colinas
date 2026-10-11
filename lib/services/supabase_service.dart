@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'dart:io';
 
+import '../models/anotacao.dart';
 import '../models/atendimento.dart';
 import '../models/chat_message.dart';
 import '../models/team.dart';
@@ -891,6 +892,55 @@ class SupabaseService {
         .eq('top_id', topId)
         .order('created_at', ascending: false)
         .map((rows) => rows.map((r) => TopAlert.fromMap(r)).toList());
+  }
+
+  /// Envio de anotação a partir da fila.
+  ///
+  /// `upsert(onConflict: 'client_id', ignoreDuplicates: true)`: anotação é
+  /// append-only, então a segunda chegada do mesmo `client_id` é o reenvio
+  /// de algo que já subiu — ignorar é o certo. Com `insert`, o reenvio
+  /// depois de uma resposta perdida criaria a mesma anotação duas vezes no
+  /// histórico da equipe.
+  Future<void> enviarAnotacao(Map<String, dynamic> payload) {
+    return _envioDaFila('anotação', () async {
+      await _client
+          .from('anotacoes')
+          .upsert(payload, onConflict: 'client_id', ignoreDuplicates: true);
+    });
+  }
+
+  /// Anotações de uma equipe num Top, da mais recente para a mais antiga.
+  ///
+  /// Traz o nome do autor e do participante por join: sem isso a lista
+  /// faria uma busca por linha para mostrar quem escreveu. A RLS de
+  /// `anotacoes` é que decide o que volta — membro de uma equipe não lê a
+  /// de outra.
+  Future<List<Anotacao>> buscarAnotacoes({
+    required String topId,
+    required String team,
+    String? participanteId,
+  }) async {
+    var consulta = _client
+        .from('anotacoes')
+        .select(
+          'id, top_id, team, autor_id, participante_id, texto, criada_em, '
+          'autor:profiles!anotacoes_autor_id_fkey(full_name), '
+          'participante:top_participants!anotacoes_participante_id_fkey'
+          '(full_name)',
+        )
+        .eq('top_id', topId)
+        .eq('team', team);
+
+    if (participanteId != null) {
+      consulta = consulta.eq('participante_id', participanteId);
+    }
+
+    final linhas = await consulta.order('criada_em', ascending: false).limit(
+      // Teto: o histórico de uma equipe num Top de 4 dias não precisa vir
+      // inteiro para a tela de uma vez.
+      300,
+    );
+    return linhas.map(Anotacao.fromMap).toList();
   }
 
   /// Envio de ficha de participante a partir da fila.

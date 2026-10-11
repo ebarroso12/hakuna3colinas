@@ -1,12 +1,52 @@
-# Hakuna Connect
+# Legendario Connect
 
-App de coordenação da equipe médica (Hakunas) dos eventos ("Tops") dos
-Legendários. Rastreamento de posição em tempo real, triagem por cor,
-sinais vitais, chat da equipe e NFC.
+App de coordenação dos eventos ("Tops") dos Legendários — **das 9 equipes,
+não só da médica.** Rastreamento de posição, chat por equipe, triagem por
+cor, sinais vitais, atendimento e NFC.
 
-**Isto é software de apoio a atendimento médico em campo.** Triagem,
-comorbidades e sinais vitais de pessoas reais passam por aqui. Erro de
-cálculo ou de permissão tem consequência clínica, não só bug.
+## As três dimensões de quem é quem — não confundir
+
+Este arquivo já descreveu o app como "da equipe médica (Hakunas)", e isso
+levou a uma leitura errada do produto inteiro. Corrigido em 11/10/2026.
+São **três** coisas separadas no banco:
+
+| Dimensão | Enum | Valores | O que é |
+|---|---|---|---|
+| Papel no sistema | `user_role` | `admin`, `hakuna`, `senderista` | O que a pessoa pode fazer no app |
+| Equipe no Top | `team_key` | 9 valores (abaixo) | Em qual equipe ela trabalha |
+| Posição na equipe | `team_role` | `coordenador`, `subcoordenador`, `membro` | A hierarquia dentro da equipe |
+
+**`hakuna` NÃO é uma equipe** — é um papel, de quem atende clinicamente.
+Uma pessoa pode ser `hakuna` e estar na equipe `logistica`.
+
+As 9 chaves de `team_key`: `adm`, `logistica`, `voz`, `intercessao`,
+`producao`, `midia`, `eventos`, `seguranca`, `geral`.
+
+`geral` não é equipe: é o canal que todo participante aprovado do Top
+enxerga. Daí `TeamKeyUi.equipes` devolver 8 — ver `lib/models/team.dart`,
+que já tem rótulo, ícone e cor de cada uma.
+
+## O módulo clínico é uma PARTE, e tem cerca própria
+
+**O que passa por aqui inclui triagem, comorbidade e sinais vitais de
+pessoas reais.** Erro de cálculo ou de permissão nessa parte tem
+consequência clínica, não só bug. Por isso atendimento, prontuário, foto
+de ferida e chat clínico (`top_hakuna_messages`) exigem estar em
+`top_hakunas` com `released = true` — e deve continuar assim. Membro de
+mídia não tem motivo para ler prontuário.
+
+**O que NÃO deveria ter essa cerca, e tem** (achado de 11/10/2026, ainda
+não decidido — ver Pendências):
+
+- `hakuna_positions` SELECT exige ser Hakuna liberado. Então **segurança e
+  logística não veem ninguém no mapa**, embora qualquer um possa publicar
+  a própria posição (o INSERT só exige `profile_id = auth.uid()`).
+- `top_alerts` exige Hakuna nas duas pontas. **Segurança não dispara nem
+  recebe alarme** — sendo que disparar alarme é literalmente a função
+  dela.
+
+O chat por equipe está correto: `team_messages` usa `is_team_member` /
+`is_team_admin`, não `top_hakunas`.
 
 ## Stack
 
@@ -418,6 +458,13 @@ validando uma configuração que não existe mais.
 - **APK com 76 MB.** O modelo do ML Kit vai embutido para o QR funcionar
   sem rede (ver `android/gradle.properties`). Se virar problema, o caminho
   é `--split-per-abi`, não desligar o bundling.
+- **GPS e ALARME estão restritos a Hakunas, num app de 9 equipes.**
+  Conferido em 11/10/2026 nas policies: `hakuna_positions` SELECT e
+  `top_alerts` (INSERT e SELECT) exigem `top_hakunas.released`. Membro de
+  segurança não vê o mapa nem recebe alarme. É decisão de produto e de
+  privacidade — abrir o GPS para as 9 equipes significa mais gente vendo a
+  localização de todos —, então **não foi alterado por conta própria**.
+  Precisa da decisão do dono do projeto.
 - **144 dos 216 senderistas do Top 1782 estão sem `participant_code`.**
   Conferido em 10/10/2026: 72 têm número do Legendários, 144 não. O
   autocadastro exige número **na lista do Top** (`participante_elegivel`,

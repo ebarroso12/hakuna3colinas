@@ -11,6 +11,157 @@ Android físico.
 
 ## 11/10/2026
 
+### v1.0.34 — o app e dos 9 TIMES: anotacoes das equipes, trava do autocadastro e marcacao de teste
+
+#### Correcao de premissa minha, e ela era de fundo
+
+Tratei o app como "da equipe medica (Hakunas)" a sessao inteira. Estava
+errado, e a origem era o proprio `CLAUDE.md`, que abria com isso. O app e
+dos **Legendarios** — das 9 equipes. Conferido no banco:
+
+```
+team_key  = adm, logistica, voz, intercessao, producao, midia,
+            eventos, seguranca, geral   (9)
+team_role = coordenador, subcoordenador, membro
+user_role = admin, hakuna, senderista
+```
+
+`hakuna` NAO e equipe, e papel. `geral` nao e equipe, e o canal que todo
+aprovado enxerga — dai `TeamKeyUi.equipes` devolver 8. O app ja tinha as 9
+com chat, cor e icone proprios; o erro era meu, de leitura e de
+documentacao. `CLAUDE.md` reescrito com as tres dimensoes numa tabela.
+
+#### Bloco de anotacoes das equipes (novo)
+
+A diferenca entre Hakuna e as outras equipes e que o Hakuna tem
+PRONTUARIO. As outras 8 precisavam do equivalente nao-medico, e agora tem:
+um bloco de texto que salva, aberto do lado do chat de cada equipe.
+
+Dois usos no mesmo modelo: **sobre uma pessoa** (abrindo da ficha) ou
+**sobre o turno** (abrindo da equipe).
+
+APPEND-ONLY, e isso e decisao, nao limitacao. Um bloco unico editavel
+offline PERDE TEXTO: duas pessoas da mesma equipe editam sem sinal e a
+ultima a sincronizar sobrescreve a outra, sem aviso. Com registros
+separados nada se perde, e fica rastreavel quem anotou o que e quando —
+numa ocorrencia de seguranca isso e metade do valor. Para corrigir,
+escreve-se outra. Se preferir o bloco unico, e trocavel, mas o risco de
+perda passa a existir.
+
+Funciona sem rede, como tudo que se escreve em campo. O que esta esperando
+sinal aparece na lista, marcado.
+
+**A tela avisa, FIXO em cima do campo, que ali nao se escreve sintoma,
+pressao nem conduta** — isso vai no atendimento. Sintoma escrito na
+anotacao fica fora da triagem e invisivel para quem vai atender. E o erro
+mais provavel desta tela e o mais caro, entao o aviso nao e um dialogo que
+se dispensa.
+
+Provado com sessao simulada (dois usuarios, um em `seguranca` e um em
+`midia`, ambos liberados):
+
+```
+seguranca liberada anotou     -> OK
+reenviado 2x gravou N linhas  -> 1
+anotar no NOME de outro       -> bloqueado pela RLS
+anotar em EQUIPE alheia       -> bloqueado pela RLS
+seguranca LE a propria        -> 1
+midia LE a da seguranca       -> 0
+```
+
+A primeira tentativa desse teste FALHOU, e o motivo vale saber:
+`is_team_member` exige `released = true AND blocked = false`. **Estar na
+equipe nao basta — o admin tem de LIBERAR cada membro**, igual aos
+Hakunas. Sem isso nem chat nem anotacao funcionam para a pessoa.
+
+#### Trava do autocadastro por Top
+
+CORRECAO DE PREMISSA: "a senha teste e somente teste" nao era verdade.
+`Top000000` e a senha de PRODUCAO do Top 1782 — o `access_code_hash` do
+Top real — e vale para os 72 senderistas que tem numero. Nao existia senha
+de teste separada.
+
+A senha do Top e COMPARTILHADA e anunciada ao grupo: circula em WhatsApp,
+cartaz e voz. Depois que a equipe se cadastrou ela continua valendo, e nao
+deveria. A unica forma de fechar era gerar outra senha — invalidando a que
+todos anotaram, por efeito colateral.
+
+Agora ha um interruptor na tela do Top. Fechar nao apaga a senha: ela
+volta a valer ao reabrir. `gerar_senha_top` abre a trava junto (gerar
+senha e querer que gente se cadastre).
+
+Validado contra a funcao em producao, nos DOIS passos — travar so o passo 1
+nao bastaria, porque `cadastrar` revalida por conta propria e alguem
+poderia pular direto para ele:
+
+```
+trava fechada + senha CERTA, validar_convite -> recusado
+trava fechada + senha CERTA, cadastrar       -> recusado
+reaberto -> volta a liberar; contas criadas na tentativa: 0
+```
+
+#### Marcacao de cadastro de teste
+
+Antes o unico sinal era o nome em caixa alta ("TESTE AUTOCADASTRO (apagar
+depois)") — e nome nao e dado, nao serve de critorio de exclusao. Agora
+`is_teste` em `top_participants` e em `profiles`, com:
+
+- interruptor no TOPO do formulario, antes de qualquer campo. No fim
+  ninguem veria, e errar e assimetrico nas duas direcoes.
+- selo TESTE na lista, no subtitulo e nao no nome (o nome e o que se busca).
+- botao "apagar cadastros de teste", so para o admin master, listando nome
+  por nome antes de confirmar.
+- a marca PROPAGA para a conta criada no autocadastro: quem se cadastra
+  com numero de teste cria uma conta, e ela tambem precisa sair depois.
+
+Teste que RECEBEU atendimento nao e apagado: `participant_id` e SET NULL e
+o prontuario ficaria orfao.
+
+#### Falha ESTRUTURAL corrigida no AndroidManifest
+
+Faltava `<queries>` com intent de VIEW para http/https. A partir do Android
+11 (API 30) um app nao resolve intents de outros apps sem declarar o que
+consulta, e este tem `targetSdk 36`. **O botao ATUALIZAR que eu entreguei
+na v1.0.30 como funcionando nao abriria nada no aparelho.** Nenhum teste de
+unidade pega isso: nao existe Android num teste de unidade.
+
+#### Teste que prova que o app ABRE
+
+Os testes anteriores provavam logica isolada e nenhum montava o widget
+raiz — um erro na montagem do `MaterialApp` passaria por todos e so
+apareceria no celular, como tela branca. `test/o_app_abre_test.dart` monta
+`HakunaConnectApp` de verdade e verifica que a arvore sobe, que o
+`navigatorKey` esta instalado e que a tela de login aparece.
+
+Nao prova que o APK instala, que o NFC le, que o GPS funciona com a tela
+bloqueada nem que o som toca. Nada disso se verifica sem aparelho.
+
+#### ACHADO ESTRUTURAL NAO CORRIGIDO — precisa da sua decisao
+
+Num app de 9 equipes, GPS e ALARME estao restritos a Hakunas. Conferido
+nas policies:
+
+| Funcao | Quem pode hoje |
+|---|---|
+| chat das equipes | membro liberado da equipe — **correto** |
+| atendimento, prontuario, chat clinico | Hakuna liberado — **correto** |
+| `hakuna_positions` SELECT | **so Hakuna** — seguranca nao ve o mapa |
+| `hakuna_positions` INSERT | qualquer um publica a propria posicao |
+| `top_alerts` INSERT e SELECT | **so Hakuna** — seguranca nao dispara nem recebe alarme |
+
+Disparar alarme e literalmente a funcao da seguranca, e ver o mapa e a da
+logistica. Mas abrir o GPS para as 9 equipes significa mais gente vendo a
+localizacao de todos — e isso e decisao de privacidade do movimento, nao
+minha. **Nao alterei por conta propria.**
+
+#### Verificado
+
+`analyze` limpo em modo estrito, **366 testes** (15 novos das anotacoes),
+trava provada contra a funcao em producao, RLS das anotacoes provada com
+sessao simulada e revertida.
+
+**Nao verificado em aparelho**: nada. Zero minutos de uso real.
+
 ### v1.0.33 — apagar com selecao nome a nome, botao voltar em toda tela, e ficha offline
 
 Tres pedidos nesta versao, e um deles destravou um defeito grave.

@@ -6,6 +6,7 @@ import 'screens/auth_gate.dart';
 import 'offline/chat_repositorio.dart';
 import 'offline/sync_service.dart';
 import 'services/alarme_service.dart';
+import 'services/anotacao_service.dart';
 import 'services/atendimento_service.dart';
 import 'services/auditoria_service.dart';
 import 'services/location_service.dart';
@@ -35,6 +36,7 @@ Future<void> main() async {
   AlarmeService.instance.registrarUploader();
   SinaisVitaisService.instance.registrarUploader();
   ParticipanteService.instance.registrarUploader();
+  AnotacaoService.instance.registrarUploader();
   ChatRepositorio.instance.registrarUploaders();
   unawaited(SyncService.instance.start());
 

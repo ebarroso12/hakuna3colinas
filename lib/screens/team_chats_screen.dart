@@ -6,6 +6,7 @@ import '../models/top.dart';
 import '../services/supabase_service.dart';
 import 'team_chat_screen.dart';
 import '../widgets/botao_inicio.dart';
+import 'anotacoes_screen.dart';
 
 /// Lista os chats disponíveis no Top: o geral, aberto a todo participante
 /// aprovado, mais um por equipe em que o usuário esteja liberado.
@@ -25,6 +26,19 @@ class _TeamChatsScreenState extends State<TeamChatsScreen> {
   void initState() {
     super.initState();
     _minhasEquipes = SupabaseService.instance.fetchMyTeams(widget.top.id);
+  }
+
+  /// Abre o bloco de anotações da equipe.
+  ///
+  /// Fica ao lado do chat porque são coisas vizinhas e diferentes: o chat
+  /// é conversa, a anotação é registro. Quem precisa saber o que ficou
+  /// pendente no turno anterior não vai rolar 200 mensagens.
+  void _abrirAnotacoes(TeamKey team) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => AnotacoesScreen(top: widget.top, team: team),
+      ),
+    );
   }
 
   void _abrir(TeamKey team, {bool isTeamAdmin = false}) {
@@ -48,7 +62,7 @@ class _TeamChatsScreenState extends State<TeamChatsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Chats'),
+            const Text('Chats e anotações'),
             Text(
               widget.top.name,
               style: Theme.of(context).textTheme.labelSmall,
@@ -67,7 +81,17 @@ class _TeamChatsScreenState extends State<TeamChatsScreen> {
               leading: Icon(TeamKey.geral.icon),
               title: const Text('Chat geral'),
               subtitle: const Text('Todos os participantes deste Top'),
-              trailing: const Icon(Icons.chevron_right),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.edit_note),
+                    tooltip: 'Anotações',
+                    onPressed: () => _abrirAnotacoes(TeamKey.geral),
+                  ),
+                  const Icon(Icons.chevron_right),
+                ],
+              ),
               onTap: () => _abrir(TeamKey.geral),
             ),
           );
@@ -142,7 +166,17 @@ class _TeamChatsScreenState extends State<TeamChatsScreen> {
                             ? 'Você é admin desta equipe'
                             : 'Membro da equipe',
                       ),
-                      trailing: const Icon(Icons.chevron_right),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.edit_note),
+                            tooltip: 'Anotações da equipe',
+                            onPressed: () => _abrirAnotacoes(m.team),
+                          ),
+                          const Icon(Icons.chevron_right),
+                        ],
+                      ),
                       onTap: () => _abrir(m.team, isTeamAdmin: m.isTeamAdmin),
                     ),
                   ),
