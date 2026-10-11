@@ -35,12 +35,29 @@ class _LoginScreenState extends State<LoginScreen> {
       // Um campo so: numero vira `numero@legendarios.app`, e-mail passa
       // direto. O Legendario entra pelo numero dele; admin e equipe, pelo
       // e-mail que o admin liberou.
-      await SupabaseService.instance.signIn(
-        email: AcessoService.identificadorParaEmail(_identificador.text),
-        password: _passwordController.text,
+      // Pela Edge Function, nao direto no GoTrue: so o servidor consegue
+      // descobrir o e-mail real de uma conta a partir do NUMERO do
+      // Legendarios (`auth.users` so e legivel pelo service_role).
+      //
+      // O caminho antigo era `signIn(email: identificadorParaEmail(...))`,
+      // que converte numero em `<numero>@legendarios.app`. Isso so acerta
+      // quem se cadastrou pelo "Primeiro acesso" — quem tem e-mail proprio
+      // ou entrou pelo Google tem outro e-mail, e o numero dele nao abria
+      // porta nenhuma. Foi o que aconteceu com o admin master em
+      // 11/10/2026, com a senha certa na mao.
+      await AcessoService.instance.entrarPorNumeroOuEmail(
+        identificador: _identificador.text,
+        senha: _passwordController.text,
       );
     } catch (e) {
-      setState(() => _error = friendlyAuthError(e));
+      setState(
+        () => _error = friendlyAuthError(
+          e,
+          // Sem arroba, o que a pessoa digitou foi numero. A mensagem
+          // muda por causa disso: ver o comentario em `friendlyAuthError`.
+          usouNumero: !_identificador.text.contains('@'),
+        ),
+      );
     } finally {
       if (mounted) setState(() => _loading = false);
     }

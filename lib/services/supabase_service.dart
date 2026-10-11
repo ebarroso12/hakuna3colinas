@@ -24,7 +24,7 @@ import 'atendimento_service.dart';
 /// Traduz os erros mais comuns de autenticação do Supabase pra mensagens
 /// que fazem sentido pro usuário — sem isso ele via a exceção crua (em
 /// inglês, com jargão técnico) toda vez que algo dava errado no login.
-String friendlyAuthError(Object error) {
+String friendlyAuthError(Object error, {bool usouNumero = false}) {
   final message = error is AuthException ? error.message : error.toString();
   final lower = message.toLowerCase();
   if (lower.contains('email rate limit') ||
@@ -37,6 +37,23 @@ String friendlyAuthError(Object error) {
     return 'Código inválido ou expirado. Confira o número ou peça um código novo.';
   }
   if (lower.contains('invalid login credentials')) {
+    // Quem digitou NUMERO nao digitou e-mail nenhum, e dizer "e-mail ou
+    // senha incorretos" manda a pessoa conferir uma coisa que ela nem
+    // escreveu.
+    //
+    // A causa real, quase sempre, e a armadilha documentada em
+    // `AcessoService.identificadorParaEmail`: numero vira
+    // `<numero>@legendarios.app`, e quem criou a conta com e-mail proprio
+    // ou pelo Google nao tem essa conta interna. Aconteceu com o proprio
+    // admin master em 11/10/2026 — numero 203460, conta no Gmail.
+    //
+    // O texto enuncia a REGRA, nao o caso: nao revela se aquele numero
+    // existe ou nao, entao nao serve para enumerar cadastro.
+    if (usouNumero) {
+      return 'Número ou senha incorretos.\n\n'
+          'Se o número não entrar de jeito nenhum, tente o e-mail da '
+          'conta — e avise o admin, porque número tem de funcionar.';
+    }
     return 'E-mail ou senha incorretos.';
   }
   if (lower.contains('email not confirmed')) {

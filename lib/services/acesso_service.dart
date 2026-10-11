@@ -256,6 +256,43 @@ class AcessoService {
     );
   }
 
+  /// Entra com NUMERO do Legendarios, seja qual for o e-mail da conta.
+  ///
+  /// `signInWithPassword(email: emailPara(numero))` so funciona para quem
+  /// se cadastrou pelo "Primeiro acesso", porque so esse caminho cria a
+  /// conta como `<numero>@legendarios.app`. Quem criou a conta com e-mail
+  /// proprio ou pelo Google tem OUTRO e-mail no `auth.users`, e o numero
+  /// dele nao abria porta nenhuma: a tela dizia "numero ou senha
+  /// incorretos" com a senha certa.
+  ///
+  /// Aconteceu com o admin master em 11/10/2026 — numero 203460, conta no
+  /// Gmail. E ia acontecer com todo mundo que entrasse pelo Google.
+  ///
+  /// Descobrir o e-mail real exige ler `auth.users`, que so o service_role
+  /// le — por isso a resolucao fica na Edge Function e nao aqui. O app
+  /// recebe de volta apenas os tokens e monta a sessao com eles; o e-mail
+  /// da outra pessoa nunca passa pelo aparelho.
+  Future<void> entrarPorNumeroOuEmail({
+    required String identificador,
+    required String senha,
+  }) async {
+    final dados = await _invocar({
+      'acao': 'login',
+      'identificador': identificador.trim(),
+      'senha': senha,
+    });
+
+    final refresh = dados['refresh_token'] as String?;
+    if (refresh == null) {
+      throw const AcessoRecusado('Nao foi possivel entrar.');
+    }
+
+    // `setSession` com o refresh token, e nao `recoverSession`: e o caminho
+    // que o `supabase_flutter` usa para assumir uma sessao vinda de fora e
+    // passar a renova-la sozinho dali em diante.
+    await _client.auth.setSession(refresh);
+  }
+
   // --- daqui pra baixo, só admin ---
 
   Future<List<PedidoAcesso>> pedidos({bool apenasPendentes = true}) async {
