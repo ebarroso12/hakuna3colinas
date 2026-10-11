@@ -33,6 +33,18 @@ class Top {
   final DateTime? startsAt;
   final DateTime? endsAt;
 
+  /// Interruptor do autocadastro por número + senha do Top.
+  ///
+  /// A senha do Top é COMPARTILHADA e anunciada ao grupo: circula em
+  /// WhatsApp, cartaz e voz. Depois que a equipe se cadastrou, ela
+  /// continua valendo — e não deveria. Este campo fecha a porta sem
+  /// precisar gerar senha nova (o que invalidaria a que todos anotaram).
+  ///
+  /// `true` por padrão, para não travar Top que já está rodando. A
+  /// proteção de Top novo é outra: ele nasce em `draft`, e o autocadastro
+  /// recusa draft.
+  final bool autocadastroLiberado;
+
   Top({
     required this.id,
     required this.name,
@@ -45,6 +57,7 @@ class Top {
     required this.status,
     this.startsAt,
     this.endsAt,
+    this.autocadastroLiberado = true,
   });
 
   factory Top.fromMap(Map<String, dynamic> map) {
@@ -64,6 +77,9 @@ class Top {
       endsAt: map['ends_at'] != null
           ? DateTime.parse(map['ends_at'] as String)
           : null,
+      // `?? true` e nao `?? false`: consulta antiga que nao traga a coluna
+      // nao deve FECHAR o cadastro de um Top que esta aberto.
+      autocadastroLiberado: map['autocadastro_liberado'] as bool? ?? true,
     );
   }
 }

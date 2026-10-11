@@ -39,6 +39,24 @@ class AdminService {
   Future<void> approveProfile(String profileId) => setApproved(profileId, true);
 
   /// Libera ou revoga o acesso de um usuário.
+  /// Abre ou fecha o autocadastro de um Top.
+  ///
+  /// A senha do Top e COMPARTILHADA e anunciada ao grupo: circula em
+  /// WhatsApp, cartaz e voz. Depois que a equipe se cadastrou ela continua
+  /// valendo, e nao deveria. Antes a unica forma de fechar era gerar outra
+  /// senha — o que invalida a que todos anotaram, por efeito colateral, e
+  /// nao por escolha.
+  ///
+  /// A validacao de verdade esta na Edge Function `acesso`: ela consulta
+  /// esta coluna e recusa numero + senha quando esta fechado. Aqui e so o
+  /// interruptor.
+  Future<void> definirAutocadastro(String topId, bool liberado) {
+    return _client
+        .from('tops')
+        .update({'autocadastro_liberado': liberado})
+        .eq('id', topId);
+  }
+
   Future<void> setApproved(String profileId, bool approved) {
     return _client
         .from('profiles')

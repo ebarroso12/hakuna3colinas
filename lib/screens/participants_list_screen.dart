@@ -8,6 +8,7 @@ import '../models/triage_rule.dart';
 import '../offline/dados_do_top.dart';
 import '../offline/texto_busca.dart';
 import '../services/exclusao_service.dart';
+import '../services/participante_service.dart';
 import '../services/supabase_service.dart';
 import '../services/triage_dinamica.dart';
 import '../services/triage_service.dart';
@@ -95,6 +96,89 @@ class _ParticipantsListScreenState extends State<ParticipantsListScreen> {
         _nomesMarcados[p.id] = p.fullName;
       }
     });
+  }
+
+  /// Apaga TODOS os cadastros de teste deste Top, de uma vez.
+  ///
+  /// Existe porque a alternativa é marcar nome por nome entre 216 — e aí
+  /// se marca errado. `is_teste` é dado, não convenção de nome.
+  Future<void> _apagarTestes() async {
+    final testes = _todos.where((p) => p.isTeste).toList();
+    if (testes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Não há cadastro de teste neste Top.')),
+      );
+      return;
+    }
+
+    final confirmou = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Apagar ${testes.length} cadastro(s) de teste?'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              const Text(
+                'Sai de vez. Cadastro de teste que RECEBEU atendimento é '
+                'mantido — o atendimento existe e ficaria sem paciente.',
+              ),
+              const SizedBox(height: 12),
+              for (final p in testes)
+                Padding(
+                  padding: const EdgeInsets.only(left: 8, bottom: 2),
+                  child: Text('• ${p.fullName}'),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('APAGAR TESTES'),
+          ),
+        ],
+      ),
+    );
+    if (confirmou != true) return;
+
+    setState(() => _excluindo = true);
+    try {
+      final r = await ParticipanteService.instance.apagarTestesDoTop(
+        widget.top.id,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            r.bloqueados == 0
+                ? '${r.apagados} cadastro(s) de teste apagado(s).'
+                : '${r.apagados} apagado(s). ${r.bloqueados} '
+                      'mantido(s) por ter atendimento registrado.',
+          ),
+          duration: const Duration(seconds: 6),
+        ),
+      );
+      await _carregar();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(ExclusaoService.mensagemDeErro(e)),
+          duration: const Duration(seconds: 8),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _excluindo = false);
+    }
   }
 
   Future<void> _apagarMarcados() async {
@@ -284,6 +368,12 @@ class _ParticipantsListScreenState extends State<ParticipantsListScreen> {
             tooltip: 'Recarregar',
             onPressed: _carregando ? null : _carregar,
           ),
+          if (_souMaster)
+            IconButton(
+              icon: const Icon(Icons.science_outlined),
+              tooltip: 'Apagar cadastros de teste',
+              onPressed: _excluindo ? null : _apagarTestes,
+            ),
           const AppLogoTrailing(),
         ],
         // A barra de seleção entra como `bottom`, não no lugar do título:
@@ -641,11 +731,40 @@ class _LinhaParticipante extends StatelessWidget {
       if (ehLegendario) '#${participante.participantCode}',
       if (participante.idade != null) '${participante.idade} anos',
     ];
-    if (partes.isEmpty) return null;
-    return Text(
-      partes.join(' · '),
-      style: Theme.of(context).textTheme.labelSmall,
-      overflow: TextOverflow.ellipsis,
+
+    // O selo TESTE vai no subtítulo e não no nome: o nome é o que o Hakuna
+    // procura na busca, e prefixá-lo quebraria a ordem alfabética e a
+    // leitura rápida da lista.
+    if (!participante.isTeste && partes.isEmpty) return null;
+
+    return Row(
+      children: [
+        if (participante.isTeste) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.tertiary,
+              borderRadius: BorderRadius.circular(3),
+            ),
+            child: Text(
+              'TESTE',
+              style: TextStyle(
+                fontSize: 9,
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).colorScheme.onTertiary,
+              ),
+            ),
+          ),
+          const SizedBox(width: 5),
+        ],
+        Expanded(
+          child: Text(
+            partes.join(' · '),
+            style: Theme.of(context).textTheme.labelSmall,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
     );
   }
 }

@@ -98,5 +98,28 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+
+        <!-- ABRIR LINK NO NAVEGADOR. Sem isto o botao ATUALIZAR nao faz
+             nada.
+
+             A partir do Android 11 (API 30) um app nao ve os outros apps
+             instalados a menos que declare o que precisa consultar. O
+             `url_launcher` resolve o intent de VIEW para decidir quem
+             abre o link; sem a declaracao, `canLaunchUrl` devolve false e
+             `launchUrl` estoura com "No Activity found to handle Intent".
+
+             Este app tem `targetSdk 36` (Android 16), entao a restricao
+             esta ativa. O botao ATUALIZAR da gaveta, que abre o APK no
+             Drive, dependia disso e teria falhado em silencio no
+             aparelho. Nenhum teste de unidade pega isso: nao ha Android
+             num teste de unidade. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="http"/>
+        </intent>
     </queries>
 </manifest>

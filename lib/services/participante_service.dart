@@ -4,6 +4,7 @@ import '../models/participant.dart';
 import '../offline/dados_do_top.dart';
 import '../offline/outbox.dart';
 import '../offline/sync_service.dart';
+import 'exclusao_service.dart';
 import 'supabase_service.dart';
 
 /// Cadastro e edição de ficha de participante, **funcionando sem rede**.
@@ -56,6 +57,30 @@ class ParticipanteService {
       id: Outbox.novoClientId(),
       dados: dados,
     );
+  }
+
+  /// Apaga todos os cadastros de teste de um Top.
+  ///
+  /// Existe porque a alternativa é o admin marcar nome por nome entre 216
+  /// — e aí ele marca errado. `is_teste` é dado, não convenção de nome:
+  /// antes o único sinal era o texto "TESTE" em caixa alta, que ninguém
+  /// pode usar como critério de exclusão.
+  ///
+  /// Devolve (apagados, bloqueados). Bloqueado é cadastro de teste que
+  /// RECEBEU atendimento: `atendimentos.participant_id` é SET NULL, então
+  /// apagá-lo deixaria um prontuário órfão. Mesmo sendo teste, o
+  /// atendimento existe e tem de ser tratado, não sumir.
+  Future<({int apagados, int bloqueados})> apagarTestesDoTop(
+    String topId,
+  ) async {
+    final testes = await DadosDoTop.instance.participantes(topId);
+    final ids = testes.where((p) => p.isTeste).map((p) => p.id).toList();
+    if (ids.isEmpty) return (apagados: 0, bloqueados: 0);
+
+    final deps = await ExclusaoService.instance.dependenciasDeSenderistas(ids);
+    final liberados = ids.where((id) => deps[id]?.podeApagar ?? false).toList();
+    final n = await ExclusaoService.instance.apagarSenderistas(liberados);
+    return (apagados: n, bloqueados: ids.length - liberados.length);
   }
 
   /// Grava uma edição. O id é o que já existe.

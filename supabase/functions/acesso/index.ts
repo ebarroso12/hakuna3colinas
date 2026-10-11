@@ -90,6 +90,8 @@ interface ConviteOk {
   participanteId: string
   nome: string
   familia: string | null
+  /** Cadastro marcado como teste: a conta criada tambem sai marcada. */
+  isTeste: boolean
 }
 
 /**
@@ -117,7 +119,7 @@ async function validarConvite(
 
   const { data: top, error: erroTop } = await admin
     .from('tops')
-    .select('id, name, status')
+    .select('id, name, status, autocadastro_liberado')
     .eq('access_code_hash', hashDaSenha)
     .maybeSingle()
 
@@ -136,6 +138,21 @@ async function validarConvite(
     return { erro: 'este Top ainda nao foi aberto pelo administrador' }
   }
 
+  // TRAVA DO AUTOCADASTRO. A senha do Top e COMPARTILHADA e anunciada ao
+  // grupo: circula em WhatsApp, cartaz e voz. Depois que a equipe se
+  // cadastrou ela continua valendo, e nao deveria. Este interruptor fecha
+  // a porta sem precisar gerar senha nova.
+  //
+  // Mensagem especifica, nao a generica: quem chegou aqui ja provou ter a
+  // senha, entao nao ha oraculo a proteger — e "senha incorreta" faria a
+  // pessoa tentar dez vezes e ligar para o admin.
+  if (top.autocadastro_liberado !== true) {
+    return {
+      erro: 'o cadastro deste Top esta FECHADO pelo administrador. '
+        + 'Fale com ele para liberar.',
+    }
+  }
+
   const { data: elegiveis, error: erroEleg } = await admin.rpc(
     'participante_elegivel',
     { p_top_id: top.id, p_numero: numero },
@@ -152,12 +169,22 @@ async function validarConvite(
     }
   }
 
+  // `is_teste` nao vem de `participante_elegivel` (ela e usada pelo
+  // caminho publico e devolve o minimo). Uma consulta a mais, com
+  // service_role, para a conta criada sair marcada como teste tambem.
+  const { data: marca } = await admin
+    .from('top_participants')
+    .select('is_teste')
+    .eq('id', p.participante_id)
+    .maybeSingle()
+
   return {
     topId: top.id,
     topNome: top.name,
     participanteId: p.participante_id,
     nome: p.nome,
     familia: p.familia ?? null,
+    isTeste: marca?.is_teste === true,
   }
 }
 
@@ -333,6 +360,9 @@ Deno.serve(async (req) => {
       top_nome: r.topNome,
       nome: r.nome,
       familia: r.familia,
+      // A tela avisa em cima que e cadastro de teste, para ninguem
+      // confundir com o cadastro real da equipe.
+      is_teste: r.isTeste,
     })
   }
 
@@ -404,6 +434,9 @@ Deno.serve(async (req) => {
         weight_kg: ficha.weight_kg ?? null,
         comorbidities: ficha.comorbidades ?? [],
         approved: true,
+        // Conta nascida de cadastro de teste sai marcada: e o que permite
+        // apagar o teste em bloco depois, sem olhar nome por nome.
+        is_teste: r.isTeste,
       })
       .eq('id', perfilId)
 

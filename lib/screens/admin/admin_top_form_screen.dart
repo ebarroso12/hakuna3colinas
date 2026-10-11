@@ -448,6 +448,42 @@ class _BlocoSenhaDoTop extends StatefulWidget {
 class _BlocoSenhaDoTopState extends State<_BlocoSenhaDoTop> {
   bool _gerando = false;
 
+  late bool _liberado = widget.top.autocadastroLiberado;
+  bool _mudandoTrava = false;
+
+  /// Abre ou fecha o autocadastro deste Top.
+  ///
+  /// Fechar não apaga a senha: ela continua valendo quando o admin
+  /// reabrir. É a diferença entre "fechei a porta" e "troquei a
+  /// fechadura" — gerar senha nova invalida a que todo mundo anotou.
+  Future<void> _alternarTrava(bool valor) async {
+    setState(() => _mudandoTrava = true);
+    try {
+      await AdminService.instance.definirAutocadastro(widget.top.id, valor);
+      if (!mounted) return;
+      setState(() => _liberado = valor);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            valor
+                ? 'Cadastro ABERTO. Quem tem a senha e está na lista pode '
+                      'se cadastrar.'
+                : 'Cadastro FECHADO. A senha continua guardada e volta a '
+                      'valer quando você reabrir.',
+          ),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível mudar: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _mudandoTrava = false);
+    }
+  }
+
   Future<void> _gerar() async {
     // Gerar de novo INVALIDA a anterior na hora. Quem ja se cadastrou nao
     // e afetado (tem senha propria), mas quem ainda nao, perde o convite
@@ -578,6 +614,34 @@ class _BlocoSenhaDoTopState extends State<_BlocoSenhaDoTop> {
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 12),
+
+        // A TRAVA vem ANTES do botão de gerar, de propósito: a primeira
+        // decisão é se o cadastro está aberto, não qual é a senha.
+        Card(
+          margin: EdgeInsets.zero,
+          color: _liberado
+              ? Theme.of(context).colorScheme.surfaceContainerHighest
+              : Theme.of(context).colorScheme.errorContainer,
+          child: SwitchListTile(
+            value: _liberado,
+            onChanged: _mudandoTrava ? null : _alternarTrava,
+            title: Text(
+              _liberado ? 'Cadastro ABERTO' : 'Cadastro FECHADO',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            subtitle: Text(
+              _liberado
+                  ? 'Quem tem a senha e está na lista do Top consegue se '
+                        'cadastrar agora. Feche depois que a equipe entrar.'
+                  : 'Ninguém se cadastra, mesmo com a senha certa. A senha '
+                        'fica guardada e volta a valer ao reabrir.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            secondary: Icon(_liberado ? Icons.lock_open : Icons.lock),
+          ),
+        ),
+        const SizedBox(height: 12),
+
         OutlinedButton.icon(
           onPressed: _gerando ? null : _gerar,
           icon: _gerando

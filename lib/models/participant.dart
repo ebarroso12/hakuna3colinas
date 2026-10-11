@@ -77,6 +77,14 @@ class Participant {
   final String? notes;
   final bool active;
 
+  /// Cadastro feito para TESTAR o app, não pessoa real do evento.
+  ///
+  /// Existe para separar teste de real sem depender de convenção de nome
+  /// ("TESTE AUTOCADASTRO (apagar depois)" era o que havia, e nome não é
+  /// dado). A lista mostra selo, e é por este campo que a ação "apagar
+  /// todos os testes" encontra o que apagar.
+  final bool isTeste;
+
   Participant({
     required this.id,
     required this.topId,
@@ -105,6 +113,7 @@ class Participant {
     this.tagUid,
     this.notes,
     this.active = true,
+    this.isTeste = false,
   });
 
   factory Participant.fromMap(Map<String, dynamic> map) {
@@ -139,12 +148,14 @@ class Participant {
       tagUid: map['tag_uid'] as String?,
       notes: map['notes'] as String?,
       active: map['active'] as bool? ?? true,
+      isTeste: map['is_teste'] as bool? ?? false,
     );
   }
 
   Map<String, dynamic> toMap() => {
     'id': id,
     'top_id': topId,
+    'is_teste': isTeste,
     'full_name': fullName,
     'linked_profile_id': linkedProfileId,
     'participant_code': participantCode,

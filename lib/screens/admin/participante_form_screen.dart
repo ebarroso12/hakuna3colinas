@@ -138,6 +138,12 @@ class _ParticipanteFormScreenState extends State<ParticipanteFormScreen> {
     return t.isEmpty ? null : double.tryParse(t);
   }
 
+  /// Marca este cadastro como TESTE.
+  ///
+  /// Começa com o valor que a ficha já tem (editar um teste não o
+  /// transforma em real sem querer).
+  late bool _isTeste = widget.participante?.isTeste ?? false;
+
   Future<void> _escolherNascimento() async {
     final agora = DateTime.now();
     final escolhida = await showDatePicker(
@@ -214,6 +220,7 @@ class _ParticipanteFormScreenState extends State<ParticipanteFormScreen> {
         'medicamentos_continuos': _texto(_medicacao),
         'restricoes_fisicas': _texto(_restricoes),
         'active': true,
+        'is_teste': _isTeste,
       };
 
       // Pela FILA, não direto no Supabase.
@@ -302,6 +309,42 @@ class _ParticipanteFormScreenState extends State<ParticipanteFormScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            // O marcador de TESTE vem PRIMEIRO, antes de qualquer campo.
+            //
+            // No fim da ficha ninguém veria — e a consequência de errar é
+            // assimétrica: cadastro de teste que passa por real polui a
+            // lista do evento, e cadastro real marcado como teste entra na
+            // conta do "apagar todos os testes". A posição é a proteção.
+            Card(
+              margin: const EdgeInsets.only(bottom: 16),
+              color: _isTeste
+                  ? Theme.of(context).colorScheme.tertiaryContainer
+                  : null,
+              child: SwitchListTile(
+                value: _isTeste,
+                onChanged: (v) => setState(() => _isTeste = v),
+                title: Text(
+                  _isTeste ? 'CADASTRO DE TESTE' : 'Cadastro real',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                subtitle: Text(
+                  _isTeste
+                      ? 'Aparece com selo TESTE na lista e é apagado em '
+                            'bloco pela ação "apagar testes". Não é pessoa '
+                            'do evento.'
+                      : 'Pessoa real do Top. Ligue o marcador se este '
+                            'cadastro existe só para experimentar o app.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                secondary: Icon(
+                  _isTeste ? Icons.science : Icons.person,
+                  color: _isTeste
+                      ? Theme.of(context).colorScheme.onTertiaryContainer
+                      : null,
+                ),
+              ),
+            ),
+
             SecaoFicha('Identificação'),
             TextFormField(
               controller: _nome,
