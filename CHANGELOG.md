@@ -11,6 +11,28 @@ Android físico.
 
 ## 10/10/2026
 
+### v1.0.32 — a mesma revisao, com um defeito que o CI pegou
+
+A v1.0.31 **nao gerou APK**: o CI falhou nos testes e a esteira para antes
+de buildar, de proposito. Esta versao e a v1.0.31 com essa correcao.
+
+O defeito valia o atraso. `clientIdDaFoto` usava
+`p.basenameWithoutExtension`, e o `package:path` escolhe o estilo de
+caminho pelo sistema onde o Dart esta rodando. No Windows desta maquina o
+teste passava; no Linux do runner, `\` nao e separador e a funcao
+devolvia o caminho do Windows INTEIRO como se fosse o nome do arquivo.
+Isso viraria um `client_id` invalido, recusado por tipo no Postgres,
+classificado como PERMANENTE e mandado para quarentena — a foto clinica
+nao subiria.
+
+Na pratica o app roda em Android (POSIX) e funcionaria. Mas a correcao de
+um `client_id` nao deve depender de em qual sistema o codigo executa:
+agora corta nos dois separadores a mao, e o teste verifica os dois.
+
+E o registro honesto: foi o CI que achou, nao eu. Rodar `flutter test`
+local nao bastava, porque o ambiente local era justamente o que escondia o
+problema.
+
 ### v1.0.31 — revisao completa: 8 defeitos corrigidos e 4 faltas preenchidas
 
 Varredura das 35 telas, 25 servicos e 22 models, cruzada com o banco.

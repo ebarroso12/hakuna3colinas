@@ -39,6 +39,9 @@ class _ProntuarioScreenState extends State<ProntuarioScreen> {
   /// servidor para o Hakuna saber o que já está registrado lá e o que
   /// depende de sinal — não para esconder nada.
   List<Atendimento> _naFila = [];
+
+  /// Caminhos locais das fotos por `clientId` do atendimento.
+  Map<String, List<String>> _fotosNaFila = const {};
   int _pendentes = 0;
   bool _carregando = true;
   String? _erro;
@@ -67,10 +70,21 @@ class _ProntuarioScreenState extends State<ProntuarioScreen> {
         topId: widget.top.id,
         participantId: widget.participante.id,
       );
+      // Caminhos das fotos lidos AQUI, uma vez. Estavam num
+      // `FutureBuilder` dentro do `build` do cartão, o que recriava o
+      // Future — e portanto a leitura do SQLite — a cada rebuild. Leitura
+      // de disco em `build` é exatamente o que não se faz.
+      final fotos = <String, List<String>>{};
+      for (final a in naFila) {
+        fotos[a.clientId] = await AtendimentoService.instance.fotosNaFilaDe(
+          a.clientId,
+        );
+      }
       if (!mounted) return;
       setState(() {
         _naFila = naFila;
         _pendentes = naFila.length;
+        _fotosNaFila = fotos;
       });
     } catch (_) {
       // Falha de disco. Não impede tentar o servidor.
@@ -242,6 +256,7 @@ class _ProntuarioScreenState extends State<ProntuarioScreen> {
               atendimento: a,
               participante: widget.participante,
               aguardandoSinal: true,
+              fotosLocais: _fotosNaFila[a.clientId] ?? const [],
               aoEncerrar: () => _encerrar(a),
             ),
           ),
@@ -263,6 +278,7 @@ class _CartaoAtendimento extends StatelessWidget {
     required this.atendimento,
     required this.participante,
     this.aguardandoSinal = false,
+    this.fotosLocais = const [],
     this.aoEncerrar,
   });
 
@@ -272,6 +288,10 @@ class _CartaoAtendimento extends StatelessWidget {
   /// Marca o cartão como "ainda no aparelho". Não esconde nada — o
   /// registro é o mesmo; só avisa que outro Hakuna ainda não o vê.
   final bool aguardandoSinal;
+
+  /// Fotos deste atendimento que ainda estão no aparelho. Já resolvidas
+  /// pela tela — o cartão não lê disco.
+  final List<String> fotosLocais;
 
   /// Null quando a tela não oferece encerrar (histórico só de leitura).
   final VoidCallback? aoEncerrar;
@@ -407,12 +427,9 @@ class _CartaoAtendimento extends StatelessWidget {
                 // gravava, a fila subia, o Storage guardava e ninguém
                 // conseguia rever. Em registro de ferida isso é metade do
                 // que o atendimento tem a dizer.
-                FutureBuilder<List<String>>(
-                  future: AtendimentoService.instance.fotosNaFilaDe(a.clientId),
-                  builder: (context, snap) => FotosDoAtendimento(
-                    atendimentoId: a.id,
-                    caminhosLocais: snap.data ?? const [],
-                  ),
+                FotosDoAtendimento(
+                  atendimentoId: a.id,
+                  caminhosLocais: fotosLocais,
                 ),
                 if (a.temLocalizacao) ...[
                   const SizedBox(height: 8),

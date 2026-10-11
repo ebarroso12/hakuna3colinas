@@ -101,7 +101,6 @@ class _CartaoDeAlarme extends StatelessWidget {
                         foregroundColor: Colors.white,
                       ),
                       onPressed: () => QuemEstaMaisPerto.abrir(
-                        context,
                         topId: alarme.topId,
                         latitude: alarme.latitude!,
                         longitude: alarme.longitude!,

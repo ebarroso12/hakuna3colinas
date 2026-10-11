@@ -49,6 +49,17 @@ Future<void> main() async {
   runApp(const HakunaConnectApp());
 }
 
+/// Acesso ao `Navigator` de dentro do `MaterialApp.builder`.
+///
+/// A faixa de alarme vive no `builder`, que embrulha o Navigator — ou seja,
+/// o contexto dela está ACIMA dele. `Navigator.of(context)` dali não acha
+/// nada, e `showModalBottomSheet` (o "quem está mais perto") estouraria com
+/// "No Navigator widget found". Esta chave é o caminho de volta para
+/// dentro.
+///
+/// É global porque o alarme é global: não pertence a nenhuma tela.
+final navegadorDoApp = GlobalKey<NavigatorState>();
+
 class HakunaConnectApp extends StatelessWidget {
   const HakunaConnectApp({super.key});
 
@@ -56,6 +67,7 @@ class HakunaConnectApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Legendario Connect',
+      navigatorKey: navegadorDoApp,
       theme: ThemeData(colorSchemeSeed: Colors.teal, useMaterial3: true),
       // A faixa de alarme fica ACIMA do Navigator, não dentro de uma tela:
       // é o que faz o alarme aparecer onde o Hakuna estiver, em vez de só

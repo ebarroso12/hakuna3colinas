@@ -24,6 +24,16 @@ class _AuthGateState extends State<AuthGate> {
   /// [_approvalFuture] pra não refazer a query em todo rebuild.
   Future<bool> _checkApproval() async {
     final profile = await SupabaseService.instance.fetchMyProfile();
+    // Liga a escuta de alarmes AQUI, e não no `build`.
+    //
+    // No build era chamado a cada rebuild do StreamBuilder. O
+    // `if (_assinatura != null) return` de `escutar` tornava isso inócuo,
+    // mas efeito colateral dentro de build é bomba armada: basta alguém
+    // remover a guarda para o app abrir uma assinatura por frame.
+    //
+    // Só depois de aprovado: antes disso a RLS devolveria lista vazia de
+    // qualquer forma, e assinar à toa gasta conexão de quem está no mato.
+    if (profile.approved) AlarmeService.instance.escutar();
     return profile.approved;
   }
 
@@ -77,10 +87,6 @@ class _AuthGateState extends State<AuthGate> {
                 },
               );
             }
-            // Liga a escuta de alarmes só depois de aprovado: antes
-            // disso a RLS devolveria lista vazia de qualquer forma, e
-            // assinar à toa gasta conexão de quem está no mato.
-            AlarmeService.instance.escutar();
             return const TopsScreen();
           },
         );

@@ -27,12 +27,20 @@ void main() {
       );
     });
 
-    test('funciona com separador do Windows', () {
+    test('funciona com os dois separadores, em qualquer sistema', () {
+      // Este teste pegou um defeito de verdade: com
+      // `p.basenameWithoutExtension`, o `package:path` escolhe o estilo
+      // pelo sistema onde o Dart roda. No Windows passava; no Linux do CI
+      // devolvia `C:\app\fotos\<uuid>` inteiro como "nome do arquivo",
+      // porque lá `\` não é separador. O `client_id` sairia inválido e o
+      // envio seria recusado por tipo — e classificado como PERMANENTE,
+      // indo para quarentena.
       const id = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
-      expect(
-        AtendimentoService.clientIdDaFoto('C:\\app\\fotos\\$id.png'),
-        id,
-      );
+      expect(AtendimentoService.clientIdDaFoto('C:\\app\\fotos\\$id.png'), id);
+      expect(AtendimentoService.clientIdDaFoto('/data/app/fotos/$id.png'), id);
+      // Sem pasta e sem extensão também.
+      expect(AtendimentoService.clientIdDaFoto('$id.jpg'), id);
+      expect(AtendimentoService.clientIdDaFoto(id), id);
     });
 
     test('ida e volta: o que sai de novoClientId volta inteiro', () {

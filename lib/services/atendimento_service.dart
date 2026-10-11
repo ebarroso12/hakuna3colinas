@@ -84,8 +84,20 @@ class AtendimentoService {
   /// `atendimento_fotos.client_id` é `uuid` no Postgres, então o nome do
   /// arquivo tem de ser um uuid — ver o teste de ida e volta em
   /// `test/services/foto_do_atendimento_test.dart`.
-  static String clientIdDaFoto(String caminhoLocal) =>
-      p.basenameWithoutExtension(caminhoLocal);
+  ///
+  /// Corta nos DOIS separadores à mão em vez de usar
+  /// `p.basenameWithoutExtension`. O `package:path` escolhe o estilo pelo
+  /// sistema onde o Dart está rodando: no Linux ele não reconhece `\` como
+  /// separador e devolveria o caminho inteiro como se fosse o nome do
+  /// arquivo. O app roda em Android (POSIX), então na prática funcionaria —
+  /// mas a correção de um `client_id` não deve depender de em qual sistema
+  /// o código está sendo executado. Foi o CI (Linux) que mostrou isso; na
+  /// máquina de desenvolvimento (Windows) o teste passava.
+  static String clientIdDaFoto(String caminhoLocal) {
+    final nome = caminhoLocal.split(RegExp(r'[/\\]')).last;
+    final ponto = nome.lastIndexOf('.');
+    return ponto <= 0 ? nome : nome.substring(0, ponto);
+  }
 
   /// Registra o atendimento. Devolve o `clientId`, que já identifica o
   /// registro na tela antes de ele existir no servidor.

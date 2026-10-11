@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/hakuna_position.dart';
 import '../models/profile.dart';
+import '../main.dart';
 import '../services/proximidade_service.dart';
 import '../services/supabase_service.dart';
 
@@ -27,14 +28,21 @@ class QuemEstaMaisPerto extends StatelessWidget {
   final double latitude;
   final double longitude;
 
-  static Future<void> abrir(
-    BuildContext context, {
+  /// Abre a folha.
+  ///
+  /// Usa o `Navigator` do app pela chave global, e não o contexto de quem
+  /// chamou: o chamador é a faixa de alarme, que vive no
+  /// `MaterialApp.builder` — ACIMA do Navigator. `Navigator.of` dali não
+  /// acha nada e isto estourava com "No Navigator widget found".
+  static Future<void> abrir({
     required String topId,
     required double latitude,
     required double longitude,
   }) {
+    final contexto = navegadorDoApp.currentContext;
+    if (contexto == null) return Future<void>.value();
     return showModalBottomSheet<void>(
-      context: context,
+      context: contexto,
       isScrollControlled: true,
       builder: (_) => QuemEstaMaisPerto(
         topId: topId,
