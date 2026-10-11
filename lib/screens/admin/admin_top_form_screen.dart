@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -42,15 +41,22 @@ class _AdminTopFormScreenState extends State<AdminTopFormScreen> {
   Uint8List? _emblemaBytes;
   String? _emblemaExtensao;
 
+  /// Escolhe o emblema. Funciona no celular E no navegador.
+  ///
+  /// Havia aqui um `if (kIsWeb)` que recusava com "escolher imagem só no
+  /// celular, por enquanto". Isso ficou obsoleto: `image_picker_for_web`
+  /// está no `pubspec.lock` e o seletor funciona na web — os três quadros
+  /// de `ImagensDoTop`, que nunca tiveram essa guarda, já funcionavam.
+  ///
+  /// O que o guarda escondia era um bug de verdade logo abaixo: a extensão
+  /// vinha de `arquivo.path`, e na web o `path` é um blob
+  /// (`blob:http://localhost:5000/<uuid>`) **sem extensão nenhuma**.
+  /// `XFile.name` carrega o nome original do arquivo nas duas plataformas,
+  /// e é dele que a extensão tem de sair.
+  ///
+  /// Isto importa na prática: sem o celular com o APK instalado, o
+  /// navegador é o único caminho para o admin pôr a logo do Top.
   Future<void> _escolherEmblema() async {
-    if (kIsWeb) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Escolher imagem só no celular, por enquanto.'),
-        ),
-      );
-      return;
-    }
     final arquivo = await ImagePicker().pickImage(
       source: ImageSource.gallery,
       // Emblema aparece pequeno na lista; 800px bastam e economizam a rede
@@ -61,10 +67,14 @@ class _AdminTopFormScreenState extends State<AdminTopFormScreen> {
     if (arquivo == null) return;
     final bytes = await arquivo.readAsBytes();
     if (!mounted) return;
+
+    final nome = arquivo.name.toLowerCase();
     setState(() {
       _emblemaBytes = bytes;
-      _emblemaExtensao = arquivo.path.contains('.')
-          ? '.${arquivo.path.split('.').last}'
+      _emblemaExtensao = nome.endsWith('.png')
+          ? '.png'
+          : nome.endsWith('.webp')
+          ? '.webp'
           : '.jpg';
     });
   }
