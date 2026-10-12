@@ -444,6 +444,120 @@ class CacheLocal {
   );
 
   // =====================================================================
+  // CACHE DE MENSAGENS — a conversa da equipe sem rede
+  // =====================================================================
+
+  /// Grava o que veio do servidor. `replace` porque mensagem editada
+  /// chega de novo com o mesmo id e tem de sobrescrever.
+  ///
+  /// Uma transação só para a lista inteira: 200 inserts soltos num chat
+  /// cheio travam a tela por segundos no celular, e o stream do Supabase
+  /// reemite a lista completa a cada mudança.
+  Future<void> salvarMensagens({
+    required String entidade,
+    required List<Map<String, Object?>> linhas,
+  }) async {
+    if (linhas.isEmpty) return;
+    final db = await _db;
+    await db.transaction((txn) async {
+      final lote = txn.batch();
+      for (final linha in linhas) {
+        final id = linha[ColunasMensagem.id];
+        if (id == null) continue;
+        lote.insert(Tabelas.mensagens, {
+          // `<entidade>|<id>`: `team_messages.id` e
+          // `top_hakuna_messages.id` são sequências independentes no
+          // Postgres, então as duas têm id 1. Sem o prefixo, uma
+          // sobrescreveria a outra.
+          ColunasMensagem.chave: '$entidade|$id',
+          ColunasMensagem.entidade: entidade,
+          ColunasMensagem.id: id,
+          ColunasMensagem.clientId: linha['client_id'],
+          ColunasMensagem.topId: linha['top_id'],
+          ColunasMensagem.team: linha['team'],
+          ColunasMensagem.senderId: linha['sender_id'],
+          ColunasMensagem.body: linha['body'],
+          ColunasMensagem.isAlert: (linha['is_alert'] == true) ? 1 : 0,
+          ColunasMensagem.createdAt: _emMs(linha['created_at']),
+          ColunasMensagem.editedAt: linha['edited_at'] == null
+              ? null
+              : _emMs(linha['edited_at']),
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await lote.commit(noResult: true);
+    });
+  }
+
+  /// Converte o `timestamptz` do Postgres em epoch ms.
+  ///
+  /// Guardar inteiro e não texto: é por ele que se ordena e se poda, e
+  /// comparar ISO-8601 como string só funciona por acidente do formato —
+  /// um fuso diferente no texto quebraria a ordem sem erro nenhum.
+  static int _emMs(Object? valor) {
+    if (valor is int) return valor;
+    final texto = valor?.toString();
+    if (texto == null || texto.isEmpty) return 0;
+    return DateTime.tryParse(texto)?.toUtc().millisecondsSinceEpoch ?? 0;
+  }
+
+  /// A conversa guardada, da mais velha para a mais nova — a ordem em que
+  /// a tela desenha.
+  ///
+  /// `team` null busca o chat clínico (`top_hakuna_messages`), que não é
+  /// por equipe. Em SQL `= null` nunca casa, daí o `is null` explícito:
+  /// escrito com `=`, esta consulta devolveria lista vazia para sempre e
+  /// pareceria "cache não funcionou".
+  Future<List<Map<String, Object?>>> lerMensagens({
+    required String entidade,
+    required String topId,
+    String? team,
+    int limite = 300,
+  }) async {
+    final db = await _db;
+    final linhas = await db.query(
+      Tabelas.mensagens,
+      where:
+          '${ColunasMensagem.entidade} = ? AND ${ColunasMensagem.topId} = ? '
+          'AND ${ColunasMensagem.team} ${team == null ? 'IS NULL' : '= ?'}',
+      whereArgs: [entidade, topId, ?team],
+      orderBy: '${ColunasMensagem.createdAt} DESC',
+      limit: limite,
+    );
+    return linhas.reversed
+        .map(
+          (l) => <String, Object?>{
+            'id': l[ColunasMensagem.id],
+            'client_id': l[ColunasMensagem.clientId],
+            'top_id': l[ColunasMensagem.topId],
+            'team': l[ColunasMensagem.team],
+            'sender_id': l[ColunasMensagem.senderId],
+            'body': l[ColunasMensagem.body],
+            'is_alert': l[ColunasMensagem.isAlert] == 1,
+            'created_at': DateTime.fromMillisecondsSinceEpoch(
+              l[ColunasMensagem.createdAt] as int,
+              isUtc: true,
+            ).toIso8601String(),
+            'edited_at': l[ColunasMensagem.editedAt] == null
+                ? null
+                : DateTime.fromMillisecondsSinceEpoch(
+                    l[ColunasMensagem.editedAt] as int,
+                    isUtc: true,
+                  ).toIso8601String(),
+          },
+        )
+        .toList();
+  }
+
+  /// Quantas mensagens estão guardadas. Para teste e para a tela de fila.
+  Future<int> contarMensagens() async {
+    final db = await _db;
+    final r = await db.rawQuery(
+      'SELECT COUNT(*) AS n FROM ${Tabelas.mensagens}',
+    );
+    return (r.first['n'] as int?) ?? 0;
+  }
+
+  // =====================================================================
   // ESTADO LOCAL — intenção que sobrevive ao processo
   // =====================================================================
 

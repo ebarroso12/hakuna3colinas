@@ -426,7 +426,10 @@ void main() {
       // v4 `client_id` unico POR ENTIDADE (era global, e o bloco de
       // anotacoes usa client_id deterministico — colisao entre entidades
       // fazia a escrita nova ser descartada em silencio).
-      expect(db.getVersion(), completion(4));
+      // v5 cache de MENSAGENS: sem rede o stream do Supabase fica calado,
+      // e sem disco a tela mostrava so o que o proprio usuario escreveu —
+      // a conversa da equipe sumia justamente para quem chega sem sinal.
+      expect(db.getVersion(), completion(5));
 
       final tabelas =
           (await db.rawQuery(
@@ -445,6 +448,7 @@ void main() {
           'cache_regras_triagem',
           'cache_ultima_afericao',
           'estado_local',
+          'cache_mensagens',
         ]),
       );
     });

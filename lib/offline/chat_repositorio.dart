@@ -4,6 +4,7 @@ import '../models/chat_message.dart';
 import '../models/team.dart';
 import '../models/team_message.dart';
 import '../services/supabase_service.dart';
+import 'cache_local.dart';
 import 'outbox.dart';
 import 'sync_service.dart';
 
@@ -183,10 +184,17 @@ class ChatRepositorio {
     required TeamKey team,
   }) {
     return _observar<TeamMessage>(
-      doServidor: SupabaseService.instance.watchTeamMessages(
-        topId: topId,
-        team: team,
-      ),
+      doServidor: SupabaseService.instance
+          .watchTeamMessages(topId: topId, team: team)
+          .asyncMap((lista) => _guardar(entityTeam, lista, _teamParaMapa)),
+      lerDoCache: () async {
+        final linhas = await CacheLocal.instance.lerMensagens(
+          entidade: entityTeam,
+          topId: topId,
+          team: team.name,
+        );
+        return linhas.map(TeamMessage.fromMap).toList();
+      },
       lerPendentes: () => _pendentesDeEquipe(topId, team),
       quando: (m) => m.createdAt,
       clientIdDe: (m) => m.clientId,
@@ -195,12 +203,70 @@ class ChatRepositorio {
 
   Stream<ChatNaTela<ChatMessage>> observarTop(String topId) {
     return _observar<ChatMessage>(
-      doServidor: SupabaseService.instance.watchTopMessages(topId),
+      doServidor: SupabaseService.instance
+          .watchTopMessages(topId)
+          .asyncMap((lista) => _guardar(entityTop, lista, _topParaMapa)),
+      lerDoCache: () async {
+        final linhas = await CacheLocal.instance.lerMensagens(
+          entidade: entityTop,
+          topId: topId,
+        );
+        return linhas.map(ChatMessage.fromMap).toList();
+      },
       lerPendentes: () => _pendentesDoTop(topId),
       quando: (m) => m.createdAt,
       clientIdDe: (m) => m.clientId,
     );
   }
+
+  /// Grava no disco o que chegou do servidor e devolve a lista intacta.
+  ///
+  /// A rede alimenta o disco, o disco alimenta a tela — a mesma regra que
+  /// vale para participantes e tags, agora para a conversa.
+  ///
+  /// **Falha de disco não derruba o chat.** Com rede, o cache é só a
+  /// cópia; a lista já está na mão e vai para a tela de qualquer forma.
+  /// Derrubar o stream aqui tiraria do ar a conversa que estava
+  /// funcionando, para proteger uma cópia que só importa depois.
+  Future<List<T>> _guardar<T>(
+    String entidade,
+    List<T> lista,
+    Map<String, Object?> Function(T) paraMapa,
+  ) async {
+    try {
+      await CacheLocal.instance.salvarMensagens(
+        entidade: entidade,
+        linhas: lista.map(paraMapa).toList(),
+      );
+    } catch (_) {}
+    return lista;
+  }
+
+  static Map<String, Object?> _teamParaMapa(TeamMessage m) => {
+    'id': m.id,
+    'client_id': m.clientId,
+    'top_id': m.topId,
+    'team': m.team.name,
+    'sender_id': m.senderId,
+    'body': m.body,
+    'is_alert': m.isAlert,
+    'created_at': m.createdAt.toIso8601String(),
+    'edited_at': m.editedAt?.toIso8601String(),
+  };
+
+  /// `team` fica null: o chat clínico não é por equipe, e é isso que
+  /// separa as duas conversas dentro da mesma tabela local.
+  static Map<String, Object?> _topParaMapa(ChatMessage m) => {
+    'id': m.id,
+    'client_id': m.clientId,
+    'top_id': m.topId,
+    'team': null,
+    'sender_id': m.senderId,
+    'body': m.body,
+    'is_alert': false,
+    'created_at': m.createdAt.toIso8601String(),
+    'edited_at': null,
+  };
 
   /// Junta servidor + fila numa lista só, sem duplicar e em ordem.
   ///
@@ -259,12 +325,20 @@ class ChatRepositorio {
   /// próxima mensagem de alguém.
   Stream<ChatNaTela<T>> _observar<T>({
     required Stream<List<T>> doServidor,
+    required Future<List<T>> Function() lerDoCache,
     required Future<List<T>> Function() lerPendentes,
     required DateTime Function(T) quando,
     required String? Function(T) clientIdDe,
   }) {
     late StreamController<ChatNaTela<T>> controller;
     var doServidorAtual = <T>[];
+
+    /// O servidor ainda não respondeu NADA nesta assinatura.
+    ///
+    /// Diferente de "respondeu lista vazia": sem rede o stream do Supabase
+    /// não emite nem erro imediato, só fica calado. Enquanto estiver
+    /// calado, o que vale é o disco.
+    var servidorRespondeu = false;
     Object? erro;
     StreamSubscription<List<T>>? subServidor;
     StreamSubscription<void>? subFila;
@@ -278,10 +352,28 @@ class ChatRepositorio {
       } catch (_) {
         pendentes = const [];
       }
+
+      // Sem rede o stream do Supabase fica CALADO — não emite lista vazia
+      // nem erro imediato. Até ele falar, a conversa vem do disco; depois,
+      // o servidor manda, porque é ele que tem as mensagens novas.
+      //
+      // Antes da v1.0.41 não havia disco: offline, a tela mostrava apenas
+      // o que o próprio usuário tinha escrito, e a conversa da equipe
+      // sumia. Quem chega ao acampamento sem sinal é justamente quem mais
+      // precisa ler o que foi combinado enquanto estava fora.
+      var base = doServidorAtual;
+      if (!servidorRespondeu) {
+        try {
+          base = await lerDoCache();
+        } catch (_) {
+          base = const [];
+        }
+      }
+
       if (controller.isClosed) return;
       controller.add(
         juntar<T>(
-          doServidor: doServidorAtual,
+          doServidor: base,
           pendentes: pendentes,
           quando: quando,
           clientIdDe: clientIdDe,
@@ -295,6 +387,7 @@ class ChatRepositorio {
         subServidor = doServidor.listen(
           (lista) {
             doServidorAtual = lista;
+            servidorRespondeu = true;
             erro = null;
             unawaited(emitir());
           },

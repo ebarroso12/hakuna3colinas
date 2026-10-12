@@ -24,7 +24,7 @@ class LocalDb {
 
   /// Subir este número roda as migrações em [_upgrade]. Nunca editar uma
   /// migração já publicada: adicionar a próxima.
-  static const _schemaVersion = 4;
+  static const _schemaVersion = 5;
 
   Database? _db;
 
@@ -124,6 +124,7 @@ class LocalDb {
     ''');
 
     await _criarCacheDeLeitura(db);
+    await _criarCacheDeMensagens(db);
   }
 
   /// Cache de leitura: o que o app precisa enxergar SEM rede.
@@ -155,12 +156,25 @@ class LocalDb {
     await db.execute(ColunasEstado.criar);
   }
 
+  /// v5: a conversa da equipe passa a sobreviver sem rede.
+  ///
+  /// O chat juntava o stream do Supabase com a fila local. Sem rede o
+  /// stream nao traz nada, entao o usuario via APENAS o que ele mesmo
+  /// escreveu — a conversa da equipe sumia da tela. No mato isso e o
+  /// oposto do que se precisa: quem chega sem sinal e justamente quem
+  /// mais precisa ler o que foi combinado enquanto estava fora.
+  Future<void> _criarCacheDeMensagens(Database db) async {
+    await db.execute(ColunasMensagem.criar);
+    await db.execute(ColunasMensagem.criarIndice);
+  }
+
   /// Migrações, uma por versão. Nunca editar uma já publicada — aparelho
   /// que já rodou a versão antiga não roda de novo.
   Future<void> _upgrade(Database db, int from, int to) async {
     if (from < 2) await _criarCacheDeLeitura(db);
     if (from < 3) await _criarQuarentena(db);
     if (from < 4) await _clientIdUnicoPorEntidade(db);
+    if (from < 5) await _criarCacheDeMensagens(db);
   }
 
   /// v4: `client_id` passa a ser unico POR ENTIDADE.

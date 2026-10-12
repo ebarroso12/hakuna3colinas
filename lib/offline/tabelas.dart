@@ -29,6 +29,24 @@ abstract final class Tabelas {
   /// no cadastro.
   static const ultimaAfericao = 'cache_ultima_afericao';
 
+  // ---------------------------------------------------------------------
+  // CACHE DE MENSAGENS (v5) — a conversa da equipe sem rede
+  //
+  // Até aqui o chat combinava o stream do Supabase com a fila local. Sem
+  // rede, o stream não traz nada, então o usuário via apenas **o que ele
+  // mesmo escreveu** — a conversa da equipe sumia da tela.
+  //
+  // No mato isso é o oposto do que se precisa: quem chega ao acampamento
+  // sem sinal é exatamente quem mais precisa ler o que foi combinado
+  // enquanto estava fora.
+  //
+  // Mesmo padrão de `cache_participantes`: a rede alimenta o disco, o
+  // disco alimenta a tela. E é a base para entrega entre aparelhos — sem
+  // um lugar onde guardar, não há o que trocar por Bluetooth nem onde
+  // escrever o que chegou.
+  // ---------------------------------------------------------------------
+  static const mensagens = 'cache_mensagens';
+
   /// Chave-valor para intenção que tem de sobreviver ao processo.
   ///
   /// Existe porque não somos donos do Foreground Service — ele é do
@@ -267,4 +285,68 @@ abstract final class ColunasRegraTriagem {
     'CREATE INDEX idx_cache_regra_prioridade '
         'ON ${Tabelas.regrasTriagem} ($active, $priority)',
   ];
+}
+
+/// Colunas de [Tabelas.mensagens].
+///
+/// Guarda mensagem de equipe (`team_messages`) e do chat clínico
+/// (`top_hakuna_messages`) na MESMA tabela, separadas por [entidade]. São
+/// duas tabelas no Postgres por causa de RLS diferente, mas no disco do
+/// aparelho a forma é a mesma e duplicar o esquema só criaria duas
+/// migrações para manter em sincronia.
+///
+/// Nomes idênticos aos do Postgres, como nas outras: o mesmo `fromMap`
+/// serve para linha vinda do Supabase e para linha vinda do SQLite.
+abstract final class ColunasMensagem {
+  /// Chave primária LOCAL, `<entidade>|<id do servidor>`.
+  ///
+  /// Não é o `id` cru porque `team_messages.id` e
+  /// `top_hakuna_messages.id` são sequências independentes no Postgres —
+  /// as duas têm id 1, e numa tabela só uma sobrescreveria a outra.
+  static const chave = 'chave';
+
+  /// `team_messages` ou `top_hakuna_messages`.
+  static const entidade = 'entidade';
+
+  static const id = 'id';
+  static const clientId = 'client_id';
+  static const topId = 'top_id';
+
+  /// Null no chat clínico, que não é por equipe.
+  static const team = 'team';
+
+  static const senderId = 'sender_id';
+  static const body = 'body';
+  static const isAlert = 'is_alert';
+
+  /// Epoch em ms. Inteiro e não texto: é por ele que se ordena e se poda,
+  /// e comparar ISO-8601 como string funciona por acidente do formato.
+  static const createdAt = 'created_at';
+  static const editedAt = 'edited_at';
+
+  static const criar =
+      '''
+    CREATE TABLE ${Tabelas.mensagens} (
+      $chave     TEXT PRIMARY KEY,
+      $entidade  TEXT    NOT NULL,
+      $id        INTEGER NOT NULL,
+      $clientId  TEXT,
+      $topId     TEXT    NOT NULL,
+      $team      TEXT,
+      $senderId  TEXT    NOT NULL,
+      $body      TEXT    NOT NULL,
+      $isAlert   INTEGER NOT NULL DEFAULT 0,
+      $createdAt INTEGER NOT NULL,
+      $editedAt  INTEGER
+    )
+  ''';
+
+  /// Índice da consulta que a tela faz: as mensagens de um chat, da mais
+  /// nova para a mais velha. Sem ele é varredura completa a cada abertura,
+  /// e esta tabela cresce a cada mensagem de cada equipe.
+  static const criarIndice =
+      '''
+    CREATE INDEX idx_mensagens_chat
+      ON ${Tabelas.mensagens} ($topId, $entidade, $team, $createdAt DESC)
+  ''';
 }
