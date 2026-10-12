@@ -812,6 +812,27 @@ validando uma configuração que não existe mais.
   quatro peças, o SQL da tabela `dispositivos`, o que só o dono do projeto
   pode fazer (criar o Firebase) e o que o push NÃO resolve. Para quem está
   com o app fechado, continua valendo o rádio.
+- **Comunicação sem rede nenhuma (3G/4G/WiFi) não existe no app.** Pedido
+  do dono em 11/10/2026. **O levantamento está em
+  `docs/comunicacao_sem_rede.md`**: alcance real de cada via, custo, e o
+  que cabe em cada canal.
+
+  O resumo que importa: **não é escolha de software, é de física.** BLE e
+  WiFi Direct dão 10–150 m no mato (2,4 GHz é absorvido por corpo e
+  vegetação), então não servem para alarme — quem está nesse raio já viu o
+  acidente. Alcance de trilha exige LoRa (R$150–400 por nó, 2–20 km) e o
+  canal tem ~1–5 kbps: cabe "EMERGÊNCIA — nome — lat,lng", não cabe foto
+  nem prontuário.
+
+  **O obstáculo da parte em software não é rádio, é autoria.** A fila já é
+  idempotente por `client_id` e carrega a hora do aparelho, então
+  transportá-la entre celulares não corrompe nada — mas a RLS prende
+  `sender_id = auth.uid()`, e o aparelho de B enviando a fila de A é
+  RECUSADO. É a mesma pendência de "Troca de usuário no mesmo aparelho",
+  com outro nome. Destravar exige Edge Function com `service_role` **e**
+  payload assinado no aparelho de origem — sem a assinatura, qualquer um
+  injeta atendimento no nome de qualquer pessoa. Em dado clínico isso não
+  se improvisa.
 - **Nenhum teste de hardware.** Os 322 testes cobrem lógica. NFC, câmera,
   GPS com tela bloqueada, o som do alarme e o `launchUrl` do botão
   Atualizar só se verificam em aparelho físico.
