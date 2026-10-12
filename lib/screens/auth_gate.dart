@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../services/alarme_service.dart';
@@ -5,6 +7,7 @@ import '../services/supabase_service.dart';
 import 'login_screen.dart';
 import 'pending_approval_screen.dart';
 import 'tops_screen.dart';
+import '../services/push_service.dart';
 
 /// Decide entre login, "aguardando aprovação" e tela principal, reagindo a
 /// mudanças reais de sessão (login, logout, expiração de token) — sem
@@ -33,7 +36,16 @@ class _AuthGateState extends State<AuthGate> {
     //
     // Só depois de aprovado: antes disso a RLS devolveria lista vazia de
     // qualquer forma, e assinar à toa gasta conexão de quem está no mato.
-    if (profile.approved) AlarmeService.instance.escutar();
+    if (profile.approved) {
+      AlarmeService.instance.escutar();
+      // Registra o aparelho para receber alarme com o app FECHADO.
+      //
+      // Depois do login, porque sem `profile_id` não há onde gravar o
+      // token — e token sem dono não dispara nada. Sem `await`: push é
+      // conveniência sobre o alarme que já funciona, e não pode atrasar a
+      // tela de quem acabou de entrar.
+      unawaited(PushService.instance.registrar());
+    }
     return profile.approved;
   }
 
@@ -50,6 +62,10 @@ class _AuthGateState extends State<AuthGate> {
           // do usuário anterior continuaria viva e o próximo a logar no
           // mesmo aparelho receberia alarme de Top que não é dele.
           AlarmeService.instance.parar();
+          // Tira o aparelho da lista. Sem isto, em celular compartilhado,
+          // o próximo dono receberia alarme clínico de um Top ao qual não
+          // pertence.
+          unawaited(PushService.instance.esquecer());
           return const LoginScreen();
         }
 

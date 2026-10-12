@@ -1134,6 +1134,41 @@ class SupabaseService {
         .map((rows) => rows.map((r) => TopAlert.fromMap(r)).toList());
   }
 
+  /// Guarda o token FCM deste aparelho para o servidor saber para onde
+  /// mandar o push do alarme.
+  ///
+  /// `upsert onConflict: fcm_token` e não `insert`: o mesmo aparelho
+  /// reinstalado pode devolver o mesmo token, e sem isto a pessoa
+  /// receberia o alarme duas vezes — justamente na hora em que confusão
+  /// custa caro.
+  ///
+  /// **Não passa pela fila offline, de propósito.** Token que subiu tarde
+  /// demais não entrega alarme nenhum, e token velho enfileirado é pior
+  /// que token ausente: o servidor acharia que entregou. Sem rede, grava
+  /// na próxima abertura.
+  Future<void> registrarDispositivo({
+    required String fcmToken,
+    required String plataforma,
+  }) async {
+    final uid = currentUserId;
+    if (uid == null) return;
+    await _client.from('dispositivos').upsert({
+      'profile_id': uid,
+      'fcm_token': fcmToken,
+      'plataforma': plataforma,
+      'visto_em': DateTime.now().toUtc().toIso8601String(),
+    }, onConflict: 'fcm_token');
+  }
+
+  /// Tira o aparelho da lista de push. Chamado no logout.
+  ///
+  /// Em aparelho compartilhado isto não é detalhe: sem apagar, o celular
+  /// continuaria recebendo alarme clínico de um Top ao qual a pessoa não
+  /// pertence mais.
+  Future<void> esquecerDispositivo(String fcmToken) async {
+    await _client.from('dispositivos').delete().eq('fcm_token', fcmToken);
+  }
+
   /// Envio de alarme a partir da fila. Chamado por [AlarmeService].
   ///
   /// `upsert(onConflict: 'client_id', ignoreDuplicates: true)` e não
@@ -1144,6 +1179,42 @@ class SupabaseService {
     await _client
         .from('top_alerts')
         .upsert(payload, onConflict: 'client_id', ignoreDuplicates: true);
+
+    // O alarme subiu. Agora acorda quem está com o app FECHADO.
+    //
+    // Depois do upsert e nunca antes: push sem o registro no banco
+    // avisaria de um alarme que pode nem ter sido gravado, e quem
+    // abrisse o app não encontraria nada.
+    //
+    // Sem `await` e com o erro engolido: o alarme JÁ está registrado e
+    // já chega a quem tem o app aberto pelo Realtime. Se o push falhar,
+    // a fila não pode reenviar o alarme inteiro por causa disso — o
+    // reenvio é idempotente no banco, mas geraria um segundo push e duas
+    // notificações para a mesma emergência.
+    unawaited(_dispararPush(payload).catchError((_) {}));
+  }
+
+  Future<void> _dispararPush(Map<String, dynamic> payload) async {
+    final nome = payload['sender_name'];
+    final mensagem = payload['message'];
+    await _client.functions.invoke(
+      'push_alarme',
+      body: {
+        'top_id': payload['top_id'],
+        'titulo': nome is String && nome.trim().isNotEmpty
+            ? 'EMERGÊNCIA — $nome'
+            : 'EMERGÊNCIA no Top',
+        'corpo': mensagem is String && mensagem.trim().isNotEmpty
+            ? mensagem
+            : 'Alguém pediu socorro. Abra o app.',
+        'latitude': payload['latitude'],
+        'longitude': payload['longitude'],
+        // Quem disparou já sabe. Celular apitando na mão de quem pediu
+        // socorro é ruído — a mesma regra que `AlarmeService._receber`
+        // já aplica para o alarme na tela.
+        'excluir_profile': payload['sender_id'],
+      },
+    );
   }
 
   /// Regras de triagem ativas, usadas por qualquer usuário logado pra

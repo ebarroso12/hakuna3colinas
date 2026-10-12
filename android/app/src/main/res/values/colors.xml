@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Mesma cor da faixa de alarme dentro do app (Colors.red.shade700).
+         A notificacao que chega com o app fechado e a mesma coisa que a
+         faixa vermelha; cor diferente faria parecer outro aviso. -->
+    <color name="alarme_vermelho">#FFC62828</color>
+</resources>

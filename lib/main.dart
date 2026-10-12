@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 
 import 'screens/auth_gate.dart';
@@ -21,8 +23,36 @@ import 'widgets/faixa_de_alarme.dart';
 const _supabaseUrl = String.fromEnvironment('SUPABASE_URL');
 const _supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
 
+/// Recebe o push com o app FECHADO ou em segundo plano.
+///
+/// `@pragma('vm:entry-point')` é obrigatório: o Android acorda o processo
+/// num isolate separado, e sem a anotação o tree-shaking do release
+/// remove esta função — o push chegaria e nada aconteceria, só no APK de
+/// release, que é o pior lugar para descobrir.
+///
+/// Fica vazia de propósito. A notificação em si é desenhada pelo próprio
+/// Android a partir do bloco `notification` que a Edge Function manda;
+/// aqui só caberia trabalho extra, e trabalho em isolate de background
+/// com o app fechado é onde se criam travamentos difíceis de reproduzir.
+@pragma('vm:entry-point')
+Future<void> _pushEmSegundoPlano(RemoteMessage mensagem) async {}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Firebase antes do Supabase: o handler de background precisa estar
+  // registrado antes de qualquer push poder chegar.
+  //
+  // Tolerante a falha de propósito. Sem `google-services.json` ou sem
+  // Play Services isto estoura — e o app TEM de abrir mesmo assim. Push
+  // é conveniência sobre o alarme que já funciona com a tela aberta;
+  // derrubar o app por causa dele seria trocar o essencial pelo
+  // acessório.
+  try {
+    await Firebase.initializeApp();
+    FirebaseMessaging.onBackgroundMessage(_pushEmSegundoPlano);
+  } catch (_) {}
+
   await SupabaseService.initialize(
     url: _supabaseUrl,
     anonKey: _supabaseAnonKey,

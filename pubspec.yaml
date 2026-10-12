@@ -114,6 +114,8 @@ dependencies:
   # virgula decimal, e assumir ',' leria tudo numa coluna so.
   csv: ^8.0.0
   nearby_connections: ^4.3.0
+  firebase_core: ^4.15.0
+  firebase_messaging: ^16.7.0
 
 dev_dependencies:
   flutter_test:

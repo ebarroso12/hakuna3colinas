@@ -24,6 +24,12 @@
     <!-- WiFi Direct e hotspot, que a Nearby usa para o salto rapido
          depois de achar o aparelho por BLE. -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+
+    <!-- PUSH com o app FECHADO. No Android 13+ a permissao de notificacao
+         e explicita: sem ela o token ate existe, mas a notificacao NAO
+         aparece — e o servidor acha que entregou, que e o pior dos dois
+         mundos. Ver lib/services/push_service.dart. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
@@ -111,7 +117,21 @@
                 android:name="android.nfc.cardemulation.host_apdu_service"
                 android:resource="@xml/apduservice"/>
         </service>
-    </application>
+    
+        <!-- CANAL DE ALARME.
+             Sem declarar o canal, o Android joga a notificacao no canal
+             padrao do app — que e silencioso e nao acorda a tela. O
+             alarme chegaria como um aviso de propaganda.
+
+             O id tem de bater com `channel_id` em
+             supabase/functions/push_alarme/index.ts. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="alarme_legendarios" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/alarme_vermelho" />
+</application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
          https://developer.android.com/reference/android/content/Intent#ACTION_PROCESS_TEXT.
