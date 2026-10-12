@@ -717,13 +717,26 @@ O que mudou com o keystore de produção:
    `INSTALL_FAILED_UPDATE_INCOMPATIBLE` e exige desinstalar — e desinstalar
    **apaga a fila**, ou seja, apaga atendimento que ainda não subiu.
    Sincronize antes.
-2. **Login com Google passou a ser possível** — mas só passa a funcionar
-   depois que o SHA-1 `0B:99:23:13:83:2C:54:BE:2A:0C:B3:ED:0F:DE:56:11:44:1D:4B:88`
-   estiver registrado no Google Cloud como client OAuth do tipo Android
-   (projeto `hakuna3colinas-app`, pacote `com.legendarios.hakuna_connect`).
-   Enquanto não estiver, o plugin falha com DEVELOPER_ERROR antes de
-   qualquer chamada de rede — não é problema de `clientId`, ver
-   `SupabaseService.googleIndisponivelNoApk`.
+2. **Login com Google: SHA cadastrado em 12/10/2026.** O dono registrou
+   no Firebase (projeto `hakuna3colinas-app`, app
+   `com.legendarios.hakuna_connect`) as duas impressões da chave de
+   produção, lidas do APK assinado com `apksigner`:
+
+       SHA-1    0B:99:23:13:83:2C:54:BE:2A:0C:B3:ED:0F:DE:56:11:44:1D:4B:88
+       SHA-256  38:6D:32:85:3D:84:DA:7A:D6:7F:AB:01:B7:CF:01:22:6D:74:0B:CB:73:2E:E2:4A:F3:1D:7A:3B:4E:88:6D:5C
+
+   Era a causa do `DEVELOPER_ERROR`, que estourava antes de qualquer
+   chamada de rede — nunca foi problema de `clientId` (ver
+   `SupabaseService.googleIndisponivelNoApk`).
+
+   **Não verificado em aparelho.** Só o login real prova, e isso exige o
+   APK assinado com a chave de produção instalado num celular.
+
+   **Armadilha para o futuro:** esse é o certificado do keystore do
+   projeto. Se um dia o app for para a Play Store com *Play App Signing*,
+   o Google RE-ASSINA o APK e gera outro SHA — e o login quebraria de
+   novo, com o mesmo erro, parecendo regressão. O SHA novo apareceria no
+   console da Play e precisaria ser cadastrado também.
 
 **Perder o `.jks` é irreversível** e, agora que há base instalada assinada
 com ele, significa não poder mais atualizar nenhum aparelho sem desinstalar.

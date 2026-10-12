@@ -11,6 +11,67 @@ Android físico.
 
 ## 12/10/2026
 
+### v1.0.42 — Firebase ligado: os aparelhos passam a se registrar
+
+Nenhuma funcao nova visivel. Esta versao existe para os aparelhos
+comecarem a registrar o token de push — assim, quando a credencial de
+servidor entrar, ja havera para quem disparar.
+
+#### O QUE ESTA VERSAO FAZ
+
+Ao entrar no app, o aparelho pede permissao de notificacao, pega o token
+do FCM e grava em `dispositivos`. No logout, apaga — em celular
+compartilhado, sem isso o proximo dono receberia alarme clinico de um Top
+ao qual nao pertence.
+
+#### O QUE ELA AINDA NAO FAZ
+
+**Nada e disparado.** Falta a conta de servico do Firebase e os tres
+segredos da Edge Function `push_alarme`, que dependem da conta do dono.
+O app registra; ninguem envia.
+
+Essa ordem e de proposito: token registrado antes vale para a primeira
+emergencia depois que o disparo for ligado. O contrario — ligar o disparo
+com a tabela vazia — nao avisaria ninguem.
+
+#### A ARMADILHA QUE QUASE PASSOU
+
+Por o `google-services.json` em `android/app/` NAO LIGA NADA sozinho. Sem
+o plugin `com.google.gms.google-services` no Gradle, o arquivo fica no
+disco sem efeito: o app compila, instala, `Firebase.initializeApp()`
+falha em tempo de execucao, o try/catch do `main` engole — e o push nao
+existe, sem UMA linha de erro no build.
+
+Conferido abrindo o APK, nao a configuracao:
+
+    resources.arsc       project_id, app_id, numero do projeto PRESENTES
+    AndroidManifest.xml  canal alarme_legendarios, POST_NOTIFICATIONS,
+                         BLUETOOTH_SCAN, NEARBY_WIFI_DEVICES PRESENTES
+
+Os valores so entram em `resources.arsc` se o plugin tiver rodado.
+
+#### LOGIN COM GOOGLE: a causa era o SHA ausente
+
+O dono cadastrou no Firebase as duas impressoes da chave de producao,
+lidas do APK assinado:
+
+    SHA-1    0B:99:23:...:1D:4B:88
+    SHA-256  38:6D:32:...:4E:88:6D:5C
+
+Era a causa do `DEVELOPER_ERROR`, que estourava antes de qualquer chamada
+de rede. Nunca foi problema de `clientId`.
+
+NAO verificado em aparelho: so o login real prova.
+
+#### Verificado
+
+`flutter analyze` limpo. 499 testes. APK Android compila com o Firebase
+dentro, conferido no arquivo.
+
+---
+
+## 12/10/2026
+
 ### v1.0.40 — APK de 76 MB para ~30 MB, e o CI publica sozinho
 
 Nenhuma mudanca de codigo do app. So empacotamento e distribuicao — e as
