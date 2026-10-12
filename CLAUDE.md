@@ -853,6 +853,19 @@ validando uma configuração que não existe mais.
   linha de código — porque o app volta a alcançar o Supabase. Servidor de
   campo é o caminho mais caro e o que depende de mais coisas darem certo.
 
+  **Sem Bluetooth no caminho** — pedido de 12/10/2026 — a resposta está em
+  `docs/radio_sem_bluetooth.md`: LoRa ligado ao celular por **USB-C
+  (OTG)**, não por BLE. O cabo é mais confiável que pareamento em campo e
+  **o celular alimenta o nó**, tirando a bateria do rádio da equação. O nó
+  também pode criar a própria rede WiFi (ponto de acesso, sem internet).
+
+  **A regra que decide é legal, não técnica: 915 MHz é faixa ISM livre no
+  Brasil; 144 MHz (APRS/radioamador) exige licença da ANATEL.** Dá para
+  mandar texto e GPS pelos rádios HT que a equipe já tem, por cabo de
+  áudio e AFSK (APRSdroid, cabo de R$50–150) — mas só com habilitação de
+  radioamador. Confira o tipo de rádio e se há alguém licenciado ANTES de
+  comprar cabo; sem isso, o caminho honesto é LoRa.
+
   O resumo que importa: **não é escolha de software, é de física.** BLE e
   WiFi Direct dão 10–150 m no mato (2,4 GHz é absorvido por corpo e
   vegetação), então não servem para alarme — quem está nesse raio já viu o
