@@ -92,6 +92,27 @@ class AlarmeService extends ChangeNotifier {
   })?
   espalharPeloRadio;
 
+  /// Em qual Top a malha esta ligada, ou null.
+  ///
+  /// Injetado junto com [espalharPeloRadio]. A malha e ligada POR TOP
+  /// (`botao_da_malha.dart`), e sem esta conferencia um alarme do Top B
+  /// sairia pelo radio carimbado com o Top A — os aparelhos do Top A o
+  /// aceitariam como se fosse deles, e o do Top B nao receberia nada.
+  /// Carimbo errado em alarme manda socorro para o evento errado.
+  String? topDaMalha;
+
+  /// Teto de espera do radio no disparo.
+  ///
+  /// `TransporteNearby.enviar` faz um `await` por vizinho, em laco. Com
+  /// varios aparelhos ou um radio lento, a TELA ficaria esperando — e
+  /// nesse ponto o alarme JA esta gravado na fila. Esperar o radio so
+  /// tira segundos de quem precisa agir. Estourado o teto, o envio segue
+  /// sozinho em segundo plano e a tela diz que nao deu para confirmar.
+  /// Nao e `const` para o teste poder encurta-lo: medir o estouro do teto
+  /// com 3 segundos de espera de verdade seria teste lento por nada. Mesma
+  /// costura de [anunciarLigado] e `idDeUsuarioParaTestes`.
+  static Duration limiteDoRadio = const Duration(seconds: 3);
+
   /// Só para teste: evita tentar tocar som sem binding de plataforma.
   @visibleForTesting
   static bool anunciarLigado = true;
@@ -174,8 +195,17 @@ class AlarmeService extends ChangeNotifier {
     // Falha aqui não desfaz nada: o alarme já está gravado na fila.
     var vizinhos = 0;
     var tentadoPorRadio = false;
+    var malhaDeOutroTop = false;
+    var radioDemorou = false;
     final espalhar = espalharPeloRadio;
-    if (espalhar != null) {
+    final topDoRadio = topDaMalha;
+
+    if (espalhar != null && topDoRadio != null && topDoRadio != topId) {
+      // Malha ligada, mas para OUTRO Top. Nao transmite: carimbar o
+      // alarme com o Top errado e pior que nao transmitir, porque chega
+      // a quem nao tem o que fazer e nao chega a quem tem.
+      malhaDeOutroTop = true;
+    } else if (espalhar != null) {
       tentadoPorRadio = true;
       try {
         vizinhos = await espalhar(
@@ -189,7 +219,11 @@ class AlarmeService extends ChangeNotifier {
           criadaEm: quando,
           latitude: latitude,
           longitude: longitude,
-        );
+        ).timeout(limiteDoRadio);
+      } on TimeoutException {
+        // O envio continua em segundo plano; so nao da para dizer a
+        // quantos chegou. A tela nao pode afirmar o que nao sabe.
+        radioDemorou = true;
       } catch (_) {
         vizinhos = 0;
       }
@@ -199,6 +233,8 @@ class AlarmeService extends ChangeNotifier {
       clientId: clientId,
       tentadoPorRadio: tentadoPorRadio,
       vizinhosAoAlcance: vizinhos,
+      malhaDeOutroTop: malhaDeOutroTop,
+      radioDemorou: radioDemorou,
     );
   }
 
@@ -365,6 +401,7 @@ class AlarmeService extends ChangeNotifier {
     _descartados.clear();
     _anunciados.clear();
     espalharPeloRadio = null;
+    topDaMalha = null;
   }
 }
 
@@ -379,6 +416,8 @@ class DisparoDeAlarme {
     required this.clientId,
     required this.tentadoPorRadio,
     required this.vizinhosAoAlcance,
+    this.malhaDeOutroTop = false,
+    this.radioDemorou = false,
   });
 
   /// Identidade do disparo, já válida antes de existir no servidor.
@@ -395,12 +434,29 @@ class DisparoDeAlarme {
   /// perto" é honesto; "2 pessoas foram avisadas" é mentira.
   final int vizinhosAoAlcance;
 
+  /// A malha estava ligada, mas para outro Top — nada foi transmitido.
+  final bool malhaDeOutroTop;
+
+  /// O radio nao respondeu dentro de [AlarmeService.limiteDoRadio]. O
+  /// envio segue em segundo plano; nao da para dizer a quantos chegou.
+  final bool radioDemorou;
+
   /// Frase pronta para a tela, escrita para não prometer entrega.
   String get resumo {
+    if (malhaDeOutroTop) {
+      return 'Alarme gravado, mas NÃO foi pelo rádio: o rádio entre '
+          'aparelhos está ligado para OUTRO Top. Ninguém por perto foi '
+          'avisado. Abra o chat DESTE Top e ligue o rádio lá.';
+    }
     if (!tentadoPorRadio) {
       return 'Alarme gravado. Sobe assim que houver sinal. O rádio entre '
           'aparelhos está DESLIGADO — ligue-o para avisar quem está por '
           'perto agora.';
+    }
+    if (radioDemorou) {
+      return 'Alarme gravado e entregue ao rádio, que ainda não respondeu. '
+          'NÃO dá para confirmar se alguém por perto recebeu — confirme '
+          'por voz. Também sobe assim que houver sinal.';
     }
     if (vizinhosAoAlcance == 0) {
       return 'Alarme gravado e transmitido por rádio, mas NENHUM aparelho '

@@ -519,4 +519,104 @@ void main() {
       expect(a.senderId, 'hakuna-1');
     });
   });
+
+  group('o rádio não pode carimbar o Top errado', () {
+    test(
+      'malha ligada para OUTRO Top: não transmite, e diz por quê',
+      () async {
+        var chamou = false;
+        AlarmeService.instance
+          ..topDaMalha = 'top-OUTRO'
+          ..espalharPeloRadio =
+              ({
+                required String clientId,
+                required String corpo,
+                required DateTime criadaEm,
+                double? latitude,
+                double? longitude,
+              }) async {
+                chamou = true;
+                return 5;
+              };
+
+        final r = await AlarmeService.instance.disparar(topId: 'top-1');
+        await AlarmeService.instance.envioEmAndamento;
+
+        // Transmitir carimbado com o Top errado é pior que não
+        // transmitir: chega a quem não tem o que fazer e não chega a
+        // quem tem.
+        expect(chamou, isFalse);
+        expect(r.malhaDeOutroTop, isTrue);
+        expect(r.tentadoPorRadio, isFalse);
+        expect(r.resumo, contains('OUTRO Top'));
+        // E o alarme continua gravado: a fila não depende do rádio.
+        expect(
+          await Outbox.instance.pendingCount(entity: AlarmeService.entidade),
+          1,
+        );
+      },
+    );
+
+    test('malha ligada para o MESMO Top transmite normalmente', () async {
+      var chamou = false;
+      AlarmeService.instance
+        ..topDaMalha = 'top-1'
+        ..espalharPeloRadio =
+            ({
+              required String clientId,
+              required String corpo,
+              required DateTime criadaEm,
+              double? latitude,
+              double? longitude,
+            }) async {
+              chamou = true;
+              return 2;
+            };
+
+      final r = await AlarmeService.instance.disparar(topId: 'top-1');
+      await AlarmeService.instance.envioEmAndamento;
+
+      expect(chamou, isTrue);
+      expect(r.malhaDeOutroTop, isFalse);
+      expect(r.vizinhosAoAlcance, 2);
+    });
+  });
+
+  group('o rádio nunca trava a tela de emergência', () {
+    test('rádio lento estoura o teto e o disparo volta mesmo assim', () async {
+      AlarmeService.limiteDoRadio = const Duration(milliseconds: 50);
+      addTearDown(() {
+        AlarmeService.limiteDoRadio = const Duration(seconds: 3);
+      });
+
+      AlarmeService.instance.espalharPeloRadio =
+          ({
+            required String clientId,
+            required String corpo,
+            required DateTime criadaEm,
+            double? latitude,
+            double? longitude,
+          }) async {
+            // `TransporteNearby.enviar` faz um await por vizinho, em laço.
+            // Com vários aparelhos ou rádio lento, isto segura a TELA — e
+            // nesse ponto o alarme já está gravado. Esperar o rádio só
+            // tira segundos de quem precisa agir.
+            await Future<void>.delayed(const Duration(seconds: 5));
+            return 3;
+          };
+
+      final r = await AlarmeService.instance.disparar(topId: 'top-1');
+      await AlarmeService.instance.envioEmAndamento;
+
+      expect(r.radioDemorou, isTrue);
+      expect(r.vizinhosAoAlcance, 0);
+      // A frase não pode afirmar entrega nem negar: ela NÃO SABE.
+      expect(r.resumo, contains('NÃO dá para confirmar'));
+      expect(r.resumo, isNot(contains('NENHUM aparelho')));
+      expect(
+        await Outbox.instance.pendingCount(entity: AlarmeService.entidade),
+        1,
+      );
+    });
+  });
 }

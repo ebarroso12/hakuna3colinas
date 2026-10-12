@@ -117,6 +117,9 @@ class MalhaService extends ChangeNotifier {
     // depende do plugin de rádio, e sem malha ligada ele segue só pela
     // fila, como antes.
     AlarmeService.instance.espalharPeloRadio = _espalharAlarme;
+    // O Top da malha vai junto: o disparo confere antes de transmitir,
+    // para nao carimbar o alarme com o Top errado.
+    AlarmeService.instance.topDaMalha = topId;
 
     notifyListeners();
     return true;
@@ -170,6 +173,7 @@ class MalhaService extends ChangeNotifier {
     // transporte morto faria o disparo relatar "transmitido" sem rádio
     // nenhum — mentira cara numa emergência.
     AlarmeService.instance.espalharPeloRadio = null;
+    AlarmeService.instance.topDaMalha = null;
 
     final t = _transporte;
     _transporte = null;
