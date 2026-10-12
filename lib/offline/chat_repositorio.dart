@@ -7,6 +7,7 @@ import '../services/supabase_service.dart';
 import 'cache_local.dart';
 import 'outbox.dart';
 import 'sync_service.dart';
+import '../services/malha_service.dart';
 
 /// O que a tela de chat precisa saber, de uma vez.
 ///
@@ -68,6 +69,16 @@ class ChatRepositorio {
   /// Hakuna saísse e voltasse.
   final _filaMudou = StreamController<void>.broadcast();
 
+  /// Acorda os chats abertos porque algo mudou no disco.
+  ///
+  /// Chamado por `MalhaService` quando uma mensagem chega pelo rádio: ela
+  /// entrou no cache, mas nem o stream do Supabase nem a fila mudaram, e
+  /// sem este empurrão a mensagem só apareceria na próxima vez que a tela
+  /// fosse montada — que no mato pode ser nunca.
+  void avisarQueMudou() {
+    if (!_filaMudou.isClosed) _filaMudou.add(null);
+  }
+
   void registrarUploaders() {
     SyncService.instance.registerUploader(entityTeam, (entrada) async {
       await SupabaseService.instance.enviarMensagemEquipe(entrada.payload);
@@ -126,6 +137,24 @@ class ChatRepositorio {
 
     _filaMudou.add(null);
     unawaited(SyncService.instance.syncNow());
+
+    // Espalha pelo rádio local também, se a malha estiver ligada.
+    //
+    // Os dois caminhos são independentes de propósito: a fila sobe pelo
+    // servidor quando houver sinal, e o rádio entrega a quem está perto
+    // agora. A mesma mensagem pode chegar pelos dois, e o `client_id`
+    // cuida de não duplicar.
+    //
+    // Sem `await`: o rádio não pode atrasar o retorno da função, que é o
+    // que põe a mensagem na tela de quem escreveu.
+    unawaited(
+      MalhaService.instance.espalhar(
+        clientId: clientId,
+        team: team,
+        corpo: body,
+        criadaEm: agora,
+      ),
+    );
 
     return TeamMessage(
       clientId: clientId,

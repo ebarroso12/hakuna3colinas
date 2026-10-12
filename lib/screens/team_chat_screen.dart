@@ -7,6 +7,7 @@ import '../models/top.dart';
 import '../offline/chat_repositorio.dart';
 import '../services/supabase_service.dart';
 import '../widgets/botao_inicio.dart';
+import '../widgets/botao_da_malha.dart';
 
 /// Chat de uma equipe dentro de um Top. [TeamKey.geral] é o chat geral.
 class TeamChatScreen extends StatefulWidget {
@@ -154,6 +155,11 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
                     // Aviso em vez de tela de erro: o histórico continua
                     // visível. Trocar a lista por uma mensagem de erro
                     // tirava do Hakuna o acesso ao que já havia sido dito.
+                    // O controle do rádio fica AQUI, e não na barra do
+                    // Top: é nesta tela que a pessoa percebe que a
+                    // mensagem não está saindo, e é aqui que ligar faz
+                    // sentido para ela.
+                    BotaoDaMalha(top: widget.top),
                     if (chat.offline) _AvisoOffline(pendentes: chat.pendentes),
                     Expanded(
                       child: ListView.builder(
