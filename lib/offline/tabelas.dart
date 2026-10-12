@@ -298,11 +298,19 @@ abstract final class ColunasRegraTriagem {
 /// Nomes idênticos aos do Postgres, como nas outras: o mesmo `fromMap`
 /// serve para linha vinda do Supabase e para linha vinda do SQLite.
 abstract final class ColunasMensagem {
-  /// Chave primária LOCAL, `<entidade>|<id do servidor>`.
+  /// Chave primária LOCAL. Duas formas, e a diferença importa:
+  ///
+  ///     <entidade>|srv|<id do servidor>    veio do Supabase
+  ///     <entidade>|loc|<client_id>         veio do rádio, sem servidor
   ///
   /// Não é o `id` cru porque `team_messages.id` e
   /// `top_hakuna_messages.id` são sequências independentes no Postgres —
   /// as duas têm id 1, e numa tabela só uma sobrescreveria a outra.
+  ///
+  /// Mensagem que chegou por rádio **não tem id de servidor** (ela nunca
+  /// passou por lá), então a identidade dela é o `client_id` gerado na
+  /// origem. Quando a mesma mensagem chegar pelo Supabase, a linha `loc`
+  /// é apagada e a `srv` fica — ver `CacheLocal.salvarMensagens`.
   static const chave = 'chave';
 
   /// `team_messages` ou `top_hakuna_messages`.
@@ -316,8 +324,27 @@ abstract final class ColunasMensagem {
   static const team = 'team';
 
   static const senderId = 'sender_id';
+
+  /// Nome de quem escreveu, quando a mensagem veio pelo rádio.
+  ///
+  /// `profiles` é fechada para quem recebe, e sem rede não há como
+  /// resolver uuid em nome. Mesma razão de `top_alerts.sender_name`.
+  /// Null nas que vieram do servidor, onde a tela já resolve o nome.
+  static const senderName = 'sender_name';
+
   static const body = 'body';
   static const isAlert = 'is_alert';
+
+  /// O servidor confirmou a autoria desta mensagem.
+  ///
+  /// **Falso = chegou por rádio local e NÃO está autenticada.** Qualquer
+  /// aparelho ao alcance pode afirmar "fulano disse X"; a RLS impede isso
+  /// no servidor, o rádio não impede nada.
+  ///
+  /// Numa emergência a diferença é séria — "o coordenador mandou descer"
+  /// forjado move 200 pessoas. A tela **tem de** mostrar isso. Esconder
+  /// seria pior que não ter a funcionalidade.
+  static const confirmada = 'confirmada';
 
   /// Epoch em ms. Inteiro e não texto: é por ele que se ordena e se poda,
   /// e comparar ISO-8601 como string funciona por acidente do formato.
@@ -327,17 +354,23 @@ abstract final class ColunasMensagem {
   static const criar =
       '''
     CREATE TABLE ${Tabelas.mensagens} (
-      $chave     TEXT PRIMARY KEY,
-      $entidade  TEXT    NOT NULL,
-      $id        INTEGER NOT NULL,
-      $clientId  TEXT,
-      $topId     TEXT    NOT NULL,
-      $team      TEXT,
-      $senderId  TEXT    NOT NULL,
-      $body      TEXT    NOT NULL,
-      $isAlert   INTEGER NOT NULL DEFAULT 0,
-      $createdAt INTEGER NOT NULL,
-      $editedAt  INTEGER
+      $chave      TEXT PRIMARY KEY,
+      $entidade   TEXT    NOT NULL,
+      -- NULL no que chegou por radio: nunca passou pelo servidor, entao
+      -- nao tem id de sequencia. A identidade dessas e o client_id.
+      $id         INTEGER,
+      $clientId   TEXT,
+      $topId      TEXT    NOT NULL,
+      $team       TEXT,
+      $senderId   TEXT    NOT NULL,
+      $senderName TEXT,
+      $body       TEXT    NOT NULL,
+      $isAlert    INTEGER NOT NULL DEFAULT 0,
+      -- 1 por padrao: tudo que vem do Supabase e autenticado pela RLS.
+      -- So o radio local grava 0 aqui.
+      $confirmada INTEGER NOT NULL DEFAULT 1,
+      $createdAt  INTEGER NOT NULL,
+      $editedAt   INTEGER
     )
   ''';
 
@@ -348,5 +381,15 @@ abstract final class ColunasMensagem {
       '''
     CREATE INDEX idx_mensagens_chat
       ON ${Tabelas.mensagens} ($topId, $entidade, $team, $createdAt DESC)
+  ''';
+
+  /// Acha a linha que veio do rádio para apagá-la quando a mesma
+  /// mensagem chegar pelo servidor. Sem este índice, confirmar uma
+  /// mensagem varreria a tabela inteira — e isso acontece a cada lote
+  /// que o Supabase entrega.
+  static const criarIndiceClientId =
+      '''
+    CREATE INDEX idx_mensagens_client_id
+      ON ${Tabelas.mensagens} ($clientId)
   ''';
 }

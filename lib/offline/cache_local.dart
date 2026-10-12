@@ -464,20 +464,38 @@ class CacheLocal {
       for (final linha in linhas) {
         final id = linha[ColunasMensagem.id];
         if (id == null) continue;
+        // A mesma mensagem pode ter chegado antes pelo rádio, como NÃO
+        // confirmada. Agora ela veio do servidor, autenticada pela RLS:
+        // a linha local sai e a do servidor fica. Sem isto, a mensagem
+        // apareceria duas vezes — uma com o aviso de "não confirmada" e
+        // outra sem, o que é pior que duplicar, porque a pessoa não
+        // saberia em qual acreditar.
+        final clientId = linha['client_id'];
+        if (clientId != null) {
+          lote.delete(
+            Tabelas.mensagens,
+            where:
+                '${ColunasMensagem.clientId} = ? AND '
+                '${ColunasMensagem.confirmada} = 0',
+            whereArgs: [clientId],
+          );
+        }
         lote.insert(Tabelas.mensagens, {
-          // `<entidade>|<id>`: `team_messages.id` e
+          // `<entidade>|srv|<id>`: `team_messages.id` e
           // `top_hakuna_messages.id` são sequências independentes no
           // Postgres, então as duas têm id 1. Sem o prefixo, uma
           // sobrescreveria a outra.
-          ColunasMensagem.chave: '$entidade|$id',
+          ColunasMensagem.chave: '$entidade|srv|$id',
           ColunasMensagem.entidade: entidade,
           ColunasMensagem.id: id,
-          ColunasMensagem.clientId: linha['client_id'],
+          ColunasMensagem.clientId: clientId,
           ColunasMensagem.topId: linha['top_id'],
           ColunasMensagem.team: linha['team'],
           ColunasMensagem.senderId: linha['sender_id'],
           ColunasMensagem.body: linha['body'],
           ColunasMensagem.isAlert: (linha['is_alert'] == true) ? 1 : 0,
+          // Veio do Supabase: a RLS garantiu a autoria.
+          ColunasMensagem.confirmada: 1,
           ColunasMensagem.createdAt: _emMs(linha['created_at']),
           ColunasMensagem.editedAt: linha['edited_at'] == null
               ? null
@@ -486,6 +504,62 @@ class CacheLocal {
       }
       await lote.commit(noResult: true);
     });
+  }
+
+  /// Grava uma mensagem que chegou pelo RÁDIO, sem passar pelo servidor.
+  ///
+  /// Entra como **não confirmada** e assim fica até a mesma mensagem
+  /// chegar pelo Supabase. `ignore` e não `replace`: se já existe linha
+  /// para este `client_id`, ou ela veio do servidor (e é melhor) ou é
+  /// este mesmo pacote chegando por outro caminho da malha.
+  ///
+  /// Devolve `true` quando a linha é nova — é isso que diz à tela se há
+  /// algo a mostrar, e à malha se vale repassar.
+  Future<bool> salvarMensagemDoRadio({
+    required String entidade,
+    required String clientId,
+    required String topId,
+    String? team,
+    required String autorId,
+    required String autorNome,
+    required String corpo,
+    required DateTime criadaEm,
+  }) async {
+    final db = await _db;
+
+    // Se o servidor já trouxe esta mensagem, não há o que fazer: a versão
+    // autenticada é sempre melhor que a do rádio.
+    final jaConfirmada = await db.query(
+      Tabelas.mensagens,
+      columns: [ColunasMensagem.chave],
+      where:
+          '${ColunasMensagem.clientId} = ? AND '
+          '${ColunasMensagem.confirmada} = 1',
+      whereArgs: [clientId],
+      limit: 1,
+    );
+    if (jaConfirmada.isNotEmpty) return false;
+
+    final inseridas = await db.insert(Tabelas.mensagens, {
+      ColunasMensagem.chave: '$entidade|loc|$clientId',
+      ColunasMensagem.entidade: entidade,
+      // Null de propósito: nunca passou pelo servidor, não tem id de
+      // sequência. A identidade dela é o `client_id`.
+      ColunasMensagem.id: null,
+      ColunasMensagem.clientId: clientId,
+      ColunasMensagem.topId: topId,
+      ColunasMensagem.team: team,
+      ColunasMensagem.senderId: autorId,
+      ColunasMensagem.senderName: autorNome,
+      ColunasMensagem.body: corpo,
+      ColunasMensagem.isAlert: 0,
+      // O ponto deste método inteiro.
+      ColunasMensagem.confirmada: 0,
+      ColunasMensagem.createdAt: criadaEm.toUtc().millisecondsSinceEpoch,
+      ColunasMensagem.editedAt: null,
+    }, conflictAlgorithm: ConflictAlgorithm.ignore);
+
+    return inseridas != 0;
   }
 
   /// Converte o `timestamptz` do Postgres em epoch ms.
@@ -533,6 +607,8 @@ class CacheLocal {
             'sender_id': l[ColunasMensagem.senderId],
             'body': l[ColunasMensagem.body],
             'is_alert': l[ColunasMensagem.isAlert] == 1,
+            'sender_name': l[ColunasMensagem.senderName],
+            'confirmada': l[ColunasMensagem.confirmada] == 1,
             'created_at': DateTime.fromMillisecondsSinceEpoch(
               l[ColunasMensagem.createdAt] as int,
               isUtc: true,

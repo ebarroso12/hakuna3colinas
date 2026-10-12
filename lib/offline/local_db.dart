@@ -166,6 +166,7 @@ class LocalDb {
   Future<void> _criarCacheDeMensagens(Database db) async {
     await db.execute(ColunasMensagem.criar);
     await db.execute(ColunasMensagem.criarIndice);
+    await db.execute(ColunasMensagem.criarIndiceClientId);
   }
 
   /// Migrações, uma por versão. Nunca editar uma já publicada — aparelho

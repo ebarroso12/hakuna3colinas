@@ -164,9 +164,15 @@ class _TeamChatScreenState extends State<TeamChatScreen> {
                           return _Bolha(
                             mensagem: m,
                             isMine: m.senderId == myId,
+                            // Mensagem do rádio carrega o nome dentro
+                            // dela: `profiles` é fechada para quem
+                            // recebe, e sem rede não há como resolver o
+                            // uuid. Nunca cair no uuid cru — ele ocupa a
+                            // linha do nome e não ajuda a achar ninguém.
                             remetente:
                                 _profiles[m.senderId]?.displayLabel ??
-                                m.senderId,
+                                m.senderName ??
+                                'Alguém do Top',
                           );
                         },
                       ),
@@ -298,6 +304,17 @@ class _Bolha extends StatelessWidget {
 
     final pendente = mensagem.pendente;
 
+    // Chegou pelo rádio de outro aparelho e NINGUÉM confirmou a autoria.
+    //
+    // No servidor a RLS prende `sender_id = auth.uid()`: é impossível
+    // falar no nome de outro. Pelo rádio, qualquer aparelho ao alcance
+    // pode afirmar o que quiser de quem quiser.
+    //
+    // Numa emergência isso move gente: "o coordenador mandou descer"
+    // forjado tira 200 pessoas do lugar. A bolha tem de dizer, e dizer
+    // de um jeito que não se confunda com "ainda não enviou".
+    final semAutoria = mensagem.semAutoriaConfirmada;
+
     final fundo = mensagem.isAlert
         ? scheme.errorContainer
         : isMine
@@ -318,10 +335,44 @@ class _Bolha extends StatelessWidget {
         decoration: BoxDecoration(
           color: fundo,
           borderRadius: BorderRadius.circular(12),
+          // Contorno em vez de outra cor de fundo: cor já está ocupada
+          // por alerta e por autoria própria, e somar uma terceira faria
+          // as três competirem. O contorno é lido como "esta é
+          // diferente" sem disputar com o resto.
+          border: semAutoria
+              ? Border.all(color: scheme.outline, width: 1.5)
+              : null,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Vem ANTES do texto de propósito: quem lê precisa saber de
+            // onde veio a informação antes de agir sobre ela.
+            if (semAutoria)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.wifi_tethering,
+                      size: 14,
+                      color: texto.withValues(alpha: 0.85),
+                    ),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        'Chegou por rádio · remetente NÃO confirmado',
+                        style: Theme.of(context).textTheme.labelSmall
+                            ?.copyWith(
+                              color: texto.withValues(alpha: 0.85),
+                              fontWeight: FontWeight.bold,
+                            ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             if (mensagem.isAlert)
               Row(
                 mainAxisSize: MainAxisSize.min,

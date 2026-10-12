@@ -28,6 +28,27 @@ class TeamMessage {
   /// mensagem nunca editada.
   final DateTime? editedAt;
 
+  /// Nome de quem escreveu, quando a mensagem chegou pelo RÁDIO local.
+  ///
+  /// `profiles` é fechada para quem recebe, e sem rede não há como
+  /// resolver uuid em nome. Null nas que vieram do servidor, onde a tela
+  /// já tem o perfil.
+  final String? senderName;
+
+  /// O servidor confirmou a autoria.
+  ///
+  /// **Falso = chegou por rádio local, sem autenticação nenhuma.**
+  /// Qualquer aparelho ao alcance pode afirmar "fulano disse X" — a RLS
+  /// impede isso no servidor, o rádio não impede nada.
+  ///
+  /// Numa emergência a diferença é séria: "o coordenador mandou descer"
+  /// forjado move 200 pessoas. A tela mostra o aviso; esconder seria pior
+  /// que não ter a funcionalidade. Ver `lib/offline/transporte_local.dart`.
+  ///
+  /// `true` por padrão porque toda mensagem do Supabase é autenticada —
+  /// só o rádio grava `false`, e grava explicitamente.
+  final bool confirmada;
+
   TeamMessage({
     required this.topId,
     required this.team,
@@ -38,7 +59,12 @@ class TeamMessage {
     this.id,
     this.clientId,
     this.editedAt,
+    this.senderName,
+    this.confirmada = true,
   });
+
+  /// Chegou pelo rádio e ninguém confirmou quem escreveu.
+  bool get semAutoriaConfirmada => !confirmada;
 
   /// Ainda não chegou ao servidor: está na fila do aparelho.
   ///
@@ -63,6 +89,10 @@ class TeamMessage {
       editedAt: map['edited_at'] != null
           ? DateTime.parse(map['edited_at'] as String)
           : null,
+      senderName: map['sender_name'] as String?,
+      // Ausente = veio do Supabase, onde a RLS garante a autoria. Só o
+      // cache local grava `false`, e grava explicitamente.
+      confirmada: map['confirmada'] as bool? ?? true,
     );
   }
 }
