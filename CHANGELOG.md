@@ -86,14 +86,19 @@ senha de acesso e sem participantes. Em `draft` a RLS fecha quase tudo, e
 sem `access_code_hash` o autocadastro nao tem como validar ninguem. Do jeito
 que esta, no dia do evento ninguem entra.
 
+#### CONFERIDO depois da build
+
+O split rodou e o resultado ficou MELHOR que a estimativa de ~30 MB:
+
+    legendarios1.0.40.apk          27 MB   (arm64)
+    legendarios1.0.40-32bits.apk   23 MB   (armeabi-v7a)
+
+De 76 MB para 27 MB: **64% a menos**. E cabe folgado nos 50 MB do Storage,
+que era a condicao para o CI publicar sozinho.
+
 #### NAO verificado
 
-O build com `--split-per-abi` nunca rodou neste projeto. Os nomes de saida
-do Flutter sao os esperados ate onde a documentacao diz, e o passo de
-assinatura agora FALHA ALTO se `app-arm64-v8a-release.apk` nao existir, em
-vez de seguir calado. Mas so a execucao da tag prova.
-
-O upload para o Storage tambem nunca rodou: depende do secret
+O upload para o Storage ainda nao rodou: depende do secret
 `SUPABASE_SERVICE_ROLE_KEY`, que so o dono pode criar. Sem ele o passo
 avisa e segue — a release sai de qualquer forma.
 

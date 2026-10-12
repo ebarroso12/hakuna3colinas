@@ -838,6 +838,21 @@ validando uma configuração que não existe mais.
   `docs/comunicacao_sem_rede.md`**: alcance real de cada via, custo, e o
   que cabe em cada canal.
 
+  **Para CHAT DE EQUIPE a conclusão é outra**, e está em
+  `docs/comunicacao_de_equipe_sem_rede.md`: equipe trabalha junto, e
+  "junto" é exatamente a condição em que BLE e WiFi funcionam. Seis das
+  nove equipes ficam concentradas na base (ADM, produção, mídia, eventos,
+  voz, intercessão); só `seguranca` e `hakunas` estão espalhadas na
+  trilha, e são justamente as de emergência. Para as seis, rede local no
+  acampamento resolve com TODAS as funções — chat, foto, prontuário — e
+  não só texto curto.
+
+  **A ordem certa é medir o sinal no local antes de comprar qualquer
+  coisa.** Se houver 3G em algum ponto do acampamento, um roteador comum
+  sem link próprio (R$150–400) já põe as seis equipes em rede, sem uma
+  linha de código — porque o app volta a alcançar o Supabase. Servidor de
+  campo é o caminho mais caro e o que depende de mais coisas darem certo.
+
   O resumo que importa: **não é escolha de software, é de física.** BLE e
   WiFi Direct dão 10–150 m no mato (2,4 GHz é absorvido por corpo e
   vegetação), então não servem para alarme — quem está nesse raio já viu o
