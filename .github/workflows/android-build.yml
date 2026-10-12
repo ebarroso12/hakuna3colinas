@@ -149,14 +149,38 @@ jobs:
           LEGENDARIOS_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           LEGENDARIOS_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          flutter build apk --release \
+          # `--split-per-abi` em vez de um APK universal. Nao e
+          # otimizacao, sao duas necessidades medidas no APK da v1.0.39:
+          #
+          #   x86_64       27,1 MB  <- so serve para EMULADOR
+          #   arm64-v8a    24,7 MB  <- todo celular desde ~2016
+          #   armeabi-v7a  20,9 MB  <- 32 bits, aparelho antigo
+          #   resto         4,8 MB
+          #
+          # 1. O universal da 76 MB e o Storage do plano free recusa
+          #    acima de 50 MB. O arm64 sozinho da ~30 MB e cabe.
+          # 2. Baixar 27 MB de x86_64 no mato e desperdicio puro.
+          #
+          # O CLAUDE.md ja apontava --split-per-abi como o caminho certo
+          # "se o tamanho virar problema", e NAO desligar o bundling do
+          # ML Kit, que e o que faz o QR funcionar sem rede.
+          flutter build apk --release --split-per-abi \
             --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
             --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+
+          ls -lh build/app/outputs/flutter-apk/*.apk
 
       - name: Diz com qual chave o APK foi assinado
         if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         run: |
-          APK=build/app/outputs/flutter-apk/app-release.apk
+          # Confere o arm64, que e o arquivo que a equipe instala. Os
+          # outros saem da MESMA invocacao do Gradle, com a mesma chave.
+          APK=build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          if [ ! -f "$APK" ]; then
+            echo "::error::$APK nao existe — o --split-per-abi mudou os nomes de saida?"
+            ls -la build/app/outputs/flutter-apk/ || true
+            exit 1
+          fi
 
           # Confere no ARQUIVO, nao na configuracao: e o unico jeito de
           # saber o que realmente saiu.
@@ -215,17 +239,40 @@ jobs:
 
       - name: Renomeia para o padrao de distribuicao
         if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        env:
+          VERSAO: ${{ steps.versao.outputs.numero }}
         run: |
-          mv build/app/outputs/flutter-apk/app-release.apk \
-             "build/app/outputs/flutter-apk/${{ steps.versao.outputs.arquivo }}"
-          ls -lh "build/app/outputs/flutter-apk/${{ steps.versao.outputs.arquivo }}"
+          cd build/app/outputs/flutter-apk
+
+          # O arm64 fica SEM sufixo, com o nome de sempre
+          # (legendarios<versao>.apk). E deliberado: quem baixa no
+          # celular no campo nao deve ter de escolher arquitetura, e
+          # esse e o arquivo certo para praticamente todo aparelho
+          # desde 2016. Manter o nome tambem evita quebrar o que a
+          # equipe ja conhece e o que o CHANGELOG registra.
+          mv app-arm64-v8a-release.apk "legendarios${VERSAO}.apk"
+
+          # O 32 bits ganha nome que se entende sem explicacao. E a
+          # EXCECAO, nao a escolha — por isso nao disputa o nome
+          # principal. Quem precisa dele e quem tentou o outro e viu
+          # "app nao instalado".
+          if [ -f app-armeabi-v7a-release.apk ]; then
+            mv app-armeabi-v7a-release.apk "legendarios${VERSAO}-32bits.apk"
+          fi
+
+          # x86_64 e DESCARTADO: so roda em emulador. Publicar seria
+          # oferecer 27 MB que ninguem da equipe consegue usar e dar a
+          # alguem a chance de baixar o arquivo errado.
+          rm -f app-x86_64-release.apk
+
+          ls -lh *.apk
 
       - name: Publica o APK como artifact
         if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.versao.outputs.arquivo }}
-          path: build/app/outputs/flutter-apk/${{ steps.versao.outputs.arquivo }}
+          name: legendarios-${{ steps.versao.outputs.numero }}-apks
+          path: build/app/outputs/flutter-apk/*.apk
           retention-days: 90
           if-no-files-found: error
 
@@ -233,7 +280,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: build/app/outputs/flutter-apk/${{ steps.versao.outputs.arquivo }}
+          files: build/app/outputs/flutter-apk/*.apk
           generate_release_notes: true
 
       # ----------------------------------------------------------------------
