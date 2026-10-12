@@ -163,7 +163,9 @@ O ponto vem de `top_alerts`, não de `hakuna_positions`: é uma coordenada
 em texto e dá para copiar, porque sem tiles de mapa no mato é ela que se
 dita no rádio.
 
-SQL em `supabase/alarme_para_todo_o_top.sql`. Testes em
+SQL em `supabase/alarme_para_todo_o_top.sql`, **aplicado em produção em
+11/10/2026** (confirmado pelo dono: policies, função e `sender_name` no
+lugar). Testes em
 `test/services/alarme_quem_chama_e_onde_test.dart`, incluindo alarme antigo
 sem a coluna, meia coordenada e `0,0` (que **é** posição válida).
 
@@ -234,6 +236,30 @@ flutter test      # tem que dar "All tests passed!"
    `MissingPluginException`. Esperado.
 
 ## Convenções que importam neste projeto
+
+### Migração tem de rodar DUAS vezes sem erro
+
+`create policy` **não tem** `if not exists` em Postgres. Toda policy nova
+precisa do `drop policy if exists` do próprio nome logo acima — não só das
+policies antigas que ela substitui.
+
+Isso foi aprendido caro em 11/10/2026. `alarme_para_todo_o_top.sql` dava
+drop nas antigas e não nas suas próprias, e a segunda execução morria com
+`42710: policy already exists`. O cabeçalho do arquivo afirmava
+"idempotente"; era falso, e eu não havia rodado duas vezes para conferir.
+
+**O estrago não foi a mensagem de erro.** O SQL Editor do Supabase roda o
+script numa transação: o `alter table ... add column sender_name`, que vem
+depois das policies, foi revertido junto. O erro reclamava de algo **já
+aplicado** e de quebra impedia a única coisa que ainda faltava — a coluna
+que carrega o nome de quem dispara o alarme. Quem lesse "already exists"
+concluiria que estava pronto, e a faixa diria "Alguém do Top" para sempre,
+sem erro em lugar nenhum.
+
+A regra, então: `drop policy if exists` do próprio nome antes de cada
+`create policy`, `if not exists` em todo `create index` e `add column`, e
+**rodar o arquivo duas vezes seguidas antes de dar por pronto**.
+"Idempotente" não é intenção, é propriedade que se verifica.
 
 ### Acesso a dado é sempre escopado por Top
 `Top` = evento. `Hakuna` = médico liberado para um Top específico.

@@ -106,17 +106,30 @@ coluna, meia coordenada, e `0,0` — que **e** posicao valida, nao ausencia.
 
 #### NAO verificado
 
-**O SQL nao foi aplicado por mim** — nao tenho credencial do banco nesta
-sessao (`supabase projects list` devolve `AccessTokenRequiredError`).
-Quatro arquivos a rodar, na ordem, com consulta de conferencia:
+**APLICADO EM PRODUCAO em 11/10/2026**, pelo dono, confirmado por ele.
+Eu nao tenho credencial do banco nesta sessao (`supabase projects list`
+devolve `AccessTokenRequiredError`), entao a confirmacao e dele, nao
+minha — nao conferi com os proprios olhos.
+
+Um tropeco no caminho, e a culpa e minha: a PARTE 3 NAO era idempotente.
+Eu dei `drop policy if exists` nas policies antigas e esqueci das que o
+proprio arquivo cria, e `create policy` nao tem `if not exists`. A segunda
+execucao morreu com `42710: policy already exists` — e, porque o SQL
+Editor roda tudo numa transacao, levou junto o
+`add column sender_name` que vinha depois. O erro reclamava de algo JA
+aplicado e de quebra impedia o que faltava. Corrigido, e a licao virou
+convencao no CLAUDE.md: migracao tem de rodar DUAS vezes sem erro, e isso
+se verifica rodando, nao afirmando.
+
+Os quatro arquivos, para referencia futura:
 
     1. supabase/team_key_as_nove_equipes.sql
     2. supabase/admin_ve_todas_as_equipes.sql
     3. supabase/alarme_para_todo_o_top.sql
     4. supabase/CONFERIR_APOS_APLICAR.sql   (so pergunta, nao altera)
 
-**Enquanto o 3 nao rodar, o alarme continua chegando a uma pessoa.** O app
-novo nao resolve isso sozinho: a fronteira e a RLS.
+O 3 era o que importava: sem ele o alarme continuaria chegando a uma
+pessoa, porque a fronteira e a RLS e nao o app.
 
 Tambem nao verificado, e so se prova em aparelho: o som e a vibracao do
 alarme, o GPS com tela bloqueada, e os tiles do mapa sem rede.
