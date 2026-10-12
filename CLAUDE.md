@@ -296,6 +296,47 @@ dizem na cara que precisam de internet, em vez de mostrar tela de erro.
 gravadas por `TextoBusca` no momento do cache. Não compare contra
 `full_name` ou `familia` crus: `"joao"` não acha `"JOÃO"`.
 
+### Travar coluna de permissão exige TRIGGER, não `with check`
+
+Aprendido caro em 12/10/2026, e medido, não deduzido.
+
+`profiles_update_own` prendia o `role` com
+`with check (role = my_profile_role())` — função `stable security
+definer` que lê a própria linha. Faltavam `is_master_admin` e `approved`,
+e como `is_admin()` é `role = 'admin' or is_master_admin`, **qualquer
+conta logada virava admin master** com um `PATCH` na API REST, usando a
+chave anon que está dentro do APK.
+
+Ao corrigir, estender o mesmo `with check` às outras duas colunas
+**funcionou para `is_master_admin` e não funcionou para `approved`**:
+
+```sql
+begin;
+  update profiles set approved = false where id = <uid>;
+  set local role authenticated;  set local request.jwt.claims = ...;
+  update profiles set approved = true  where id = <uid>;
+-- 1 linha gravada, approved = true
+```
+
+Função que **lê a mesma tabela que está sendo alterada**, chamada de
+dentro do `with check` daquela alteração, não dá garantia confiável sobre
+qual versão da linha enxerga. Controle de acesso não se apoia em
+comportamento que varia com o plano de execução.
+
+O que vale é **trigger** `before update ... for each row`: recebe `OLD` e
+`NEW` explicitamente, sem releitura e sem ambiguidade de snapshot. Ver
+`supabase/profiles_sem_escalada_de_privilegio.sql`.
+
+Dois detalhes que não são opcionais:
+
+- **Reverte em silêncio**, não levanta erro. O app manda a linha inteira
+  ao salvar o perfil; recusar quebraria a edição de nome e telefone por
+  causa de campos que nem mudaram.
+- **`auth.uid() is null` passa direto.** É `service_role` — a Edge
+  Function `acesso` precisa aprovar no autocadastro. Sem essa saída, a
+  correção quebraria o cadastro inteiro e ninguém entraria no Top por
+  número + senha. Isso foi testado antes de aplicar.
+
 ### A fila nunca pode travar
 `SyncService` para no primeiro erro **transitório** — certo para queda de
 rede. Mas recusa definitiva do servidor (RLS, dado inválido, esquema
@@ -837,6 +878,57 @@ validando uma configuração que não existe mais.
   painel de coordenação e de regra de quem atribui o quê — decisão de
   produto. Meio-implementado seria pior que ausente: estado que ninguém
   atualiza mente sobre a situação do paciente.
+### O alarme viaja pela malha de rádio, em paralelo com a fila
+
+Entrou na v1.0.44. Antes, `AlarmeService.disparar` só enfileirava e
+`MalhaService.espalhar` tinha **um único chamador**, o chat. Em modo
+avião, apertar EMERGÊNCIA guardava o alarme no próprio celular e não
+avisava ninguém — nem quem estava a dois metros. A função mais crítica
+do app era a única que não usava o caminho sem rede que o app já tinha
+pronto e funcionando. Achado em teste de campo com dois Android, não por
+leitura de código.
+
+**Rádio e fila são paralelos, não alternativos.** A fila alcança quem
+está longe quando houver sinal; o rádio alcança agora quem está perto —
+que numa emergência é quem pode socorrer. Falha no rádio não desfaz o
+alarme.
+
+Quatro coisas que não se pode mexer sem entender:
+
+1. **O pacote continua `v: 1`.** `PacoteLocal.deBytes` descarta versão
+   desconhecida, então subir para `v: 2` faria todo aparelho com a
+   v1.0.41/42 **jogar o pedido de socorro fora em silêncio**. Com `v: 1`
+   ele lê o alarme como mensagem de chat e **mostra** a linha
+   `EMERGÊNCIA — Fulano — -19.9,-43.9`. Não toca, mas aparece. Daí
+   `corpo` ser legível por gente e não JSON interno.
+
+2. **O Top do alarme é conferido contra o Top da malha.** A malha liga
+   por Top (`botao_da_malha.dart`). Sem a conferência, alarme do Top B
+   sairia carimbado com o Top A — chegaria a quem não tem o que fazer e
+   não chegaria a quem tem. Na divergência **não transmite**, e a tela
+   manda ligar o rádio no Top certo.
+
+3. **O envio por rádio tem teto de 3 segundos.** `TransporteNearby.enviar`
+   faz um `await` por vizinho, em laço, e a tela espera `disparar`. Com o
+   alarme já gravado, esperar o rádio só tira segundos de quem precisa
+   agir.
+
+4. **Nenhuma frase promete entrega.** Broadcast por rádio não tem ACK.
+   `DisparoDeAlarme` tem cinco estados — desligado, outro Top, demorou,
+   zero aparelhos, N aparelhos — e o que o número diz é para quantos
+   aparelhos se **falou**, nunca quantos ouviram. "2 pessoas foram
+   avisadas" é mentira e há teste travando isso.
+
+**Alarme de rádio entra como não confirmado**, e a faixa diz isso. No
+rádio não há autenticação: qualquer aparelho ao alcance pode afirmar o
+que quiser em nome de quem quiser, e um alarme forjado move 200 pessoas.
+Quando o mesmo alarme chega depois pelo servidor, `TopAlert.chave` funde
+os dois pelo `client_id` e vale o do servidor — anunciar a mesma
+emergência duas vezes ensina a equipe a ignorar o som.
+
+30 testes em `test/services/alarme_pela_malha_test.dart`. **Nenhum deles
+toca rádio** — isso só se prova com dois Android em modo avião.
+
 - **Notificação com o app FECHADO não existe.** O alarme chega em
   qualquer tela, com som e vibração (`AlarmeService` + `FaixaDeAlarme`),
   mas só com o app aberto: o Realtime é um WebSocket do processo, e
@@ -895,7 +987,7 @@ validando uma configuração que não existe mais.
   payload assinado no aparelho de origem — sem a assinatura, qualquer um
   injeta atendimento no nome de qualquer pessoa. Em dado clínico isso não
   se improvisa.
-- **Nenhum teste de hardware.** Os 322 testes cobrem lógica. NFC, câmera,
+- **Nenhum teste de hardware.** Os 529 testes cobrem lógica. NFC, câmera,
   GPS com tela bloqueada, o som do alarme e o `launchUrl` do botão
   Atualizar só se verificam em aparelho físico.
 - **`occurred_at` em `audit_log` não tem backfill.** As linhas antigas (não
