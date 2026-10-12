@@ -104,6 +104,32 @@ novos cobrem a regra de acesso as 9 equipes (14 casos, inclusive admin
 bloqueado numa equipe), o alarme com e sem nome, alarme antigo sem a
 coluna, meia coordenada, e `0,0` — que **e** posicao valida, nao ausencia.
 
+#### PUBLICACAO
+
+APK no Drive em 12/10/2026 (`1q9LpD6Wix3wfKwaOL-8GXxgPMn26SjHi`, 76 MB,
+tamanho conferido contra o arquivo local) e linha inserida em
+`app_versions` com `build_number = 40`.
+
+ACHADO NO MEIO DISSO, e vale mais que a release: **nenhum APK no Drive
+jamais esteve compartilhado.** Conferi seis itens pela API do Drive — os
+APKs 1.0.35, 1.0.37, 1.0.38, 1.0.39, a pasta "Legendarios APK" e a pasta
+`apk1035` — e todos voltaram apenas o dono, sem permissao de link.
+
+Se estiver certo, o botao ATUALIZAR nunca funcionou para ninguem alem do
+dono: quem tocasse nele caia em "Solicitar acesso". Explicaria por que a
+base instalada nao acompanha as versoes. Ressalva honesta: e possivel que o
+conector do Drive nao enxergue permissao de link por limite de escopo —
+mas foi isso que a API respondeu, seis vezes.
+
+E com a linha de `app_versions` publicada o problema deixou de ser latente
+e ficou ATIVO: antes ninguem era avisado, agora todos sao avisados e caem
+num link que nao baixa. `AtualizacaoService.consultar` filtra por
+`published = true`, entao `update app_versions set published = false`
+desarma o aviso enquanto o compartilhamento nao for resolvido.
+
+A correcao certa e compartilhar a PASTA, nao o arquivo: assim todo APK
+futuro nasce compartilhado e isso para de se repetir a cada release.
+
 #### NAO verificado
 
 **APLICADO EM PRODUCAO em 11/10/2026**, pelo dono, confirmado por ele.

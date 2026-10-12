@@ -751,6 +751,27 @@ gaveta diz que não deu para verificar, em vez de afirmar que está
 atualizado. Publicar versão nova é inserir uma linha em `app_versions` com
 o link do APK; só admin escreve (RLS).
 
+**O arquivo no Drive tem de estar COMPARTILHADO, e nunca esteve.**
+Conferido pela API do Drive em 12/10/2026: os APKs 1.0.35, 1.0.37, 1.0.38
+e 1.0.39, a pasta "Legendarios APK" e a pasta `apk1035` voltaram todos
+apenas o dono, sem permissão de link. Isso significa que o botão ATUALIZAR
+nunca funcionou para ninguém além dele — quem tocasse caía em "Solicitar
+acesso", e isso explicaria a base instalada não acompanhar as versões.
+
+**Compartilhe a PASTA, não o arquivo** ("Qualquer pessoa com o link",
+Leitor): assim todo APK futuro nasce compartilhado e o erro não se repete
+a cada release. Conferir depois de publicar faz parte do fluxo — a linha
+em `app_versions` com link fechado é pior que nenhuma linha, porque avisa
+200 pessoas e manda todas para uma tela de pedir acesso.
+
+Para desarmar um aviso já publicado:
+`update public.app_versions set published = false where version = '...'` —
+`AtualizacaoService.consultar` filtra por `published = true`.
+
+Detalhe de campo: para arquivo de 76 MB o Drive não baixa direto, mostra
+"não foi possível verificar se há vírus" e um botão **Baixar mesmo
+assim**. Funciona, mas avise a equipe para não acharem que deu erro.
+
 ## Regras de triagem
 
 Vivem na tabela `triage_rules` (editáveis pela tela de admin do app), não
