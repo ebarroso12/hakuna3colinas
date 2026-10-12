@@ -72,14 +72,32 @@ class _SignupScreenState extends State<SignupScreen> {
       );
       if (!mounted) return;
       if (SupabaseService.instance.currentUser == null) {
-        // Confirmação de e-mail está ligada no projeto: sem sessão ainda.
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Cadastro feito! Confirme seu e-mail antes de entrar.',
-            ),
-          ),
-        );
+        // Confirmação de e-mail está ligada no projeto: a conta existe, mas
+        // sem sessão — e, pior, SEM NINGUÉM SABENDO.
+        //
+        // Foi assim que o Legendário 219175 ficou preso em 12/10/2026:
+        // conta criada, e-mail nunca confirmado, nada na tela de pedidos do
+        // admin, e nenhum jeito de pedir ajuda de dentro do app. Login
+        // recusado mesmo com a senha certa, e "esqueci minha senha"
+        // respondendo "confirme seu e-mail". Um beco sem saída silencioso,
+        // e o admin não tinha como nem saber que a pessoa existia.
+        //
+        // Registrar o pedido aqui é o que torna a pessoa VISÍVEL: mesmo que
+        // ela nunca abra o e-mail, aparece na lista do admin e ele libera
+        // por código. O caminho de e-mail deixa de ser o único.
+        var avisado = false;
+        try {
+          await AcessoService.instance.solicitar(numero: number, nome: name);
+          avisado = true;
+        } catch (_) {
+          // Sem rede, ou função fora do ar. O cadastro em si deu certo e
+          // não se desfaz por causa do aviso — mas a tela diz a verdade,
+          // que o administrador PODE não ter sido avisado, em vez de
+          // afirmar que foi.
+        }
+        if (!mounted) return;
+        await _avisoDeConfirmacao(email, avisado: avisado);
+        if (!mounted) return;
         Navigator.of(context).pop();
       }
     } catch (e) {
@@ -87,6 +105,58 @@ class _SignupScreenState extends State<SignupScreen> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  /// Aviso que FICA na tela, em vez de SnackBar que some em 4 segundos.
+  ///
+  /// Quem acabou de se cadastrar precisa sair daqui sabendo três coisas: a
+  /// conta existe, falta confirmar o e-mail, e há um caminho se o e-mail
+  /// não chegar. O SnackBar sumia antes de a pessoa terminar de ler — e em
+  /// campo, no sol e com uma mão só, sumia mesmo. Depois dele a tela ainda
+  /// fazia `pop()`, então não restava nem rastro do que tinha acontecido.
+  Future<void> _avisoDeConfirmacao(String email, {required bool avisado}) {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Falta confirmar seu e-mail'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Sua conta foi criada. Enviamos um link para:'),
+              const SizedBox(height: 8),
+              Text(
+                email,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Abra esse e-mail e toque no link. Só depois disso dá para '
+                'entrar — até lá o app recusa a senha, mesmo estando certa.',
+              ),
+              const SizedBox(height: 16),
+              Text(
+                avisado
+                    ? 'Se o e-mail não chegar, fale com o administrador do '
+                          'Top: seu pedido já apareceu na lista dele, e ele '
+                          'consegue liberar seu acesso sem o e-mail.'
+                    : 'Não conseguimos avisar o administrador agora — pode '
+                          'ser falta de internet. Se o e-mail não chegar, '
+                          'procure-o e peça o código de acesso.',
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Entendi'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
