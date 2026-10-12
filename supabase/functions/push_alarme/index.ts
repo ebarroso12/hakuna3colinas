@@ -154,21 +154,99 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     )
 
-    // Quem deve ser avisado: a MESMA regua do alarme no banco, que e todo
-    // aprovado de Top nao-draft (ver `pode_alarmar_no_top`). Duplicar a
-    // regra aqui a faria divergir com o tempo, entao ela sai de la.
-    const { data: elegiveis, error: erroPessoas } = await supa
-      .from('profiles')
-      .select('id')
-      .eq('approved', true)
-    if (erroPessoas) throw erroPessoas
+    // Quem recebe o push: a MESMA regua de `pode_alarmar_no_top(top_id)`.
+    //
+    // Ela NAO pode ser chamada daqui. E `stable security definer` sobre
+    // `auth.uid()`, e `service_role` nao tem `auth.uid()` — chamada por esta
+    // funcao responderia sempre false, e ninguem receberia nada. A regra
+    // abaixo e portanto uma DUPLICACAO FORCADA, e por ser forcada tem de
+    // ser EXATA:
+    //
+    //   pode_alarmar_no_top(top) =
+    //        (profiles.approved AND tops.status <> 'draft')
+    //     OR is_admin()                  -- role = 'admin' OU is_master_admin
+    //     OR hakuna liberado NAQUELE Top
+    //     OR membro de equipe liberado e nao bloqueado NAQUELE Top
+    //
+    // AO MEXER EM `pode_alarmar_no_top`, MEXA AQUI TAMBEM.
+    //
+    // A primeira versao duplicava so `profiles.approved = true` e o
+    // comentario afirmava que a regra "saia do banco". Nao saia, e as duas
+    // pontas divergiam em dois pontos, cada um para um lado:
+    //
+    //   - push disparava em Top `draft`, que o app recusa. Acordaria o Top
+    //     inteiro por um evento que ainda nao comecou.
+    //   - push NAO alcancava hakuna ou membro de equipe liberado sem
+    //     `approved`, que o app alcanca. Esse era o pior: e exatamente
+    //     quem esta na trilha.
+    //
+    // Invisivel enquanto houver 1 conta e 0 dispositivos; aparece no
+    // primeiro Top povoado.
 
-    const ids = (elegiveis ?? [])
-      .map((p: { id: string }) => p.id)
-      // Nao avisa quem disparou: o celular apitando na mao de quem pediu
-      // socorro e ruido, e a mesma regra ja vale no app.
-      .filter((id: string) => id !== excluir_profile)
+    const { data: top, error: erroTop } = await supa
+      .from('tops')
+      .select('status')
+      .eq('id', top_id)
+      .maybeSingle()
+    if (erroTop) throw erroTop
+    if (!top) return json({ erro: 'top nao encontrado' }, 404)
 
+    const destinatarios = new Set<string>()
+    const juntar = (linhas: unknown[] | null, campo: string) => {
+      for (const linha of linhas ?? []) {
+        const id = (linha as Record<string, unknown>)[campo]
+        if (typeof id === 'string') destinatarios.add(id)
+      }
+    }
+
+    // Ramo 1: todo aprovado — SO se o Top nao esta em draft.
+    if (top.status !== 'draft') {
+      const { data, error } = await supa
+        .from('profiles')
+        .select('id')
+        .eq('approved', true)
+      if (error) throw error
+      juntar(data, 'id')
+    }
+
+    // Ramo 2: admin. Vale inclusive em Top draft, como no banco.
+    {
+      const { data, error } = await supa
+        .from('profiles')
+        .select('id')
+        .or('role.eq.admin,is_master_admin.is.true')
+      if (error) throw error
+      juntar(data, 'id')
+    }
+
+    // Ramo 3: hakuna liberado naquele Top.
+    {
+      const { data, error } = await supa
+        .from('top_hakunas')
+        .select('profile_id')
+        .eq('top_id', top_id)
+        .eq('released', true)
+      if (error) throw error
+      juntar(data, 'profile_id')
+    }
+
+    // Ramo 4: membro de equipe liberado e nao bloqueado naquele Top.
+    {
+      const { data, error } = await supa
+        .from('top_team_members')
+        .select('profile_id')
+        .eq('top_id', top_id)
+        .eq('released', true)
+        .eq('blocked', false)
+      if (error) throw error
+      juntar(data, 'profile_id')
+    }
+
+    // Nao avisa quem disparou: o celular apitando na mao de quem pediu
+    // socorro e ruido, e a mesma regra ja vale no app.
+    if (excluir_profile) destinatarios.delete(excluir_profile)
+
+    const ids = [...destinatarios]
     if (ids.length === 0) return json({ enviados: 0, motivo: 'ninguem elegivel' })
 
     const { data: aparelhos, error: erroTokens } = await supa
