@@ -446,4 +446,77 @@ void main() {
       expect(a.chave, 'srv:7');
     });
   });
+
+  group('reconectar NÃO pode reencenar emergência que já passou', () {
+    test(
+      'alarme disparado há 3h, subindo agora, NÃO aparece como atual',
+      () {
+        // O cenário: a pessoa dispara em modo avião às 9h. A fila guarda.
+        // Às 12h a rede volta e o alarme sobe. O Realtime o entrega AGORA
+        // a todo mundo.
+        //
+        // O que impede a falsa emergência é `created_at` carregar a hora
+        // do APARELHO no momento do acidente, nunca `now()` do Postgres
+        // nem a hora do upload. A janela de 1h mede a idade do evento, não
+        // a da mensagem.
+        AlarmeService.instance.receberParaTestes([
+          TopAlert(
+            id: 1,
+            clientId: 'antigo',
+            topId: 'top-1',
+            senderId: 'hakuna-2',
+            createdAt: DateTime.now().toUtc().subtract(
+              const Duration(hours: 3),
+            ),
+          ),
+        ]);
+        expect(AlarmeService.instance.ativos, isEmpty);
+      },
+    );
+
+    test('alarme de 20 minutos atrás AINDA é emergência e aparece', () {
+      // O outro lado do mesmo cuidado: descartar cedo demais joga fora
+      // pedido de socorro legítimo. Quem caiu há 20 minutos ainda está
+      // caído.
+      AlarmeService.instance.receberParaTestes([
+        TopAlert(
+          id: 2,
+          clientId: 'recente',
+          topId: 'top-1',
+          senderId: 'hakuna-2',
+          createdAt: DateTime.now().toUtc().subtract(
+            const Duration(minutes: 20),
+          ),
+        ),
+      ]);
+      expect(AlarmeService.instance.ativos, hasLength(1));
+    });
+
+    test(
+      'o mesmo vale para o que chega por rádio: velho não aparece',
+      () {
+        // A malha guarda pacote por 6h (`RegrasDaMalha.idadeMaxima`), bem
+        // mais que a janela de 1h da faixa. Então um aparelho que chega ao
+        // acampamento recebe retroativamente o que circulou no turno — e
+        // o que for velho demais não pode tocar como emergência atual.
+        AlarmeService.instance.receberAlarmeDoRadio(
+          doRadio(clientId: 'velho', atras: const Duration(hours: 4)),
+        );
+        expect(AlarmeService.instance.ativos, isEmpty);
+      },
+    );
+
+    test('o próprio alarme voltando pelo rádio não conta como novo', () {
+      // Um vizinho repassa o pacote de volta. Sem a guarda de `senderId`,
+      // o celular de quem pediu socorro tocaria sozinho.
+      AlarmeService.instance.receberAlarmeDoRadio(
+        doRadio(clientId: 'meu', de: 'hakuna-1'),
+      );
+      // Entra na lista (é um alarme real do Top), mas não é anunciado.
+      // Anúncio não é observável daqui; a guarda está em
+      // `receberAlarmeDoRadio` e é a mesma de `_receber`.
+      final a = AlarmeService.instance.ativos.single;
+      expect(a.senderId, 'hakuna-1');
+    });
+  });
 }
