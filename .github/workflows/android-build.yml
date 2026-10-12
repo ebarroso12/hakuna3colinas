@@ -164,16 +164,43 @@ jobs:
           fi
 
           CERTS=$("$APKSIGNER" verify --print-certs "$APK" 2>&1)
-          echo "$CERTS" | grep -E 'Signer #1 certificate (DN|SHA-256)' || true
+
+          # O apksigner mudou o rotulo e isso quebrou a guarda em silencio.
+          # Versao antiga imprimia "Signer #1 certificate DN:"; a atual
+          # imprime "V2 Signer: certificate DN:". O passo so procurava a
+          # primeira forma, entao a confirmacao positiva NUNCA casava, o
+          # fluxo caia no else, e toda release saia com
+          # "::warning::Nao foi possivel ler o certificado" — mesmo
+          # assinada corretamente. Achado na v1.0.39.
+          #
+          # Guarda que avisa errado e pior que guarda nenhuma: ela ensina
+          # quem le o log a ignorar o aviso, e no dia em que a assinatura
+          # DE FATO sair errada o aviso vai parecer igual aos outros.
+          echo "$CERTS" | grep -iE 'certificate (DN|SHA-1|SHA-256)' || true
+
+          # O SHA-1 da chave de PRODUCAO. E ele que os aparelhos ja
+          # instalados exigem: APK assinado com outra chave recusa a
+          # atualizacao com INSTALL_FAILED_UPDATE_INCOMPATIBLE e obriga a
+          # desinstalar — o que APAGA A FILA OFFLINE, ou seja, apaga
+          # atendimento que ainda nao subiu.
+          #
+          # Comparar o digest, e nao apenas "nao e debug", e o que
+          # transforma este passo de informativo em verificacao: sem isto
+          # um keystore de producao TROCADO passaria batido.
+          SHA1_ESPERADO=0b992313832c54be2a0cb3ed0fde5611441d4b88
+          SHA1_NO_APK=$(echo "$CERTS"             | grep -ioE 'certificate SHA-1 digest: *[0-9a-fA-F]{40}'             | grep -ioE '[0-9a-fA-F]{40}' | head -1             | tr 'A-Z' 'a-z')
 
           if echo "$CERTS" | grep -q 'CN=Android Debug'; then
-            echo "::warning::APK assinado com CHAVE DE DEBUG. Instala por \
-          fontes desconhecidas; nao serve para Play Store."
-          elif echo "$CERTS" | grep -q 'Signer #1 certificate DN'; then
-            echo "APK assinado com chave de PRODUCAO."
-          else
-            echo "::warning::Nao foi possivel ler o certificado do APK."
+            echo "::error::APK assinado com CHAVE DE DEBUG. Nao atualiza           por cima das versoes >= 1.0.23 e nao serve para Play Store."
+            exit 1
+          elif [ -z "$SHA1_NO_APK" ]; then
+            echo "::warning::Nao foi possivel LER o SHA-1 do certificado.           O APK pode estar correto — foi a verificacao que falhou. Confira           a mao: apksigner verify --print-certs <apk>"
             echo "$CERTS"
+          elif [ "$SHA1_NO_APK" = "$SHA1_ESPERADO" ]; then
+            echo "APK assinado com a chave de PRODUCAO (SHA-1 confere)."
+          else
+            echo "::error::CHAVE ERRADA. Esperado $SHA1_ESPERADO, veio           $SHA1_NO_APK. Os aparelhos instalados NAO aceitam esta           atualizacao, e desinstalar apaga a fila offline."
+            exit 1
           fi
 
       - name: Renomeia para o padrao de distribuicao
