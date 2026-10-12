@@ -1,79 +1,87 @@
 -- ---------------------------------------------------------------------------
--- ESCALADA DE PRIVILEGIO EM `profiles`: qualquer pessoa logada vira admin
+-- ESCALADA DE PRIVILEGIO EM `profiles`: qualquer conta logada virava admin
 --
--- Achado por auditoria em 12/10/2026. NAO APLICADO AINDA — exige
--- autorizacao do dono, porque mexe em controle de acesso de producao.
+-- Achado por auditoria em 12/10/2026. APLICADO EM PRODUCAO no mesmo dia,
+-- com autorizacao do dono.
 --
 -- ## O buraco
 --
--- A policy `profiles_update_own` e hoje:
+-- A policy `profiles_update_own` era:
 --
 --     using      (id = auth.uid())
 --     with check ((id = auth.uid()) AND (role = my_profile_role()))
 --
--- Ela prende o `role` — e **so** o `role`. As outras duas colunas que
--- decidem permissao ficam livres:
+-- Prendia o `role` — e so o `role`. As outras duas colunas que decidem
+-- permissao ficavam livres: `is_master_admin` e `approved`.
 --
---   * `is_master_admin`  (boolean)
---   * `approved`         (boolean)
+-- E `is_admin()` e `role = 'admin' OR is_master_admin`. Entao bastava a
+-- qualquer conta logada mandar, pela API REST, com a chave anon que esta
+-- DENTRO do APK:
 --
--- E `is_admin()` e:
+--     PATCH /rest/v1/profiles?id=eq.<meu uuid>   {"is_master_admin": true}
 --
---     select exists (select 1 from profiles
---                    where id = auth.uid()
---                      and (role = 'admin' or is_master_admin));
+-- `using` passava (e a propria linha), `with check` passava (`role` nao
+-- mudou), e a partir dali a pessoa era ADMIN MASTER: lia todos os perfis,
+-- escrevia nas 9 equipes, mandava alerta, via o mapa de todos, apagava
+-- usuario e senderista. Por `approved = true` pulava a aprovacao e abria
+-- chat geral e alarme de todo Top nao-draft.
 --
--- Entao basta a qualquer conta logada mandar, pela API REST do Supabase,
--- com a propria chave anon que esta DENTRO do APK:
+-- Conferido no banco em 12/10/2026: so existia UMA conta com privilegio,
+-- o admin master legitimo. Ninguem explorou.
 --
---     PATCH /rest/v1/profiles?id=eq.<meu uuid>
---     { "is_master_admin": true }
+-- ## Por que `with check` NAO bastou — e isto e o que importa aqui
 --
--- `using` passa (e a propria linha). `with check` passa (`id` bate,
--- `role` nao mudou). A coluna e gravada. A partir do commit a pessoa e
--- **admin master**: le todos os perfis, le e escreve nas 9 equipes, manda
--- mensagem como alerta, ve o mapa de todo mundo, apaga usuario e
--- senderista.
+-- A primeira correcao foi prender as tres colunas no `with check`, pelo
+-- mesmo padrao do `role`: funcoes `stable security definer` que leem a
+-- propria linha (`my_approved()`, `my_is_master_admin()`).
 --
--- O mesmo vale para `approved = true`, que pula a aprovacao do admin e
--- libera chat geral e alarme de todo Top nao-draft (`is_approved()`).
+-- Contra `is_master_admin` funcionou. Contra `approved` NAO:
 --
--- ## Por que isso passou
+--     begin;
+--       update profiles set approved = false where id = <uid>;   -- estado inicial
+--       set local role authenticated;  set local request.jwt.claims = ...;
+--       update profiles set approved = true  where id = <uid>;   -- deveria falhar
+--     -- resultado: 1 linha gravada, approved = true
 --
--- A assimetria denuncia o descuido: a policy de ADMIN ja se protege,
+-- Medido, nao deduzido. Uma funcao que LE a mesma tabela que esta sendo
+-- alterada, chamada de dentro do `with check` daquela alteracao, nao da
+-- garantia confiavel sobre qual versao da linha ela enxerga. Nao se deve
+-- apoiar controle de acesso num comportamento que varia com o plano de
+-- execucao.
 --
---     with check (((role <> 'admin') OR is_master_admin())
---                 AND ((is_master_admin = false) OR is_master_admin()))
+-- ## A correcao que vale: TRIGGER
 --
--- ou seja, nem um admin comum se promove a master. Quem escreveu pensou
--- na escalada pelo caminho do admin e nao pelo caminho de quem edita o
--- proprio perfil — que e o caminho que TODO usuario tem.
+-- `before update ... for each row` recebe OLD e NEW explicitamente. Nao
+-- ha ambiguidade de snapshot, nao ha releitura da tabela, nao depende de
+-- plano. As colunas de permissao voltam ao valor antigo.
 --
--- ## A correcao
+-- Reverter em SILENCIO, e nao levantar erro, e deliberado: o app manda a
+-- linha inteira ao salvar o perfil, entao recusar quebraria a edicao
+-- legitima de nome e telefone por causa de campos que nem mudaram.
 --
--- Prender as tres colunas ao valor atual, pelo mesmo padrao que o `role`
--- ja usa: funcao `stable security definer`, que le `profiles` sem
--- reentrar na RLS. Subconsulta direta a `profiles` dentro de uma policy
--- de `profiles` recursa — e por isso que `my_profile_role()` existe.
+-- `auth.uid() is null` passa direto porque e `service_role` — a Edge
+-- Function `acesso` precisa aprovar no autocadastro, e sem essa saida
+-- ninguem entraria no Top por numero + senha. A RLS ja barra usuario
+-- final sem uid.
 --
--- O usuario continua editando o que e dele de direito: nome, telefone,
--- peso, data de nascimento, comorbidades, registro medico.
+-- O `with check` fica junto como segunda camada. Ele sozinho nao basta,
+-- mas tambem nao atrapalha, e cobre o caso que ele de fato pega.
 --
--- ## Conferencia depois de aplicar
+-- ## Conferido apos aplicar, em transacao revertida
 --
--- Logado como conta comum, isto tem de ser RECUSADO:
+--   conta comum tentando approved+is_master_admin+role de uma vez
+--     -> approved false, is_master_admin false, role senderista  (bloqueado)
+--     -> phone gravado                                            (legitimo OK)
+--   service_role aprovando (autocadastro)
+--     -> approved true                                            (sem regressao)
 --
---     update public.profiles set is_master_admin = true where id = auth.uid();
---     update public.profiles set approved = true where id = auth.uid();
---
--- e isto tem de continuar FUNCIONANDO:
---
---     update public.profiles set phone = '31999990000' where id = auth.uid();
---
--- Rodar este arquivo DUAS VEZES seguidas: a segunda tem de passar limpa.
+-- Rodar este arquivo DUAS VEZES seguidas: a segunda passa limpa.
 -- ---------------------------------------------------------------------------
 
--- Espelham `my_profile_role()`: leem a propria linha sem reentrar na RLS.
+-- ---------------------------------------------------------------------------
+-- Camada 1 — `with check`. Espelham `my_profile_role()`.
+-- ---------------------------------------------------------------------------
+
 create or replace function public.my_is_master_admin()
 returns boolean
 language sql
@@ -100,17 +108,65 @@ for update
 using (id = auth.uid())
 with check (
   id = auth.uid()
-  -- As tres colunas que decidem permissao ficam presas ao valor atual.
-  -- `role` ja estava; as outras duas sao a correcao.
-  and role             =  my_profile_role()
+  and role = my_profile_role()
   and coalesce(is_master_admin, false) = my_is_master_admin()
-  and coalesce(approved, false)        = my_approved()
+  and coalesce(approved, false) = my_approved()
 );
 
--- Conferencia: quem ja se promoveu? Em 12/10/2026 o resultado esperado e
--- UMA linha, o admin master legitimo (Edson Barroso, nº 203460). Qualquer
--- outra linha aqui e conta que explorou o buraco e precisa ser revista a
--- mao antes de o evento comecar.
+-- ---------------------------------------------------------------------------
+-- Camada 2 — TRIGGER. E esta que de fato segura.
+-- ---------------------------------------------------------------------------
+
+create or replace function public.profiles_trava_colunas_de_permissao()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $$
+begin
+  -- Sem uid nao e usuario final: e `service_role` (Edge Function `acesso`,
+  -- que aprova no autocadastro) ou o painel.
+  if auth.uid() is null then
+    return new;
+  end if;
+
+  -- Admin master decide tudo, inclusive quem e master.
+  if public.is_master_admin() then
+    return new;
+  end if;
+
+  -- Admin comum aprova e muda papel de outros, mas NUNCA cria outro
+  -- master nem promove alguem a admin.
+  if public.is_admin() then
+    new.is_master_admin := old.is_master_admin;
+    if new.role = 'admin'::public.user_role
+       and old.role <> 'admin'::public.user_role then
+      raise exception 'so o admin master promove alguem a admin'
+        using errcode = '42501';
+    end if;
+    return new;
+  end if;
+
+  -- Todo o resto: as tres colunas voltam ao valor antigo, em silencio.
+  new.role            := old.role;
+  new.is_master_admin := old.is_master_admin;
+  new.approved        := old.approved;
+  return new;
+end;
+$$;
+
+drop trigger if exists profiles_trava_permissao on public.profiles;
+
+create trigger profiles_trava_permissao
+before update on public.profiles
+for each row execute function public.profiles_trava_colunas_de_permissao();
+
+-- ---------------------------------------------------------------------------
+-- Conferencia. Em 12/10/2026 o esperado e UMA linha: o admin master
+-- legitimo (Edson Barroso, no 203460). Qualquer outra linha aqui e conta
+-- que ganhou privilegio e precisa ser revista a mao antes do evento.
+-- ---------------------------------------------------------------------------
+
 select id, full_name, legendarios_number, role, is_master_admin, approved, created_at
   from public.profiles
  where is_master_admin = true or role = 'admin'
