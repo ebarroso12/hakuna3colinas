@@ -105,6 +105,40 @@ class _CartaoDeAlarme extends StatelessWidget {
                         : 'Sem descrição. Procure quem disparou.',
                     style: const TextStyle(color: Colors.white),
                   ),
+                  // ALARME QUE CHEGOU PELO RADIO NÃO TEM AUTORIA.
+                  //
+                  // Veio de aparelho ao alcance, sem passar por servidor
+                  // nenhum, e no rádio não há autenticação: qualquer
+                  // aparelho pode afirmar o que quiser em nome de quem
+                  // quiser. Esconder essa diferença seria pior que não ter
+                  // a funcionalidade — um alarme forjado move 200 pessoas.
+                  //
+                  // O texto não manda ignorar: é pedido de socorro, e
+                  // socorro falso custa menos que socorro perdido. Manda
+                  // CONFERIR, que é a ação certa.
+                  if (!alarme.confirmado)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 4),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.wifi_tethering,
+                            size: 14,
+                            color: Colors.white70,
+                          ),
+                          SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              'Chegou por rádio, de um aparelho perto — remetente NÃO confirmado. Confirme por voz.',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   if (alarme.temPosicao)
                     // Duas perguntas diferentes, dois botões.
                     //
@@ -156,7 +190,8 @@ class _CartaoDeAlarme extends StatelessWidget {
             IconButton(
               icon: const Icon(Icons.close, color: Colors.white),
               tooltip: 'Dispensar',
-              onPressed: () => AlarmeService.instance.descartar(alarme.id),
+              onPressed: () =>
+                  AlarmeService.instance.descartar(alarme.chave),
             ),
           ],
         ),

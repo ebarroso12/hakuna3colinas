@@ -75,6 +75,32 @@ abstract interface class TransporteLocal {
   Stream<int> get vizinhos;
 }
 
+/// O que o pacote é.
+///
+/// Existe porque a malha passou a carregar **alarme**, não só conversa, e
+/// os dois não podem ser tratados igual: mensagem entra no chat, alarme
+/// toca, vibra e abre faixa vermelha por cima de qualquer tela.
+///
+/// ## Compatibilidade, que aqui não é detalhe
+///
+/// O campo é novo e `v` continua **1**, de propósito. `deBytes` descarta
+/// versão desconhecida, então subir para `v: 2` faria todo aparelho com
+/// a v1.0.41/42 instalada **jogar o alarme fora em silêncio** — o pior
+/// resultado possível para a função mais crítica do app.
+///
+/// Mantendo `v: 1`, o aparelho velho lê o pacote como mensagem comum e
+/// mostra o texto de `corpo` no chat geral. Não toca nem vibra, mas
+/// aparece. Degradar para visível é melhor que degradar para silêncio, e
+/// é por isso que `corpo` de um alarme carrega a linha legível por gente
+/// ("EMERGÊNCIA — Fulano — -22.9,-43.1") e não um JSON interno.
+enum TipoDePacote {
+  chat,
+  alarme;
+
+  static TipoDePacote deTexto(Object? v) =>
+      v == 'alarme' ? TipoDePacote.alarme : TipoDePacote.chat;
+}
+
 /// Uma mensagem no formato que viaja entre aparelhos.
 ///
 /// JSON e não binário: o canal aqui é BLE/WiFi Direct, onde sobra banda,
@@ -91,6 +117,9 @@ class PacoteLocal {
     required this.autorNome,
     required this.corpo,
     required this.criadaEm,
+    this.tipo = TipoDePacote.chat,
+    this.latitude,
+    this.longitude,
     this.confirmada = false,
     this.saltos = 0,
   });
@@ -101,6 +130,10 @@ class PacoteLocal {
   /// mesma mensagem de aparecer duas vezes quando chega por dois
   /// caminhos — pelo rádio e, depois, pelo servidor.
   final String clientId;
+
+  /// Chat ou alarme. Ausente no pacote = chat, que é o que os aparelhos
+  /// com a v1.0.41/42 mandam.
+  final TipoDePacote tipo;
 
   final String topId;
 
@@ -118,6 +151,15 @@ class PacoteLocal {
 
   final String corpo;
   final DateTime criadaEm;
+
+  /// Onde a pessoa estava, **se o GPS respondeu**.
+  ///
+  /// Null quando não respondeu, e null é a resposta honesta: coordenada
+  /// inventada numa emergência manda gente para o lugar errado. A tela
+  /// diz "sem posição" em vez de mostrar 0,0 — que, aliás, é coordenada
+  /// válida no Atlântico e não serve de sentinela.
+  final double? latitude;
+  final double? longitude;
 
   /// **Falso para tudo que chegou por rádio local.**
   ///
@@ -143,6 +185,12 @@ class PacoteLocal {
     'corpo': corpo,
     'criada_em': criadaEm.toUtc().toIso8601String(),
     'saltos': saltos,
+    // Só vão quando não são o padrão. Pacote de chat continua byte a byte
+    // igual ao que a v1.0.41 manda — o que mantém a malha mista
+    // funcionando enquanto a equipe atualiza aos poucos.
+    if (tipo != TipoDePacote.chat) 'tipo': tipo.name,
+    if (latitude != null) 'lat': latitude,
+    if (longitude != null) 'lng': longitude,
   };
 
   List<int> paraBytes() => utf8.encode(jsonEncode(paraMapa()));
@@ -181,9 +229,17 @@ class PacoteLocal {
       final nome = mapa['autor_nome'];
       final saltos = mapa['saltos'];
 
+      final lat = mapa['lat'];
+      final lng = mapa['lng'];
+
       return PacoteLocal(
         clientId: clientId,
         topId: topId,
+        tipo: TipoDePacote.deTexto(mapa['tipo']),
+        // Meia coordenada não é coordenada. Aceitar só uma das duas
+        // produziria marcador em cima do meridiano de Greenwich.
+        latitude: (lat is num && lng is num) ? lat.toDouble() : null,
+        longitude: (lat is num && lng is num) ? lng.toDouble() : null,
         team: teamKeyFromString(mapa['team'] as String?),
         autorId: autorId,
         autorNome: (nome is String && nome.trim().isNotEmpty)
@@ -204,6 +260,9 @@ class PacoteLocal {
   PacoteLocal maisUmSalto() => PacoteLocal(
     clientId: clientId,
     topId: topId,
+    tipo: tipo,
+    latitude: latitude,
+    longitude: longitude,
     team: team,
     autorId: autorId,
     autorNome: autorNome,

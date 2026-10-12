@@ -185,7 +185,7 @@ void main() {
 
     test('dispensar some com o alarme e não o traz de volta', () {
       AlarmeService.instance.receberParaTestes([alerta(id: 7)]);
-      AlarmeService.instance.descartar(7);
+      AlarmeService.instance.descartar('srv:7');
       expect(AlarmeService.instance.ativos, isEmpty);
 
       // O stream reemite a lista inteira a cada mudança; sem guardar o

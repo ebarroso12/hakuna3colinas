@@ -51,12 +51,46 @@ class AlarmeService extends ChangeNotifier {
   static const janela = Duration(hours: 1);
 
   StreamSubscription<List<TopAlert>>? _assinatura;
-  final List<TopAlert> _recebidos = [];
-  final Set<int> _descartados = {};
 
-  /// Ids já anunciados (som + vibração). Sem isto, cada atualização do
-  /// stream reanunciaria a lista inteira.
-  final Set<int> _anunciados = {};
+  /// O que veio do servidor. Substituído inteiro a cada tique do stream.
+  final List<TopAlert> _recebidos = [];
+
+  /// O que chegou pelo **rádio**, sem passar por servidor nenhum.
+  ///
+  /// Lista separada porque `_recebidos` é sobrescrita a cada atualização
+  /// do Realtime — guardar alarme de rádio lá o apagaria no primeiro
+  /// instante em que a rede voltasse, que é exatamente quando ele ainda
+  /// importa.
+  final List<TopAlert> _porRadio = [];
+
+  /// Chaves descartadas pelo usuário. Texto e não número: alarme de rádio
+  /// não tem id do Postgres. Ver [TopAlert.chave].
+  final Set<String> _descartados = {};
+
+  /// Chaves já anunciadas (som + vibração). Sem isto, cada atualização do
+  /// stream reanunciaria a lista inteira — e, pior, o mesmo alarme
+  /// chegando pelo rádio e depois pelo servidor tocaria duas vezes.
+  final Set<String> _anunciados = {};
+
+  /// Como mandar o alarme pelos aparelhos próximos.
+  ///
+  /// Injetado por `MalhaService` ao ligar a malha e limpo ao desligar. É
+  /// um gancho e não um import para o caminho do disparo não depender do
+  /// plugin de rádio: sem malha ligada, `null`, e o alarme segue só pela
+  /// fila como antes.
+  ///
+  /// Devolve **quantos aparelhos estavam ao alcance** no momento do
+  /// disparo. Isso NÃO é confirmação de entrega: a malha é broadcast sem
+  /// reconhecimento, então o número diz para quantos se falou, nunca
+  /// quantos ouviram.
+  Future<int> Function({
+    required String clientId,
+    required String corpo,
+    required DateTime criadaEm,
+    double? latitude,
+    double? longitude,
+  })?
+  espalharPeloRadio;
 
   /// Só para teste: evita tentar tocar som sem binding de plataforma.
   @visibleForTesting
@@ -65,11 +99,18 @@ class AlarmeService extends ChangeNotifier {
   /// Alarmes que a tela deve mostrar agora.
   List<TopAlert> get ativos {
     final corte = DateTime.now().subtract(janela);
-    return _recebidos
-        .where(
-          (a) => !_descartados.contains(a.id) && a.createdAt.isAfter(corte),
-        )
-        .toList();
+    final porChave = <String, TopAlert>{};
+    // Rádio primeiro, servidor depois: quando o MESMO alarme chega pelos
+    // dois caminhos (mesmo `client_id`), o do servidor é o que fica. Ele
+    // tem autoria confirmada; o do rádio não, e mostrar a versão não
+    // confirmada quando existe a confirmada seria perder informação.
+    for (final a in [..._porRadio, ..._recebidos]) {
+      if (_descartados.contains(a.chave)) continue;
+      if (!a.createdAt.isAfter(corte)) continue;
+      porChave[a.chave] = a;
+    }
+    return porChave.values.toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
   }
 
   void registrarUploader() {
@@ -84,7 +125,7 @@ class AlarmeService extends ChangeNotifier {
   /// Não lança por falta de rede: a entrada fica na fila e sobe depois. O
   /// que a tela precisa dizer ao Hakuna é se já **saiu** ou se está
   /// esperando sinal — ver [SyncService.pendentes].
-  Future<String> disparar({
+  Future<DisparoDeAlarme> disparar({
     required String topId,
     String? mensagem,
     double? latitude,
@@ -95,6 +136,8 @@ class AlarmeService extends ChangeNotifier {
       throw StateError('Sessão expirada — não é possível disparar o alarme');
     }
     final clientId = Outbox.novoClientId();
+    final nome = await nomeDeQuemDispara();
+    final quando = DateTime.now().toUtc();
     await Outbox.instance.enqueue(
       entity: entidade,
       topId: topId,
@@ -110,20 +153,104 @@ class AlarmeService extends ChangeNotifier {
         // Lido do cache local porque o disparo precisa funcionar sem rede
         // — buscar o perfil aqui transformaria a função mais crítica do
         // app numa que depende de sinal.
-        'sender_name': await nomeDeQuemDispara(),
+        'sender_name': nome,
         'message': mensagem,
         'latitude': latitude,
         'longitude': longitude,
         // Hora do aparelho, não `now()` no Postgres.
-        'created_at': DateTime.now().toUtc().toIso8601String(),
+        'created_at': quando.toIso8601String(),
       },
     );
     // Tenta sair AGORA. Com sinal, o alarme não espera o próximo tique do
     // sincronizador — numa emergência a diferença de 30 segundos importa.
     envioEmAndamento = SyncService.instance.syncNow();
     unawaited(envioEmAndamento!);
-    return clientId;
+
+    // O rádio é caminho PARALELO, não alternativo. A fila continua sendo
+    // o que garante que o alarme chegue a quem está longe quando houver
+    // sinal; o rádio é o que faz chegar AGORA a quem está perto — que
+    // numa emergência é exatamente quem pode socorrer.
+    //
+    // Falha aqui não desfaz nada: o alarme já está gravado na fila.
+    var vizinhos = 0;
+    var tentadoPorRadio = false;
+    final espalhar = espalharPeloRadio;
+    if (espalhar != null) {
+      tentadoPorRadio = true;
+      try {
+        vizinhos = await espalhar(
+          clientId: clientId,
+          corpo: linhaDeEmergencia(
+            nome: nome,
+            mensagem: mensagem,
+            latitude: latitude,
+            longitude: longitude,
+          ),
+          criadaEm: quando,
+          latitude: latitude,
+          longitude: longitude,
+        );
+      } catch (_) {
+        vizinhos = 0;
+      }
+    }
+
+    return DisparoDeAlarme(
+      clientId: clientId,
+      tentadoPorRadio: tentadoPorRadio,
+      vizinhosAoAlcance: vizinhos,
+    );
   }
+
+  /// A linha que viaja no `corpo` do pacote de rádio.
+  ///
+  /// Legível por gente de propósito. Aparelho com a v1.0.41/42 instalada
+  /// não conhece `tipo` e lê o pacote como mensagem de chat — então o que
+  /// ele mostra no chat geral é ESTE texto. Se fosse JSON interno, a
+  /// pessoa veria `{"tipo":"alarme",...}` no chat e não entenderia que
+  /// alguém pediu socorro.
+  static String linhaDeEmergencia({
+    String? nome,
+    String? mensagem,
+    double? latitude,
+    double? longitude,
+  }) {
+    final quem = (nome == null || nome.trim().isEmpty)
+        ? 'Alguém do Top'
+        : nome.trim();
+    // Sem coordenada, diz "sem posição". Nunca 0,0: é posição VÁLIDA, no
+    // Atlântico, e usá-la como sentinela manda socorro para o oceano.
+    final onde = (latitude != null && longitude != null)
+        ? '${latitude.toStringAsFixed(6)},${longitude.toStringAsFixed(6)}'
+        : 'sem posição';
+    final extra = (mensagem == null || mensagem.trim().isEmpty)
+        ? ''
+        : ' — ${mensagem.trim()}';
+    return 'EMERGÊNCIA — $quem — $onde$extra';
+  }
+
+  /// Chegou um alarme pelo rádio, sem passar por servidor nenhum.
+  ///
+  /// Chamado por `MalhaService`. Entra **não confirmado**, e a faixa
+  /// mostra isso: no rádio não há autenticação, e qualquer aparelho ao
+  /// alcance pode afirmar o que quiser em nome de quem quiser.
+  void receberAlarmeDoRadio(TopAlert alarme) {
+    if (_porRadio.any((a) => a.chave == alarme.chave)) return;
+    _porRadio.add(alarme);
+
+    final corte = DateTime.now().subtract(janela);
+    final meuId = SupabaseService.instance.currentUserId;
+    if (!_anunciados.contains(alarme.chave) &&
+        alarme.createdAt.isAfter(corte) &&
+        // O próprio alarme volta pelo rádio quando um vizinho o repassa.
+        // Sem isto, quem pediu socorro ouviria o próprio alarme tocar.
+        alarme.senderId != meuId) {
+      _anunciados.add(alarme.chave);
+      _anunciar();
+    }
+    notifyListeners();
+  }
+
 
   /// Nome de quem está logado, do cache local. Null até o primeiro login
   /// com sinal — e aí o alarme sai sem nome, que a faixa trata.
@@ -177,12 +304,13 @@ class AlarmeService extends ChangeNotifier {
     _assinatura?.cancel();
     _assinatura = null;
     _recebidos.clear();
+    _porRadio.clear();
     _descartados.clear();
     _anunciados.clear();
   }
 
-  void descartar(int id) {
-    _descartados.add(id);
+  void descartar(String chave) {
+    _descartados.add(chave);
     notifyListeners();
   }
 
@@ -196,14 +324,14 @@ class AlarmeService extends ChangeNotifier {
     final meuId = SupabaseService.instance.currentUserId;
     final novos = lista.where(
       (a) =>
-          !_anunciados.contains(a.id) &&
+          !_anunciados.contains(a.chave) &&
           a.createdAt.isAfter(corte) &&
           // Não anuncia o próprio alarme: quem disparou já sabe, e o
           // celular apitando na mão de quem pediu socorro é ruído.
           a.senderId != meuId,
     );
     for (final a in novos) {
-      _anunciados.add(a.id);
+      _anunciados.add(a.chave);
       _anunciar();
     }
     notifyListeners();
@@ -233,7 +361,57 @@ class AlarmeService extends ChangeNotifier {
   @visibleForTesting
   void limparParaTestes() {
     _recebidos.clear();
+    _porRadio.clear();
     _descartados.clear();
     _anunciados.clear();
+    espalharPeloRadio = null;
+  }
+}
+
+/// O que aconteceu quando o alarme foi disparado.
+///
+/// Existe porque **guardado** e **entregue** são coisas diferentes, e numa
+/// emergência confundi-las é o erro mais caro que a tela pode cometer. A
+/// fila garante que o alarme não se perde; ela não garante que alguém
+/// recebeu.
+class DisparoDeAlarme {
+  const DisparoDeAlarme({
+    required this.clientId,
+    required this.tentadoPorRadio,
+    required this.vizinhosAoAlcance,
+  });
+
+  /// Identidade do disparo, já válida antes de existir no servidor.
+  final String clientId;
+
+  /// A malha estava ligada e o envio foi tentado por ela.
+  final bool tentadoPorRadio;
+
+  /// Quantos aparelhos estavam ao alcance no instante do disparo.
+  ///
+  /// **Não é confirmação de recebimento.** A malha é broadcast sem ACK:
+  /// este número diz para quantos se falou, nunca quantos ouviram. A tela
+  /// tem de dizer isso com essas palavras — "enviado a 2 aparelhos por
+  /// perto" é honesto; "2 pessoas foram avisadas" é mentira.
+  final int vizinhosAoAlcance;
+
+  /// Frase pronta para a tela, escrita para não prometer entrega.
+  String get resumo {
+    if (!tentadoPorRadio) {
+      return 'Alarme gravado. Sobe assim que houver sinal. O rádio entre '
+          'aparelhos está DESLIGADO — ligue-o para avisar quem está por '
+          'perto agora.';
+    }
+    if (vizinhosAoAlcance == 0) {
+      return 'Alarme gravado e transmitido por rádio, mas NENHUM aparelho '
+          'estava ao alcance. Ninguém por perto foi avisado. Sobe assim '
+          'que houver sinal.';
+    }
+    final quantos = vizinhosAoAlcance == 1
+        ? '1 aparelho'
+        : '$vizinhosAoAlcance aparelhos';
+    return 'Alarme gravado e transmitido por rádio a $quantos ao alcance. '
+        'O rádio NÃO confirma recebimento — confirme por voz. Também sobe '
+        'assim que houver sinal.';
   }
 }

@@ -9,6 +9,8 @@ import '../offline/chat_repositorio.dart';
 import '../offline/tabelas.dart';
 import '../offline/transporte_local.dart';
 import '../offline/transporte_nearby.dart';
+import '../models/top_alert.dart';
+import 'alarme_service.dart';
 import 'supabase_service.dart';
 
 /// Liga as três peças da malha local: rádio, regra e disco.
@@ -110,11 +112,65 @@ class MalhaService extends ChangeNotifier {
       notifyListeners();
     }, onError: (_) {});
 
+    // A partir daqui o alarme tem caminho por rádio. O gancho fica no
+    // AlarmeService e não um import daqui para lá: assim o disparo não
+    // depende do plugin de rádio, e sem malha ligada ele segue só pela
+    // fila, como antes.
+    AlarmeService.instance.espalharPeloRadio = _espalharAlarme;
+
     notifyListeners();
     return true;
   }
 
+  /// Manda um alarme para todos ao alcance.
+  ///
+  /// Devolve quantos vizinhos havia no instante do envio. **Não é
+  /// confirmação de entrega**: a malha é broadcast sem ACK. Ver
+  /// [DisparoDeAlarme.vizinhosAoAlcance].
+  Future<int> _espalharAlarme({
+    required String clientId,
+    required String corpo,
+    required DateTime criadaEm,
+    double? latitude,
+    double? longitude,
+  }) async {
+    final transporte = _transporte;
+    final regras = _regras;
+    final topId = _topId;
+    if (transporte == null || regras == null || topId == null) return 0;
+
+    final meuId = SupabaseService.instance.currentUserId;
+    if (meuId == null) return 0;
+
+    // O próprio alarme volta quando um vizinho o repassa. Marcar antes
+    // impede que ele conte como novidade e toque no aparelho de quem
+    // pediu socorro.
+    regras.jaConheco(clientId);
+
+    final pacote = PacoteLocal(
+      clientId: clientId,
+      topId: topId,
+      tipo: TipoDePacote.alarme,
+      // Alarme não tem equipe: é para todos ao alcance, sempre.
+      team: null,
+      autorId: meuId,
+      autorNome: await _meuNome(),
+      corpo: corpo,
+      criadaEm: criadaEm,
+      latitude: latitude,
+      longitude: longitude,
+    );
+
+    await transporte.enviar(pacote.paraBytes());
+    return _vizinhos;
+  }
+
   Future<void> desligar() async {
+    // Sem malha, sem caminho por rádio. Deixar o gancho apontando para um
+    // transporte morto faria o disparo relatar "transmitido" sem rádio
+    // nenhum — mentira cara numa emergência.
+    AlarmeService.instance.espalharPeloRadio = null;
+
     final t = _transporte;
     _transporte = null;
     _regras = null;
@@ -185,6 +241,40 @@ class MalhaService extends ChangeNotifier {
     final pacote = PacoteLocal.deBytes(bytes);
     final decisao = regras.decidir(pacote);
     if (decisao != Decisao.aceitar || pacote == null) return;
+
+    // Alarme não vai para o chat: abre faixa vermelha, toca e vibra por
+    // cima de qualquer tela. Tratá-lo como mensagem comum enterraria um
+    // pedido de socorro no meio da conversa.
+    if (pacote.tipo == TipoDePacote.alarme) {
+      _recebidas++;
+      AlarmeService.instance.receberAlarmeDoRadio(
+        TopAlert(
+          clientId: pacote.clientId,
+          // NUNCA true aqui. Rádio não autentica ninguém.
+          confirmado: false,
+          topId: pacote.topId,
+          senderId: pacote.autorId,
+          // `deBytes` já troca nome vazio pelo texto de fallback. Desfazer
+          // a troca aqui é o que mantém `TopAlert.temNome` honesto — a
+          // faixa precisa distinguir "chama-se Fulano" de "não sei quem é".
+          senderName: pacote.autorNome == 'Alguém do Top'
+              ? null
+              : pacote.autorNome,
+          message: pacote.corpo,
+          latitude: pacote.latitude,
+          longitude: pacote.longitude,
+          createdAt: pacote.criadaEm,
+        ),
+      );
+      if (regras.deveRepassar(decisao, pacote)) {
+        try {
+          await transporte.enviar(pacote.maisUmSalto().paraBytes());
+          _repassadas++;
+        } catch (_) {}
+      }
+      notifyListeners();
+      return;
+    }
 
     try {
       final nova = await CacheLocal.instance.salvarMensagemDoRadio(

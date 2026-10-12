@@ -245,7 +245,7 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
     }
 
     try {
-      await AlarmeService.instance.disparar(
+      final resultado = await AlarmeService.instance.disparar(
         topId: widget.top.id,
         mensagem: messageController.text.trim().isEmpty
             ? null
@@ -265,13 +265,18 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: Colors.red.shade700,
-          duration: const Duration(seconds: 6),
+          // 12s e não 6: o texto de fora de rede agora diz o que foi
+          // tentado pelo rádio e o que NÃO está confirmado, e é justamente
+          // quem está sem sinal que precisa ler a frase inteira.
+          duration: const Duration(seconds: 12),
           content: Text(
             pendentes == 0
                 ? 'Alarme disparado para TODO o Top, com a sua posição.'
-                : 'Alarme GRAVADO e aguardando sinal. Ele sobe sozinho '
-                      'quando a rede voltar — não conte com ele agora, use '
-                      'o rádio.',
+                // Sem rede, quem responde é o DisparoDeAlarme: só ele sabe
+                // se a malha estava ligada e quantos aparelhos havia ao
+                // alcance. A frase nunca promete entrega — broadcast por
+                // rádio não tem confirmação de recebimento.
+                : resultado.resumo,
           ),
         ),
       );

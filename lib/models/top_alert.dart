@@ -4,7 +4,28 @@
 /// todos devem ver o lugar via GPS e quem está chamando". As duas coisas
 /// que a emergência tem de responder são [temPosicao] e [quemChama].
 class TopAlert {
-  final int id;
+  /// Id do Postgres. **Null em alarme que chegou pelo rádio**, porque ele
+  /// ainda não existe no servidor — e pode nunca existir, se quem disparou
+  /// não recuperar sinal.
+  final int? id;
+
+  /// Identidade gerada no aparelho de origem.
+  ///
+  /// É o que permite o alarme por rádio ter identidade antes do servidor,
+  /// e é a mesma chave que a fila usa. Quando o mesmo alarme chegar
+  /// depois pelo Supabase, os dois têm o mesmo `client_id` e [chave] os
+  /// funde em vez de a pessoa receber a emergência duas vezes.
+  final String? clientId;
+
+  /// **Falso para tudo que chegou por rádio.**
+  ///
+  /// Só o servidor confirma autoria: a RLS prende `sender_id` a
+  /// `auth.uid()`. No rádio não há autenticação nenhuma, e qualquer
+  /// aparelho ao alcance pode afirmar o que quiser em nome de quem
+  /// quiser. A faixa **tem de** mostrar essa diferença — esconder isso
+  /// seria pior que não ter a funcionalidade.
+  final bool confirmado;
+
   final String topId;
   final String senderId;
 
@@ -26,7 +47,9 @@ class TopAlert {
   final DateTime createdAt;
 
   TopAlert({
-    required this.id,
+    this.id,
+    this.clientId,
+    this.confirmado = true,
     required this.topId,
     required this.senderId,
     this.senderName,
@@ -39,6 +62,7 @@ class TopAlert {
   factory TopAlert.fromMap(Map<String, dynamic> map) {
     return TopAlert(
       id: map['id'] as int,
+      clientId: map['client_id'] as String?,
       topId: map['top_id'] as String,
       senderId: map['sender_id'] as String,
       senderName: map['sender_name'] as String?,
@@ -47,6 +71,19 @@ class TopAlert {
       longitude: (map['longitude'] as num?)?.toDouble(),
       createdAt: DateTime.parse(map['created_at'] as String),
     );
+  }
+
+  /// Identidade única, sirva o alarme de onde servir.
+  ///
+  /// Texto e não número porque alarme de rádio não tem id do Postgres. O
+  /// `client_id` vem primeiro de propósito: é ele que faz o MESMO alarme,
+  /// chegando pelo rádio e depois pelo servidor, contar como um só —
+  /// anunciar duas vezes a mesma emergência ensina a equipe a ignorar o
+  /// som.
+  String get chave {
+    final c = clientId?.trim();
+    if (c != null && c.isNotEmpty) return c;
+    return id != null ? 'srv:$id' : 'sem-chave';
   }
 
   /// Dá para levar alguém até lá.
