@@ -9,6 +9,96 @@ Android físico.
 
 ---
 
+## 12/10/2026
+
+### v1.0.40 — APK de 76 MB para ~30 MB, e o CI publica sozinho
+
+Nenhuma mudanca de codigo do app. So empacotamento e distribuicao — e as
+duas eram problema de verdade.
+
+#### O APK carregava 27 MB que nenhum celular da equipe usa
+
+Medido abrindo o APK da v1.0.39, nao estimado:
+
+    x86_64        27,1 MB   <- so roda em EMULADOR
+    arm64-v8a     24,7 MB   <- todo celular desde ~2016
+    armeabi-v7a   20,9 MB   <- 32 bits, aparelho antigo
+    resto          4,8 MB
+
+Com `--split-per-abi` o arquivo principal cai para ~30 MB. No meio do mato,
+com sinal ruim, isso e mais da metade do download que deixa de existir.
+
+    legendarios1.0.40.apk          <- arm64, SEM sufixo
+    legendarios1.0.40-32bits.apk   <- a excecao
+    (x86_64 descartado)
+
+O arm64 mantem o nome de sempre de proposito: quem baixa no campo nao deve
+ter de escolher arquitetura.
+
+#### NENHUM APK no Drive jamais esteve compartilhado
+
+Conferido pela API do Google Drive: 1.0.35, 1.0.37, 1.0.38, 1.0.39, a pasta
+"Legendarios APK" e a pasta `apk1035` — todos apenas com o dono, sem
+permissao de link. O botao ATUALIZAR nunca funcionou para ninguem alem
+dele: quem tocasse caia em "Solicitar acesso" do Google.
+
+A causa raiz nao foi esquecimento. Compartilhar era um passo MANUAL
+repetido a cada release, e passo manual repetido e passo que vai ser
+esquecido — foi esquecido em quatro versoes seguidas. Pedir mais atencao ao
+dono trataria o sintoma.
+
+Agora o CI sobe o APK para um bucket publico do Supabase e escreve a linha
+de `app_versions` sozinho. Bucket publico nao tem o que compartilhar: a URL
+e publica por construcao. Zero passo manual por release, em vez de dois.
+
+Foi `--split-per-abi` que destravou isso: o Storage do plano free recusa
+acima de 50 MB, e o universal tinha 76.
+
+#### Estado do banco, conferido POR MIM
+
+O conector do Supabase passou a estar autorizado nesta sessao, entao estas
+linhas sao verificacao, nao relato:
+
+    policies do alarme ...... 2    OK
+    coluna sender_name ...... 1    OK
+    pode_alarmar_no_top ..... 1    OK
+    valores de team_key .... 10    OK (9 equipes + geral)
+    bucket apks publico ..... 1    OK
+
+#### O ACHADO QUE VALE MAIS QUE ESTA RELEASE
+
+    profiles ................. 1 conta no app INTEIRO
+    top_team_members ......... 0 vinculos, nos dois Tops
+    Top 1782 "3 colinas" ..... active, 216 senderistas, 72 com numero
+    TRACK 3 Colinas 1 ano .... DRAFT, 26/11/2026, 0 de tudo, SEM SENHA
+
+So existe UMA conta: a do dono. Os 216 sao FICHAS de participante, nao
+contas — ninguem nunca se cadastrou.
+
+Isso reinterpreta tudo o que foi corrigido nesta e na versao anterior. As 9
+equipes aparecem vazias e o alarme chega a uma pessoa nao por defeito
+remanescente, mas porque **nao ha ninguem no app para incluir nem para
+avisar**. As correcoes continuam necessarias; elas e que deixam de ser
+suficientes.
+
+E o proximo Top — o de 26/11, daqui a seis semanas — esta em `draft`, sem
+senha de acesso e sem participantes. Em `draft` a RLS fecha quase tudo, e
+sem `access_code_hash` o autocadastro nao tem como validar ninguem. Do jeito
+que esta, no dia do evento ninguem entra.
+
+#### NAO verificado
+
+O build com `--split-per-abi` nunca rodou neste projeto. Os nomes de saida
+do Flutter sao os esperados ate onde a documentacao diz, e o passo de
+assinatura agora FALHA ALTO se `app-arm64-v8a-release.apk` nao existir, em
+vez de seguir calado. Mas so a execucao da tag prova.
+
+O upload para o Storage tambem nunca rodou: depende do secret
+`SUPABASE_SERVICE_ROLE_KEY`, que so o dono pode criar. Sem ele o passo
+avisa e segue — a release sai de qualquer forma.
+
+---
+
 ## 11/10/2026
 
 ### v1.0.39 — as 9 equipes aparecem, e a emergencia chega a TODOS
