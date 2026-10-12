@@ -328,16 +328,57 @@ class AcessoService {
   /// O código volta **uma única vez**: o banco guarda só o hash. Admin que
   /// perder o código gera outro — é mais seguro que deixá-lo legível no
   /// banco para sempre.
-  Future<String> liberar(String numero) async {
-    final resposta = await _client.functions.invoke(
-      _funcao,
-      body: {'acao': 'liberar', 'numero': numero.trim()},
-    );
-    final dados = resposta.data as Map<String, dynamic>?;
-    final codigo = dados?['codigo'] as String?;
+  ///
+  /// Lança [ContaComEmailProprio] quando a pessoa já entra por e-mail: o
+  /// servidor recusa com 409 em vez de trocar a senha calada. Para seguir,
+  /// chame de novo com [confirmarTrocaDeSenha] — depois de perguntar.
+  Future<String> liberar(
+    String numero, {
+    bool confirmarTrocaDeSenha = false,
+  }) async {
+    final n = numero.trim();
+    final Map<String, dynamic> dados;
+    try {
+      final resposta = await _client.functions.invoke(
+        _funcao,
+        body: {
+          'acao': 'liberar',
+          'numero': n,
+          if (confirmarTrocaDeSenha) 'confirmar_troca_de_senha': true,
+        },
+      );
+      dados = (resposta.data as Map<String, dynamic>?) ?? const {};
+    } on FunctionException catch (e) {
+      // O 409 `conta_com_email_proprio` NAO e falha: e a Edge Function
+      // pedindo confirmação, porque gerar código substitui a senha de uma
+      // conta que entra por e-mail.
+      //
+      // Sem este catch ele chegava cru na tela como
+      // `FunctionsHttpException(status: 409, details: {...})`, com a
+      // instrução `repita a chamada com "confirmar_troca_de_senha": true`
+      // — que é instrução para quem chama a API, não para o admin que
+      // está olhando o celular. E a tela não tinha como obedecê-la: o
+      // caminho existia no servidor e era inalcançável pelo app, o mesmo
+      // defeito de "UI mais restrita que o banco" que já apareceu no
+      // botão de emergência e nas 9 equipes.
+      final detalhes = e.details;
+      if (detalhes is Map) {
+        if (detalhes['error'] == 'conta_com_email_proprio') {
+          throw ContaComEmailProprio(
+            n,
+            (detalhes['email_da_conta'] ?? '?').toString(),
+          );
+        }
+        final msg = detalhes['mensagem'] ?? detalhes['error'];
+        if (msg != null) throw AcessoRecusado(msg.toString());
+      }
+      throw const AcessoRecusado('Não foi possível falar com o servidor.');
+    }
+
+    final codigo = dados['codigo'] as String?;
     if (codigo == null) {
-      throw StateError(
-        dados?['error'] as String? ?? 'Não foi possível gerar o código.',
+      throw AcessoRecusado(
+        dados['error'] as String? ?? 'Não foi possível gerar o código.',
       );
     }
     return codigo;
@@ -363,6 +404,24 @@ class AcessoRecusado implements Exception {
 
   @override
   String toString() => mensagem;
+}
+
+/// O Legendário já tem conta, e ela entra por **e-mail próprio**.
+///
+/// Gerar código substitui a senha dessa conta — e para quem entra por
+/// e-mail isso apaga o único jeito de acessar. Por isso a Edge Function
+/// recusa com 409 e exige confirmação explícita, em vez de trocar calada.
+///
+/// A tela pergunta e, só com o sim, chama
+/// `liberar(numero, confirmarTrocaDeSenha: true)`.
+class ContaComEmailProprio implements Exception {
+  final String numero;
+  final String email;
+  const ContaComEmailProprio(this.numero, this.email);
+
+  @override
+  String toString() =>
+      'O Legendário $numero já tem conta com e-mail próprio ($email).';
 }
 
 /// O que o servidor devolveu quando o convite vale.

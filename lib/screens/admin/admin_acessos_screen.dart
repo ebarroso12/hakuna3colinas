@@ -35,18 +35,83 @@ class _AdminAcessosScreenState extends State<AdminAcessosScreen> {
     });
   }
 
-  Future<void> _liberar(PedidoAcesso pedido) async {
+  Future<void> _liberar(PedidoAcesso pedido, {bool confirmado = false}) async {
     try {
-      final codigo = await AcessoService.instance.liberar(pedido.numero);
+      final codigo = await AcessoService.instance.liberar(
+        pedido.numero,
+        confirmarTrocaDeSenha: confirmado,
+      );
       if (!mounted) return;
       await _mostrarCodigo(pedido, codigo);
       _recarregar();
+    } on ContaComEmailProprio catch (e) {
+      // Não é erro: o servidor está perguntando. A tela pergunta de volta,
+      // com a consequência escrita, e só então repete a chamada.
+      if (!mounted) return;
+      final seguir = await _confirmarTrocaDeSenha(pedido, e.email);
+      if (seguir == true && mounted) {
+        await _liberar(pedido, confirmado: true);
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Não foi possível liberar: $e')));
     }
+  }
+
+  /// Pergunta antes de substituir a senha de uma conta que entra por e-mail.
+  ///
+  /// O texto É a correção, não enfeite: quem lê precisa saber que a senha
+  /// antiga para de funcionar e que existe um caminho melhor quando a
+  /// pessoa apenas esqueceu a senha. Sem isso o admin aperta "sim" sem
+  /// saber o que está trocando.
+  Future<bool?> _confirmarTrocaDeSenha(PedidoAcesso pedido, String email) {
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Essa pessoa já tem conta'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'O Legendário #${pedido.numero} entra hoje com e-mail '
+                'próprio:',
+              ),
+              const SizedBox(height: 8),
+              Text(
+                email,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Gerar um código SUBSTITUI a senha dessa conta. A senha '
+                'que ela usa hoje deixa de funcionar, e ela passa a entrar '
+                'só com o código que você entregar.',
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Se ela apenas esqueceu a senha, o caminho melhor é '
+                '"Esqueci minha senha" na tela de entrada — assim a conta '
+                'continua dela e você não precisa entregar nada.',
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Substituir a senha'),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Mostra o código uma única vez.
