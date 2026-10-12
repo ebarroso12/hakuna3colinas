@@ -8,6 +8,14 @@
 --   3. supabase/alarme_para_todo_o_top.sql
 --
 -- Os tres sao idempotentes: rodar de novo num banco ja certo nao faz nada.
+--
+-- ISSO FALHOU UMA VEZ, e o conserto esta aqui. A primeira versao da PARTE
+-- 3 dava `drop policy if exists` apenas nas policies ANTIGAS, e nao nas
+-- que ela mesma cria — `create policy` nao tem `if not exists`, entao a
+-- segunda execucao morria com "42710: policy already exists". Pior: o SQL
+-- Editor roda tudo numa transacao, e o `alter table ... add column
+-- sender_name`, que vem depois, era revertido junto. A mensagem reclamava
+-- de algo JA aplicado e de quebra impedia o que ainda faltava.
 -- A CONFERENCIA fica de fora de proposito — ela e so leitura e precisa que
 -- voce troque <TOP_ID>. Rode `supabase/CONFERIR_APOS_APLICAR.sql` depois.
 --
@@ -24,6 +32,12 @@
 --      criada na v1.0.35; se nao existe, aquela migracao nao foi aplicada.
 -- ===========================================================================
 
+
+-- ###########################################################################
+-- PARTE 1 de 3
+-- ###########################################################################
+-- ============================================================================
+-- 11/10/2026 — AS 9 EQUIPES EXISTEM EM PRODUÇÃO E NÃO EXISTEM NO REPOSITÓRIO
 
 -- ###########################################################################
 -- PARTE 1 de 3
@@ -355,6 +369,18 @@ grant  execute on function public.pode_alarmar_no_top(uuid) to authenticated;
 -- exatamente o que estou tirando.
 drop policy if exists top_alerts_insert_qualquer_equipe on public.top_alerts;
 drop policy if exists top_alerts_select_qualquer_equipe on public.top_alerts;
+
+-- E AS NOVAS TAMBEM, senao a SEGUNDA execucao deste arquivo falha com
+-- "42710: policy already exists" — e `create policy` nao tem
+-- `if not exists`. Eu havia escrito que o arquivo era idempotente e ele
+-- nao era; o dono bateu nisso ao rodar duas vezes.
+--
+-- O erro e pior do que parece porque o SQL Editor roda tudo numa
+-- transacao: o `alter table ... add column sender_name`, que vem DEPOIS
+-- destas linhas, era revertido junto. Ou seja, a mensagem reclamava de
+-- algo ja aplicado e, de quebra, impedia o que ainda faltava aplicar.
+drop policy if exists top_alerts_insert_todo_o_top on public.top_alerts;
+drop policy if exists top_alerts_select_todo_o_top on public.top_alerts;
 
 -- `sender_id = auth.uid()` fica: qualquer um dispara, ninguém dispara no
 -- NOME de outro. Alarme falso atribuído a um colega é acusação.

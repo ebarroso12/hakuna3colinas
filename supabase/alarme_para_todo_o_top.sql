@@ -72,6 +72,18 @@ grant  execute on function public.pode_alarmar_no_top(uuid) to authenticated;
 drop policy if exists top_alerts_insert_qualquer_equipe on public.top_alerts;
 drop policy if exists top_alerts_select_qualquer_equipe on public.top_alerts;
 
+-- E AS NOVAS TAMBEM, senao a SEGUNDA execucao deste arquivo falha com
+-- "42710: policy already exists" — e `create policy` nao tem
+-- `if not exists`. Eu havia escrito que o arquivo era idempotente e ele
+-- nao era; o dono bateu nisso ao rodar duas vezes.
+--
+-- O erro e pior do que parece porque o SQL Editor roda tudo numa
+-- transacao: o `alter table ... add column sender_name`, que vem DEPOIS
+-- destas linhas, era revertido junto. Ou seja, a mensagem reclamava de
+-- algo ja aplicado e, de quebra, impedia o que ainda faltava aplicar.
+drop policy if exists top_alerts_insert_todo_o_top on public.top_alerts;
+drop policy if exists top_alerts_select_todo_o_top on public.top_alerts;
+
 -- `sender_id = auth.uid()` fica: qualquer um dispara, ninguém dispara no
 -- NOME de outro. Alarme falso atribuído a um colega é acusação.
 create policy top_alerts_insert_todo_o_top on public.top_alerts
