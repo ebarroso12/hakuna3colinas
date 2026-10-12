@@ -4,6 +4,12 @@ plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+    // Le `android/app/google-services.json` e gera os recursos que o
+    // Firebase procura em tempo de execucao. Sem esta linha o JSON fica
+    // no disco sem efeito nenhum, `Firebase.initializeApp()` falha, o
+    // `try/catch` do `main` engole, e o push nao existe — tudo isso sem
+    // UM aviso no build. Ver docs/push_passo_a_passo.md.
+    id("com.google.gms.google-services")
 }
 
 // ---------------------------------------------------------------------------
