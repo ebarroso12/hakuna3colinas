@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Hakuna Connect</string>
+	<string>Legendario Connect</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -24,14 +24,24 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NFCReaderUsageDescription</key>
-	<string>Precisamos do NFC para ler e gravar as tags de identificação dos Hakunas e Senderistas.</string>
+	<string>O NFC lê e grava a pulseira de identificação dos participantes do Top.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>A câmera lê o QR da pulseira e fotografa feridas no registro de atendimento.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>A galeria serve para anexar ao atendimento uma foto já tirada.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Hakunas compartilham a posição em tempo real durante o Top para coordenação da equipe médica.</string>
+	<string>Sua posição vai no alarme de emergência e, se você ligar, aparece no mapa do Top para a coordenação e a equipe de saúde.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Hakunas compartilham a posição em tempo real durante o Top, mesmo com o app em segundo plano.</string>
+	<string>Com "Compartilhar minha posição" ligado, a trilha continua sendo registrada com a tela bloqueada.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
 	<key>com.apple.developer.nfc.readersession.iso7816.select-identifiers</key>
 	<array>
 		<string>F0010203040506</string>

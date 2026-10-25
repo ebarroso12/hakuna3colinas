@@ -230,6 +230,27 @@ class SupabaseService {
   static const _googleWebClientId =
       '1041273208236-amlguf3rdm6pp6lnpfuacc68hc0fjj5q.apps.googleusercontent.com';
 
+  /// Client ID do tipo **iOS** no Google Cloud, entra por `--dart-define`.
+  ///
+  /// No iPhone o SDK do Google não acha nada sozinho: sem este id e sem o
+  /// esquema de URL correspondente no Info.plist (o "REVERSED_CLIENT_ID"),
+  /// tocar em "Entrar com Google" **derruba o app** — é exceção nativa,
+  /// não `PlatformException`, então nenhum `catch` daqui a pega. Ver
+  /// `docs/ios.md`.
+  static const _googleIosClientId = String.fromEnvironment(
+    'GOOGLE_IOS_CLIENT_ID',
+  );
+
+  /// Se o botão "Entrar com Google" deve aparecer neste aparelho.
+  ///
+  /// No iOS só com o client ID configurado. Esconder é melhor que mostrar
+  /// um botão que fecha o app: quem toca nele acha que o app quebrou, e
+  /// número + senha continua funcionando.
+  static bool get googleDisponivel =>
+      kIsWeb ||
+      defaultTargetPlatform != TargetPlatform.iOS ||
+      _googleIosClientId.isNotEmpty;
+
   /// Login nativo com Google: pega o ID token da conta Google do aparelho
   /// e troca por uma sessão do Supabase — sem senha, sem e-mail.
   Future<void> signInWithGoogle() async {
@@ -240,8 +261,9 @@ class SupabaseService {
     // Nos dois casos o valor é o Client ID do tipo **Aplicativo da Web** —
     // é ele que o Supabase valida como audiência do idToken. Isto já estava
     // certo; não é a causa da falha no APK (ver [googleIndisponivelNoApk]).
+    final ios = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
     final googleSignIn = GoogleSignIn(
-      clientId: kIsWeb ? _googleWebClientId : null,
+      clientId: kIsWeb ? _googleWebClientId : (ios ? _googleIosClientId : null),
       serverClientId: kIsWeb ? null : _googleWebClientId,
     );
 
@@ -1006,10 +1028,10 @@ class SupabaseService {
         // que mudou agora, nao o que foi criado primeiro.
         .order('atualizado_em', ascending: false)
         .limit(
-      // Teto: o histórico de uma equipe num Top de 4 dias não precisa vir
-      // inteiro para a tela de uma vez.
-      300,
-    );
+          // Teto: o histórico de uma equipe num Top de 4 dias não precisa vir
+          // inteiro para a tela de uma vez.
+          300,
+        );
     return linhas.map(Anotacao.fromMap).toList();
   }
 

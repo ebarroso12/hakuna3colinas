@@ -101,6 +101,15 @@ class AlarmeService extends ChangeNotifier {
   /// Carimbo errado em alarme manda socorro para o evento errado.
   String? topDaMalha;
 
+  /// Se este aparelho TEM o rádio entre aparelhos.
+  ///
+  /// A malha é Nearby Connections, que só existe no Android. Sem este
+  /// dado, um iPhone sem rede ouviria "o rádio está DESLIGADO — ligue-o",
+  /// e não há chave para ligar: a pessoa procuraria em plena emergência
+  /// um botão que não existe no aparelho dela.
+  bool radioExisteNesteAparelho =
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
   /// Teto de espera do radio no disparo.
   ///
   /// `TransporteNearby.enviar` faz um `await` por vizinho, em laco. Com
@@ -235,6 +244,7 @@ class AlarmeService extends ChangeNotifier {
       vizinhosAoAlcance: vizinhos,
       malhaDeOutroTop: malhaDeOutroTop,
       radioDemorou: radioDemorou,
+      semRadioNoAparelho: !radioExisteNesteAparelho,
     );
   }
 
@@ -286,7 +296,6 @@ class AlarmeService extends ChangeNotifier {
     }
     notifyListeners();
   }
-
 
   /// Nome de quem está logado, do cache local. Null até o primeiro login
   /// com sinal — e aí o alarme sai sem nome, que a faixa trata.
@@ -402,6 +411,8 @@ class AlarmeService extends ChangeNotifier {
     _anunciados.clear();
     espalharPeloRadio = null;
     topDaMalha = null;
+    radioExisteNesteAparelho =
+        !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
   }
 }
 
@@ -418,6 +429,7 @@ class DisparoDeAlarme {
     required this.vizinhosAoAlcance,
     this.malhaDeOutroTop = false,
     this.radioDemorou = false,
+    this.semRadioNoAparelho = false,
   });
 
   /// Identidade do disparo, já válida antes de existir no servidor.
@@ -441,12 +453,20 @@ class DisparoDeAlarme {
   /// envio segue em segundo plano; nao da para dizer a quantos chegou.
   final bool radioDemorou;
 
+  /// O aparelho não tem rádio entre aparelhos (iPhone, navegador).
+  final bool semRadioNoAparelho;
+
   /// Frase pronta para a tela, escrita para não prometer entrega.
   String get resumo {
     if (malhaDeOutroTop) {
       return 'Alarme gravado, mas NÃO foi pelo rádio: o rádio entre '
           'aparelhos está ligado para OUTRO Top. Ninguém por perto foi '
           'avisado. Abra o chat DESTE Top e ligue o rádio lá.';
+    }
+    if (!tentadoPorRadio && semRadioNoAparelho) {
+      return 'Alarme gravado. Sobe assim que houver sinal. Este aparelho '
+          'não tem o rádio entre aparelhos, então ninguém por perto foi '
+          'avisado por ele — avise por voz ou pelo rádio da equipe.';
     }
     if (!tentadoPorRadio) {
       return 'Alarme gravado. Sobe assim que houver sinal. O rádio entre '

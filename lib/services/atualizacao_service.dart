@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../versao.dart';
@@ -41,6 +42,14 @@ class AtualizacaoService {
 
   SupabaseClient get _client => Supabase.instance.client;
 
+  /// No iPhone o app vem do TestFlight, que avisa e instala sozinho.
+  ///
+  /// `app_versions` aponta para um APK, e mandar um iPhone baixar APK é
+  /// mandar a pessoa para um arquivo que o aparelho dela não abre. Por
+  /// isso no iOS a consulta nem acontece e a gaveta não mostra ATUALIZAR.
+  static bool get atualizaPeloTestFlight =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+
   /// Último resultado conhecido, para a gaveta abrir já com a resposta em
   /// vez de piscar "verificando" a cada vez que o usuário a abre.
   VersaoPublicada? ultimaConhecida;
@@ -53,6 +62,7 @@ class AtualizacaoService {
   /// "atualizado" nem "desatualizado". Quem chama trata `null` como
   /// "não sei".
   Future<VersaoPublicada?> consultar() async {
+    if (atualizaPeloTestFlight) return null;
     try {
       final rows = await _client
           .from('app_versions')

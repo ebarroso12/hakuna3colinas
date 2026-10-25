@@ -280,7 +280,21 @@ flutter test      # tem que dar "All tests passed!"
 2. **NFC não funciona em emulador nem no navegador.** Testar NFC exige
    aparelho Android físico com NFC.
 3. **Build iOS exige Mac + Xcode.** Não existe Xcode para Windows. O
-   workflow `ios-build.yml` builda no runner macOS do GitHub.
+   workflow `ios-build.yml` builda no runner macOS do GitHub e, com os
+   secrets da Apple, envia ao **TestFlight** — iPhone não instala por
+   arquivo, então não há equivalente do APK no Drive. Passo a passo da
+   conta Apple em `docs/ios.md`.
+
+   No iPhone **não existem** o rádio entre aparelhos (Nearby Connections
+   é Android) nem o botão ATUALIZAR (quem atualiza é o TestFlight). O
+   "Entrar com Google" fica **escondido** até haver `GOOGLE_IOS_CLIENT_ID`
+   **e** o esquema de URL no Info.plist: sem os dois, o SDK do Google
+   levanta exceção nativa e fecha o app — nenhum `catch` do Dart pega.
+
+   `UIBackgroundModes: location` e `allowBackgroundLocationUpdates` andam
+   juntos: um sem o outro, ou a trilha congela com a tela bloqueada, ou o
+   app cai no primeiro ponto. E o entitlement de NFC leva só `TAG`:
+   `NDEF` ali é recusado pela Apple no envio.
 4. **HCE não emula UID de MIFARE Classic** — só cartões que respondem por
    APDU (ISO-DEP / ISO 14443-4).
 5. **No web**, `nfc_service` e `nfc_hce_service` lançam
@@ -768,6 +782,10 @@ Fluxo obrigatório, nesta ordem:
    **`legendarios<versao>.apk`** (nome derivado do pubspec automaticamente)
    e anexa à Release
 5. Avisar o usuário para baixar o APK e subir no Google Drive
+6. O mesmo push de tag dispara `ios-build.yml`, que manda o build ao
+   TestFlight quando os secrets da Apple existem. O App Store Connect
+   recusa reenviar o mesmo `+N` — reenviar a mesma versão exige bumpar o
+   build.
 
 **Assinatura:** `android/app/build.gradle.kts` procura chave de produção em
 `android/key.properties` (local) ou nas variáveis `LEGENDARIOS_KEYSTORE_*`

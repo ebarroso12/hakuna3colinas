@@ -104,6 +104,22 @@ class LocationService {
         ),
       );
     }
+    // No iOS quem segura o GPS com a tela bloqueada é o
+    // `UIBackgroundModes: location` do Info.plist mais estas três opções.
+    // As duas andam juntas: `allowBackgroundLocationUpdates` sem o modo
+    // declarado derruba o app no primeiro ponto. E o iOS pausa sozinho
+    // quem "parou de se mexer" — numa parada de atendimento na trilha, a
+    // trilha voltaria só quando alguém reabrisse o app.
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+      return AppleSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: _distanceFilterMeters,
+        activityType: ActivityType.fitness,
+        allowBackgroundLocationUpdates: true,
+        pauseLocationUpdatesAutomatically: false,
+        showBackgroundLocationIndicator: true,
+      );
+    }
     return const LocationSettings(
       accuracy: LocationAccuracy.high,
       distanceFilter: _distanceFilterMeters,

@@ -1,36 +1,133 @@
-name: iOS build (unsigned, simulator)
+name: iOS (TestFlight)
 
-# Build não-assinado do app iOS. Sem conta Apple Developer / certificado de
-# distribuição não dá pra gerar um .ipa instalável em iPhone real — isso aqui
-# gera um Runner.app que só roda no iOS Simulator (dentro de um Mac).
+# Gera a versao iOS do Legendario Connect no runner macOS do GitHub — e o
+# unico jeito de buildar iOS sem ter um Mac. A versao sai do pubspec.yaml,
+# igual ao Android.
+#
+# DUAS ETAPAS, E A SEGUNDA SO RODA COM OS SECRETS DA APPLE
+#
+#   1. Compila para iPhone de verdade, sem assinar. Prova que o projeto
+#      builda (pods, plugins, Info.plist, entitlements) e roda sempre.
+#   2. Arquiva, assina e ENVIA ao TestFlight. Sem os secrets abaixo esta
+#      etapa e pulada, e o workflow sai verde so com a etapa 1 — de
+#      proposito: sem conta Apple nao ha o que assinar.
+#
+# iPhone nao instala app por arquivo como o Android instala APK. O caminho
+# e o TestFlight: a pessoa instala o app "TestFlight" da App Store, aceita
+# o convite, e dali em diante o proprio TestFlight avisa e atualiza.
+#
+# ASSINATURA: chave de API do App Store Connect, nada de certificado na mao.
+# Com `-allowProvisioningUpdates` + a chave, o Xcode cria e baixa sozinho o
+# certificado de distribuicao e o perfil (assinatura gerenciada na nuvem).
+# A chave tem de ter papel **Admin** — com papel menor a assinatura na
+# nuvem e recusada.
+#
+# Secrets (passo a passo em docs/ios.md):
+#   APPLE_TEAM_ID                 Team ID de 10 caracteres (developer.apple.com > Membership)
+#   APPSTORE_API_KEY_ID           Key ID da chave de API
+#   APPSTORE_API_ISSUER_ID        Issuer ID (topo da pagina de chaves)
+#   APPSTORE_API_PRIVATE_KEY      conteudo inteiro do arquivo .p8
+#   GOOGLE_IOS_CLIENT_ID          opcional; sem ele o botao do Google some no iPhone
+#
+# CADA ENVIO PRECISA DE BUILD NOVO. O App Store Connect recusa um segundo
+# envio com o mesmo `+N` do pubspec. O fluxo de release ja bumpa a cada
+# versao; para reenviar a MESMA versao, bumpe o `+N`.
+
 on:
+  push:
+    tags: ['v*']
   workflow_dispatch:
 
 jobs:
-  build-ios-simulator:
+  build-ios:
     runs-on: macos-latest
+    env:
+      TEM_CHAVE_APPLE: ${{ secrets.APPSTORE_API_KEY_ID != '' }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          cache: true
 
       - run: flutter pub get
 
-      - name: Build iOS (simulator, unsigned)
+      - name: Le a versao do pubspec
+        id: versao
         run: |
-          flutter build ios --debug --simulator \
+          LINHA=$(grep '^version:' pubspec.yaml | sed 's/version: *//')
+          echo "nome=$(echo "$LINHA" | cut -d'+' -f1)" >> "$GITHUB_OUTPUT"
+          echo "build=$(echo "$LINHA" | cut -d'+' -f2)" >> "$GITHUB_OUTPUT"
+
+      # Etapa 1. `--no-codesign` compila para o aparelho real (arm64), que
+      # e onde aparecem os erros que o simulador esconde.
+      - name: Compila para iPhone (sem assinar)
+        run: |
+          flutter build ios --release --no-codesign \
             --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
-            --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+            --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }} \
+            --dart-define=GOOGLE_IOS_CLIENT_ID=${{ secrets.GOOGLE_IOS_CLIENT_ID }}
 
-      - name: Zip Runner.app
+      - name: Sem conta Apple configurada
+        if: env.TEM_CHAVE_APPLE != 'true'
         run: |
-          cd build/ios/iphonesimulator
-          zip -r Runner-simulator.zip Runner.app
+          echo "::notice::Compilou para iPhone. Envio ao TestFlight pulado: faltam os secrets da Apple (ver docs/ios.md)."
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: hakuna-connect-ios-simulator
-          path: build/ios/iphonesimulator/Runner-simulator.zip
-          retention-days: 14
+      # Etapa 2.
+      - name: Grava a chave de API
+        if: env.TEM_CHAVE_APPLE == 'true'
+        env:
+          CHAVE: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/chave"
+          printf '%s' "$CHAVE" > "$RUNNER_TEMP/chave/AuthKey.p8"
+
+      - name: Arquiva e assina
+        if: env.TEM_CHAVE_APPLE == 'true'
+        run: |
+          xcodebuild archive \
+            -workspace ios/Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Runner.xcarchive" \
+            DEVELOPMENT_TEAM=${{ secrets.APPLE_TEAM_ID }} \
+            CODE_SIGN_STYLE=Automatic \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/chave/AuthKey.p8" \
+            -authenticationKeyID ${{ secrets.APPSTORE_API_KEY_ID }} \
+            -authenticationKeyIssuerID ${{ secrets.APPSTORE_API_ISSUER_ID }}
+
+      # `destination = upload` faz o proprio export mandar ao App Store
+      # Connect. O build aparece no TestFlight depois do processamento da
+      # Apple (de 5 a 30 minutos).
+      - name: Envia ao TestFlight
+        if: env.TEM_CHAVE_APPLE == 'true'
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>${{ secrets.APPLE_TEAM_ID }}</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict>
+          </plist>
+          EOF
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Runner.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/chave/AuthKey.p8" \
+            -authenticationKeyID ${{ secrets.APPSTORE_API_KEY_ID }} \
+            -authenticationKeyIssuerID ${{ secrets.APPSTORE_API_ISSUER_ID }}
+          echo "::notice::Versao ${{ steps.versao.outputs.nome }} (${{ steps.versao.outputs.build }}) enviada ao TestFlight."
+
+      - name: Apaga a chave do runner
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/chave"

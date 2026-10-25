@@ -316,6 +316,22 @@ void main() {
       expect(r.resumo, isNot(contains('avisado')));
     });
 
+    test('aparelho sem rádio (iPhone): não manda ligar o que não existe',
+        () async {
+      AlarmeService.instance.radioExisteNesteAparelho = false;
+
+      final r = await AlarmeService.instance.disparar(topId: 'top-1');
+      await AlarmeService.instance.envioEmAndamento;
+      expect(r.tentadoPorRadio, isFalse);
+      expect(r.resumo, contains('não tem o rádio entre aparelhos'));
+      expect(r.resumo, contains('ninguém por perto foi avisado'));
+      expect(r.resumo, isNot(contains('ligue-o')));
+      expect(
+        await Outbox.instance.pendingCount(entity: AlarmeService.entidade),
+        1,
+      );
+    });
+
     test('zero vizinhos: diz que NINGUÉM foi avisado', () async {
       AlarmeService.instance.espalharPeloRadio =
           ({

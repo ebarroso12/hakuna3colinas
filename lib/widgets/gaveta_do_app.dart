@@ -46,7 +46,7 @@ class _GavetaDoAppState extends State<GavetaDoApp> {
     // Abre já com o que se sabia, em vez de piscar "verificando" a cada
     // vez que o usuário abre a gaveta.
     _publicada = AtualizacaoService.instance.ultimaConhecida;
-    _verificar();
+    if (!AtualizacaoService.atualizaPeloTestFlight) _verificar();
   }
 
   Future<void> _verificar() async {
@@ -129,6 +129,7 @@ class _GavetaDoAppState extends State<GavetaDoApp> {
     final cores = Theme.of(context).colorScheme;
     final publicada = _publicada;
     final desatualizado = publicada?.maisNovaQueEsta ?? false;
+    final peloTestFlight = AtualizacaoService.atualizaPeloTestFlight;
 
     return Drawer(
       child: SafeArea(
@@ -172,7 +173,9 @@ class _GavetaDoAppState extends State<GavetaDoApp> {
                           : 'Versão instalada: ${Versao.completa}',
                     ),
                     subtitle: Text(_legenda()),
-                    trailing: _consultando
+                    trailing: peloTestFlight
+                        ? null
+                        : _consultando
                         ? const SizedBox(
                             height: 18,
                             width: 18,
@@ -207,8 +210,11 @@ class _GavetaDoAppState extends State<GavetaDoApp> {
             Padding(
               padding: const EdgeInsets.all(12),
               child: Text(
-                'Instalação por "fontes desconhecidas". O app não está na '
-                'Play Store.',
+                peloTestFlight
+                    ? 'No iPhone, o app é instalado e atualizado pelo '
+                          'TestFlight.'
+                    : 'Instalação por "fontes desconhecidas". O app não está '
+                          'na Play Store.',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodySmall,
               ),
@@ -225,6 +231,9 @@ class _GavetaDoAppState extends State<GavetaDoApp> {
   /// nesse caso seria inventar: o app não sabe. Dizer que não deu para
   /// verificar é o que de fato aconteceu.
   String _legenda() {
+    if (AtualizacaoService.atualizaPeloTestFlight) {
+      return 'Versão nova chega pelo TestFlight, que avisa sozinho.';
+    }
     final v = _publicada;
     if (v == null) {
       return _consultou
