@@ -18,6 +18,7 @@ import '../widgets/botao_inicio.dart';
 import 'admin/admin_equipes_screen.dart';
 import 'admin/admin_importar_screen.dart';
 import 'admin/admin_mapa_permissoes_screen.dart';
+import 'admin/admin_painel_screen.dart';
 import 'admin/admin_tags_screen.dart';
 import 'admin/admin_top_form_screen.dart';
 import 'fila_offline_screen.dart';
@@ -450,9 +451,7 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
               ),
               onPressed: _sendAlert,
               icon: const Icon(Icons.warning_amber),
-              label: const Text(
-                'EMERGÊNCIA — acidente / atendimento crítico',
-              ),
+              label: const Text('EMERGÊNCIA — acidente / atendimento crítico'),
             ),
           ),
           // Compartilhar posicao tambem era so de Hakuna, e isso esvaziava
@@ -711,9 +710,7 @@ class _MenuDoTop extends StatelessWidget {
   final Map<String, Profile> hakunaProfiles;
 
   void _abrir(BuildContext context, Widget Function() tela) {
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute<void>(builder: (_) => tela()));
+    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => tela()));
   }
 
   @override
@@ -727,7 +724,7 @@ class _MenuDoTop extends StatelessWidget {
 
     return PopupMenuButton<String>(
       icon: const Icon(Icons.more_vert),
-      tooltip: 'Mais opcoes do Top',
+      tooltip: 'Mais opções do Top',
       onSelected: (valor) {
         switch (valor) {
           case 'vitais':
@@ -737,13 +734,12 @@ class _MenuDoTop extends StatelessWidget {
               context,
               () => TopChatScreen(top: top, hakunaProfiles: hakunaProfiles),
             );
+          case 'painel':
+            _abrir(context, () => AdminPainelScreen(top: top));
           case 'pulseiras':
             _abrir(context, () => AdminTagsScreen(top: top));
           case 'equipes':
-            _abrir(
-              context,
-              () => AdminEquipesScreen(top: top, souAdmin: true),
-            );
+            _abrir(context, () => AdminEquipesScreen(top: top, souAdmin: true));
           case 'mapa_permissoes':
             _abrir(context, () => AdminMapaPermissoesScreen(top: top));
           case 'importar':
@@ -774,6 +770,17 @@ class _MenuDoTop extends StatelessWidget {
         if (isHakuna && podeEditarTop) const PopupMenuDivider(),
         if (podeEditarTop)
           const PopupMenuItem(
+            value: 'painel',
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.insights_outlined),
+              title: Text('Painel do Top'),
+              subtitle: Text('métricas do evento'),
+            ),
+          ),
+        if (podeEditarTop)
+          const PopupMenuItem(
             value: 'pulseiras',
             child: ListTile(
               dense: true,
@@ -800,7 +807,7 @@ class _MenuDoTop extends StatelessWidget {
               dense: true,
               contentPadding: EdgeInsets.zero,
               leading: Icon(Icons.visibility_outlined),
-              title: Text('Quem ve o mapa'),
+              title: Text('Quem vê o mapa'),
             ),
           ),
         if (podeEditarTop)

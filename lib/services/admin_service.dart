@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/painel_do_top.dart';
 import '../models/profile.dart';
 import '../models/team.dart';
 import '../models/team_message.dart';
@@ -20,6 +21,16 @@ class AdminService {
   static final AdminService instance = AdminService._();
 
   SupabaseClient get _client => Supabase.instance.client;
+
+  /// Métricas do Top numa chamada só (`painel_do_top` no banco). O banco
+  /// recusa quem não é admin.
+  Future<PainelDoTop> painelDoTop(String topId) async {
+    final r = await _client.rpc<Map<String, dynamic>>(
+      'painel_do_top',
+      params: {'p_top_id': topId},
+    );
+    return PainelDoTop.fromMap(r);
+  }
 
   Future<List<Profile>> fetchAllProfiles() async {
     final rows = await _client.from('profiles').select().order('full_name');
@@ -291,8 +302,7 @@ class AdminService {
         .select('profile_id, ver_mapa')
         .eq('top_id', topId);
     return {
-      for (final l in linhas)
-        l['profile_id'] as String: l['ver_mapa'] as bool,
+      for (final l in linhas) l['profile_id'] as String: l['ver_mapa'] as bool,
     };
   }
 

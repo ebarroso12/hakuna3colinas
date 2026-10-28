@@ -37,6 +37,9 @@ class _TopsScreenState extends State<TopsScreen> {
   /// gaveta consulta de novo quando é aberta.
   bool _temVersaoNova = false;
 
+  /// Nome da versão nova, para a faixa dizer QUAL é ("Versão 1.0.45").
+  String? _nomeDaVersaoNova;
+
   /// Pessoas esperando liberação. Só o admin vê, no ícone de
   /// Administração. Sem este número o pedido chegava e ninguém sabia: a
   /// lista só era vista por quem lembrava de abri-la.
@@ -70,7 +73,10 @@ class _TopsScreenState extends State<TopsScreen> {
     if (!mounted) return;
     // `null` é "não deu para verificar", não "está atualizado" — então o
     // ponto fica apagado, sem afirmar nada.
-    setState(() => _temVersaoNova = v?.maisNovaQueEsta ?? false);
+    setState(() {
+      _temVersaoNova = v?.maisNovaQueEsta ?? false;
+      _nomeDaVersaoNova = v?.nome;
+    });
   }
 
   Future<void> _refresh() async {
@@ -143,62 +149,97 @@ class _TopsScreenState extends State<TopsScreen> {
         ],
       ),
       bottomNavigationBar: const BarraInferior(mostrarInicio: false),
-      body: RefreshIndicator(
-        onRefresh: _refresh,
-        child: FutureBuilder<List<Top>>(
-          future: _topsFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (snapshot.hasError) {
-              return Center(
-                child: Text('Erro ao carregar tops: ${snapshot.error}'),
-              );
-            }
-            final tops = snapshot.data ?? [];
-            if (tops.isEmpty) {
-              return const Center(child: Text('Nenhum Top vinculado ainda.'));
-            }
-            return ListView.builder(
-              itemCount: tops.length,
-              itemBuilder: (context, index) {
-                final top = tops[index];
-                final urlEmblema = AdminService.instance.urlEmblema(
-                  top.emblemaPath,
-                );
-                return ListTile(
-                  leading: urlEmblema == null
-                      ? const CircleAvatar(child: Icon(Icons.terrain))
-                      : CircleAvatar(
-                          backgroundImage: NetworkImage(urlEmblema),
-                          // Emblema que nao carrega nao pode esconder o Top
-                          // da lista.
-                          onBackgroundImageError: (_, _) {},
-                          child: const SizedBox.shrink(),
+      body: Column(
+        children: [
+          // A versão nova era só um ponto sobre a logo, que ninguém nota —
+          // e a base instalada ficava para trás sem saber. Faixa na tela
+          // inicial, com o botão: o toque abre a gaveta, onde já está o
+          // aviso de sincronizar antes de instalar.
+          if (_temVersaoNova)
+            Builder(
+              builder: (context) => MaterialBanner(
+                leading: const Icon(Icons.system_update),
+                content: Text(
+                  'Versão ${_nomeDaVersaoNova ?? "nova"} disponível. '
+                  'Atualize para receber as correções.',
+                ),
+                actions: [
+                  FilledButton(
+                    onPressed: () => Scaffold.of(context).openDrawer(),
+                    child: const Text('ATUALIZAR'),
+                  ),
+                ],
+              ),
+            ),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: _refresh,
+              child: FutureBuilder<List<Top>>(
+                future: _topsFuture,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (snapshot.hasError) {
+                    return Center(
+                      child: Text('Erro ao carregar tops: ${snapshot.error}'),
+                    );
+                  }
+                  final tops = snapshot.data ?? [];
+                  if (tops.isEmpty) {
+                    return const Center(
+                      child: Text('Nenhum Top vinculado ainda.'),
+                    );
+                  }
+                  return ListView.builder(
+                    itemCount: tops.length,
+                    itemBuilder: (context, index) {
+                      final top = tops[index];
+                      final urlEmblema = AdminService.instance.urlEmblema(
+                        top.emblemaPath,
+                      );
+                      return ListTile(
+                        leading: urlEmblema == null
+                            ? const CircleAvatar(child: Icon(Icons.terrain))
+                            : CircleAvatar(
+                                backgroundImage: NetworkImage(urlEmblema),
+                                // Emblema que nao carrega nao pode esconder o Top
+                                // da lista.
+                                onBackgroundImageError: (_, _) {},
+                                child: const SizedBox.shrink(),
+                              ),
+                        title: Text(
+                          top.topNumber != null
+                              ? 'TOP# ${top.topNumber} · ${top.name}'
+                              : top.name,
                         ),
-                  title: Text(
-                    top.topNumber != null
-                        ? 'TOP# ${top.topNumber} · ${top.name}'
-                        : top.name,
-                  ),
-                  subtitle: Text(
-                    [
-                      top.status.name,
-                      if (top.location != null) top.location!,
-                    ].join(' · '),
-                  ),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => TopDetailScreen(top: top),
-                    ),
-                  ),
-                );
-              },
-            );
-          },
-        ),
+                        subtitle: Text(
+                          [
+                            // Em português: "draft" na lista de quem não é
+                            // programador não diz nada.
+                            switch (top.status.name) {
+                              'draft' => 'rascunho',
+                              'active' => 'em andamento',
+                              'finished' => 'encerrado',
+                              final outro => outro,
+                            },
+                            if (top.location != null) top.location!,
+                          ].join(' · '),
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => TopDetailScreen(top: top),
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

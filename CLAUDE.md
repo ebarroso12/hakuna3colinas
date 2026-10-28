@@ -520,6 +520,64 @@ pressão nem conduta.** Isso vai em `atendimentos`; escrito na anotação,
 fica fora da triagem e invisível para quem vai atender. É o erro mais
 provável daquela tela e o mais caro.
 
+### Entrada no app: pedido com número do Top, e LIBERAR = APROVAR
+
+Decidido pelo dono em 28/10/2026: a pessoa manda **número do Legendários
+e número do Top** logo no começo; o pedido chega ao admin em Pedidos de
+acesso; o admin libera e a pessoa fica **aprovada para todos os Tops** e
+dentro daquele Top. A aprovação é global de propósito: a policy
+`tops_select_linked` já abre todo Top não rascunho para conta aprovada.
+
+- `access_requests` tem `top_number` (o que foi DIGITADO, mesmo sem Top
+  com esse número — "Top 1922 (não existe no app)" é informação para o
+  admin), `top_id` e `profile_id` (`supabase/pedido_com_numero_do_top.sql`).
+- `acesso/liberar` **aprova** (`approved = true`). Antes gerava o código e
+  deixava a pessoa parada em "aguardando aprovação", esperando uma segunda
+  liberação que ninguém sabia que faltava.
+- Pedido de quem **já tem conta** (Google ou e-mail, mandado da tela de
+  espera, que agora pede número e Top) é aprovado **sem código**: gerar
+  código trocaria a senha de uma conta Google. E corrige o número: conta
+  Google nasce com o uuid em `legendarios_number` (`handle_new_user` faz
+  coalesce com `new.id`) e nunca entraria pelo número.
+- `colocarNoTop` reaproveita a ficha com o mesmo número (a da planilha)
+  em vez de criar outra.
+
+**A função `acesso` publicada tinha uma linha que o repositório não tinha**
+(`autocadastro_liberado: true` ao gerar a senha do Top). Achada ao
+publicar a v10 em 28/10/2026 e trazida de volta. Antes de publicar
+`acesso`, compare com a versão no ar (`get_edge_function`): deploy a
+partir do repositório apaga em silêncio o que só existe lá.
+
+**Senha do Top é ÚNICA por Top.** `validarConvite` acha o Top pelo hash
+da senha com `maybeSingle`; dois Tops com a mesma senha fazem a consulta
+falhar e ninguém se cadastra em nenhum dos dois. O 1782 usa a senha
+escolhida pelo dono; o próximo Top precisa de outra.
+
+### Lista de participantes: atualiza do servidor ao abrir
+
+Até a v1.0.44 a lista buscava o servidor **só no primeiro "Baixar"**, e o
+"Recarregar" relia o disco. Nada que entrasse por outro aparelho chegava
+à tela — foi o "o banco não aparece para mim" do dono em 28/10/2026.
+Hoje ela atualiza ao abrir (calada se não houver sinal) e no botão,
+mandando a fila antes. `DadosDoTop.baixar` **não substitui** a lista se
+houver ficha deste aparelho ainda não enviada (`Outbox.naoEnviadas`,
+que conta a quarentena também): `salvarParticipantes` apaga o Top
+inteiro do disco, e a ficha recém-feita sumiria da tela.
+
+### Painel do Top (admin)
+
+Menu do Top › Painel do Top. Uma chamada a `painel_do_top` (security
+definer, recusa quem não é admin com 42501 — testado como senderista).
+Só contagens. Precisa de internet e diz isso.
+
+### Aviso de versão nova
+
+Faixa com ATUALIZAR na tela inicial, além do ponto na logo. **O aviso
+depende de `app_versions` ter a linha**, e o CI só a escreve com o
+secret `SUPABASE_SERVICE_ROLE_KEY` no GitHub. Sem ele o passo emite
+warning e segue: de 1.0.40 a 1.0.44 nenhuma linha foi escrita e ninguém
+viu o botão (conferido em 28/10/2026: bucket `apks` vazio).
+
 ### Apagar é a única coisa que NÃO funciona offline, e é decisão
 
 Tudo o mais grava no aparelho e sobe depois. Apagar usuário ou senderista
@@ -1005,7 +1063,7 @@ validando uma configuração que não existe mais.
   payload assinado no aparelho de origem — sem a assinatura, qualquer um
   injeta atendimento no nome de qualquer pessoa. Em dado clínico isso não
   se improvisa.
-- **Nenhum teste de hardware.** Os 529 testes cobrem lógica. NFC, câmera,
+- **Nenhum teste de hardware.** Os 535 testes cobrem lógica. NFC, câmera,
   GPS com tela bloqueada, o som do alarme e o `launchUrl` do botão
   Atualizar só se verificam em aparelho físico.
 - **`occurred_at` em `audit_log` não tem backfill.** As linhas antigas (não
