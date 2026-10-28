@@ -291,74 +291,39 @@ jobs:
           generate_release_notes: true
 
       # ----------------------------------------------------------------------
-      # PUBLICA NO SUPABASE STORAGE E AVISA O APP
+      # AVISA O APP: registra a versao em `app_versions`
       #
-      # Por que isto existe: o fluxo de distribuicao era Google Drive manual,
-      # e em 12/10/2026 descobriu-se que NENHUM APK la jamais esteve
-      # compartilhado — 1.0.35, 1.0.37, 1.0.38, 1.0.39 e as pastas, todos
-      # fechados. O botao ATUALIZAR nunca funcionou para ninguem alem do
-      # dono: quem tocava caia em "Solicitar acesso" do Google.
+      # E isto que faz a faixa ATUALIZAR aparecer para todo mundo. O caminho
+      # antigo subia o APK ao Supabase Storage com a chave service_role, que
+      # exigia o secret SUPABASE_SERVICE_ROLE_KEY - nunca criado. Resultado:
+      # da 1.0.40 a 1.0.44 nenhuma versao foi registrada e ninguem viu o
+      # botao (conferido em 28/10/2026, bucket `apks` vazio).
       #
-      # Passo manual que precisa ser repetido a cada release e passo que vai
-      # ser esquecido. Aqui o CI faz: sobe o arquivo e escreve a linha.
+      # Hoje o APK fica na propria Release (o repositorio e publico, o link
+      # abre sem login) e a funcao `publicar_versao` registra a versao. Ela
+      # recebe so o numero e confere TUDO no GitHub - a Release, o anexo e o
+      # build do pubspec daquela tag -, entao nao precisa de segredo aqui e
+      # nao aceita apontar o botao para um APK de fora.
       #
-      # TOLERANTE A FALHA de proposito (`continue-on-error`). Este passo
-      # publica; ele nao constroi. Se o Storage estiver fora ou o secret
-      # faltar, a release com o APK assinado tem de sair de qualquer forma —
-      # da para publicar a mao depois. O contrario (derrubar uma release
-      # pronta por causa de um upload) seria trocar o essencial pelo
-      # acessorio.
+      # TOLERANTE A FALHA (`continue-on-error`): este passo avisa, nao
+      # constroi. A Release com o APK assinado ja saiu no passo anterior.
       # ----------------------------------------------------------------------
-      - name: Publica o APK no Supabase Storage e em app_versions
+      - name: Registra a versao em app_versions (faixa ATUALIZAR)
         if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         continue-on-error: true
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          ARQUIVO: ${{ steps.versao.outputs.arquivo }}
+          ANON: ${{ secrets.SUPABASE_ANON_KEY }}
           VERSAO: ${{ steps.versao.outputs.numero }}
-          BUILD: ${{ steps.versao.outputs.build }}
         run: |
-          if [ -z "$SERVICE_ROLE" ]; then
-            echo "::warning::Secret SUPABASE_SERVICE_ROLE_KEY ausente — o APK           NAO foi publicado. A release saiu, mas o botao ATUALIZAR nao vai           apontar para esta versao. Crie o secret para automatizar."
-            exit 0
+          RESP=$(curl -sS -X POST "$SUPABASE_URL/functions/v1/publicar_versao" \
+            -H "Authorization: Bearer $ANON" \
+            -H "Content-Type: application/json" \
+            -d "{\"versao\":\"$VERSAO\"}")
+          echo "$RESP"
+          if echo "$RESP" | grep -q '"ok":true'; then
+            echo "Versao $VERSAO registrada. A faixa ATUALIZAR vai aparecer para todo mundo."
+          else
+            echo "::warning::A versao $VERSAO NAO foi registrada em app_versions: $RESP"
           fi
-
-          APK="build/app/outputs/flutter-apk/$ARQUIVO"
-          TAMANHO=$(stat -c%s "$APK")
-          echo "Arquivo: $ARQUIVO ($((TAMANHO / 1048576)) MB)"
-
-          # O plano FREE do Supabase Storage recusa acima de 50 MB, e o APK
-          # universal tem 76 MB (o modelo do ML Kit vai embutido para o QR
-          # funcionar sem rede). Falhar aqui com a causa escrita e melhor que
-          # receber um 413 cru do Storage.
-          LIMITE=$((50 * 1024 * 1024))
-          if [ "$TAMANHO" -gt "$LIMITE" ]; then
-            echo "::warning::APK tem $((TAMANHO / 1048576)) MB e o limite do           plano free do Supabase Storage e 50 MB. NAO publicado. Saidas:           build com --split-per-abi (o arm64 sozinho da ~30 MB) ou plano Pro."
-            exit 0
-          fi
-
-          # `x-upsert: true` para reenviar a mesma tag sem erro de duplicata.
-          COD=$(curl -s -o /tmp/up.txt -w '%{http_code}'             -X POST "$SUPABASE_URL/storage/v1/object/apks/$ARQUIVO"             -H "Authorization: Bearer $SERVICE_ROLE"             -H "Content-Type: application/vnd.android.package-archive"             -H "x-upsert: true"             --data-binary "@$APK")
-          if [ "$COD" != "200" ] && [ "$COD" != "201" ]; then
-            echo "::warning::Upload falhou (HTTP $COD). Resposta:"
-            cat /tmp/up.txt
-            exit 0
-          fi
-
-          URL="$SUPABASE_URL/storage/v1/object/public/apks/$ARQUIVO"
-          echo "Publicado em: $URL"
-
-          # `resolution=merge-duplicates` = upsert na chave primaria
-          # (`version`). Sem isso, reenviar a tag devolve 409 e a linha fica
-          # apontando para o arquivo antigo.
-          COD=$(curl -s -o /tmp/ins.txt -w '%{http_code}'             -X POST "$SUPABASE_URL/rest/v1/app_versions"             -H "apikey: $SERVICE_ROLE"             -H "Authorization: Bearer $SERVICE_ROLE"             -H "Content-Type: application/json"             -H "Prefer: resolution=merge-duplicates"             -d "{\"version\":\"$VERSAO\",\"build_number\":$BUILD,\"apk_url\":\"$URL\",\"published\":true}")
-          if [ "$COD" != "200" ] && [ "$COD" != "201" ]; then
-            echo "::warning::O APK subiu mas app_versions NAO foi atualizada           (HTTP $COD). O botao ATUALIZAR nao vai aparecer. Resposta:"
-            cat /tmp/ins.txt
-            exit 0
-          fi
-
-          echo "app_versions atualizada: $VERSAO (build $BUILD)."
-          echo "O botao ATUALIZAR vai aparecer na gaveta de todo mundo."
 

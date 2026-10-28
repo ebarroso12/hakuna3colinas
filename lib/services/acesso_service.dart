@@ -103,7 +103,7 @@ class AcessoService {
   ///
   /// ```
   ///   203460                  ->  203460@legendarios.app
-  ///   edson.barroso@gmail.com ->  edson.barroso@gmail.com
+  ///   fulano@gmail.com        ->  fulano@gmail.com
   /// ```
   ///
   /// A regra é a presença do `@`. Número do Legendários é só dígito (ver

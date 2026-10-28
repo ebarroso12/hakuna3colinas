@@ -40,8 +40,8 @@ void main() {
 
     test('e-mail passa intacto', () {
       expect(
-        AcessoService.identificadorParaEmail('edson.barroso@gmail.com'),
-        'edson.barroso@gmail.com',
+        AcessoService.identificadorParaEmail('fulano@gmail.com'),
+        'fulano@gmail.com',
       );
     });
 

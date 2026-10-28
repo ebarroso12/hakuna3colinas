@@ -573,10 +573,28 @@ Só contagens. Precisa de internet e diz isso.
 ### Aviso de versão nova
 
 Faixa com ATUALIZAR na tela inicial, além do ponto na logo. **O aviso
-depende de `app_versions` ter a linha**, e o CI só a escreve com o
-secret `SUPABASE_SERVICE_ROLE_KEY` no GitHub. Sem ele o passo emite
-warning e segue: de 1.0.40 a 1.0.44 nenhuma linha foi escrita e ninguém
-viu o botão (conferido em 28/10/2026: bucket `apks` vazio).
+depende de `app_versions` ter a linha.** Da 1.0.40 a 1.0.44 nenhuma foi
+escrita — o CI dependia do secret `SUPABASE_SERVICE_ROLE_KEY`, nunca
+criado — e ninguém viu o botão (conferido em 28/10/2026).
+
+Desde a 1.0.45 o caminho é outro, **sem segredo no CI**: o repositório é
+público, o APK fica na própria Release (o link abre sem login) e o último
+passo do `android-build.yml` chama a Edge Function `publicar_versao` com
+o número da versão. A função **não confia em quem chama**: confere no
+GitHub que a Release existe publicada, com `legendarios<versao>.apk`, e
+lê o build do `pubspec.yaml` daquela tag. Só registra o que foi de fato
+publicado; não dá para apontar o botão para um APK de fora. Testada com
+1.0.45 (gravou), 9.9.9 (404) e lixo (400).
+
+**Tags não saem desta sessão** (o proxy bloqueia push de tag e a API de
+refs). Por isso o disparo manual do workflow (`workflow_dispatch`) cria a
+tag `v<versão do pubspec>` sozinho, pela `action-gh-release`. Para
+publicar: bumpar o pubspec, push no `main`, disparar o workflow.
+
+**Builds pararam de 12/10 a 28/10/2026** por orçamento do Actions
+("an Actions budget is preventing further use", 0 ms faturados). Tornar
+o repositório público resolveu. Se voltar a acontecer, o sintoma é job
+falhando em 2–3 s sem nenhum passo.
 
 ### Apagar é a única coisa que NÃO funciona offline, e é decisão
 

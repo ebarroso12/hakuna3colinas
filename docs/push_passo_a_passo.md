@@ -20,7 +20,7 @@ Abra um PowerShell e rode:
 firebase login
 ```
 
-Ele abre o navegador. Autorize com `edson.barroso@gmail.com`.
+Ele abre o navegador. Autorize com a conta Google dona do projeto Firebase.
 
 Se ele pedir código em vez de abrir o navegador, rode:
 
