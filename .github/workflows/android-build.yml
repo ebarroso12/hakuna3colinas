@@ -276,10 +276,17 @@ jobs:
           retention-days: 90
           if-no-files-found: error
 
-      - name: Anexa o APK a uma Release (so quando a execucao vem de uma tag)
-        if: startsWith(github.ref, 'refs/tags/v')
+      # Tag OU disparo manual. O manual existe porque o ambiente de quem
+      # mantem o app (sessao do Claude) nao consegue empurrar tags: aqui a
+      # propria acao cria a tag `v<versao do pubspec>` no commit do build,
+      # com a permissao do GITHUB_TOKEN. Em 28/10/2026 a v1.0.45 so saiu
+      # assim.
+      - name: Anexa o APK a uma Release (tag, ou disparo manual que cria a tag)
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.versao.outputs.numero }}
+          target_commitish: ${{ github.sha }}
           files: build/app/outputs/flutter-apk/*.apk
           generate_release_notes: true
 
@@ -303,7 +310,7 @@ jobs:
       # acessorio.
       # ----------------------------------------------------------------------
       - name: Publica o APK no Supabase Storage e em app_versions
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         continue-on-error: true
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
