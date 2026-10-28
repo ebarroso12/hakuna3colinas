@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/profile.dart';
 import '../models/top.dart';
 import '../offline/outbox.dart';
+import '../services/acesso_service.dart';
 import '../services/admin_service.dart';
 import '../services/atualizacao_service.dart';
 import '../services/supabase_service.dart';
@@ -36,17 +37,32 @@ class _TopsScreenState extends State<TopsScreen> {
   /// gaveta consulta de novo quando é aberta.
   bool _temVersaoNova = false;
 
+  /// Pessoas esperando liberação. Só o admin vê, no ícone de
+  /// Administração. Sem este número o pedido chegava e ninguém sabia: a
+  /// lista só era vista por quem lembrava de abri-la.
+  int _esperandoLiberacao = 0;
+
   @override
   void initState() {
     super.initState();
     _topsFuture = SupabaseService.instance.fetchMyTops();
     SupabaseService.instance.fetchMyProfile().then((p) {
       if (mounted) setState(() => _myProfile = p);
+      _contarEsperando();
     });
     _verificarVersao();
     Outbox.instance.pendingCount().then((n) {
       if (mounted) setState(() => _pendentes = n);
     });
+  }
+
+  bool get _ehAdmin =>
+      _myProfile?.role == UserRole.admin || _myProfile?.isMasterAdmin == true;
+
+  Future<void> _contarEsperando() async {
+    if (!_ehAdmin) return;
+    final n = await AcessoService.instance.pendentes();
+    if (mounted) setState(() => _esperandoLiberacao = n);
   }
 
   Future<void> _verificarVersao() async {
@@ -59,6 +75,7 @@ class _TopsScreenState extends State<TopsScreen> {
 
   Future<void> _refresh() async {
     setState(() => _topsFuture = SupabaseService.instance.fetchMyTops());
+    _contarEsperando();
     await _topsFuture;
   }
 
@@ -79,18 +96,28 @@ class _TopsScreenState extends State<TopsScreen> {
                 ),
         ),
         actions: [
-          if (_myProfile?.role == UserRole.admin ||
-              _myProfile?.isMasterAdmin == true)
+          if (_ehAdmin)
             IconButton(
-              icon: const Icon(Icons.admin_panel_settings_outlined),
-              tooltip: 'Administração',
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => AdminHomeScreen(
-                    isMasterAdmin: _myProfile?.isMasterAdmin ?? false,
-                  ),
-                ),
+              icon: Badge(
+                isLabelVisible: _esperandoLiberacao > 0,
+                label: Text('$_esperandoLiberacao'),
+                child: const Icon(Icons.admin_panel_settings_outlined),
               ),
+              tooltip: _esperandoLiberacao > 0
+                  ? 'Administração · $_esperandoLiberacao esperando liberação'
+                  : 'Administração',
+              onPressed: () async {
+                await Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => AdminHomeScreen(
+                      isMasterAdmin: _myProfile?.isMasterAdmin ?? false,
+                    ),
+                  ),
+                );
+                // Voltou da administração: quem foi liberado lá sai da
+                // conta na hora, sem esperar reabrir o app.
+                _contarEsperando();
+              },
             ),
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert),

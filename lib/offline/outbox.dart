@@ -232,6 +232,20 @@ class Outbox {
     return (rows.first['c'] as int?) ?? 0;
   }
 
+  /// Quantas entradas ainda NÃO chegaram ao servidor, contando as em
+  /// quarentena. Diferente de [pendingCount], que ignora a quarentena —
+  /// certo para "o que falta enviar", errado para "o que só existe aqui".
+  Future<int> naoEnviadas({required String entity, String? topId}) async {
+    final db = await LocalDb.instance.database;
+    final rows = await db.rawQuery(
+      'SELECT COUNT(*) c FROM outbox '
+      'WHERE synced_at IS NULL AND entity = ?'
+      '${topId == null ? '' : ' AND top_id = ?'}',
+      [entity, ?topId],
+    );
+    return (rows.first['c'] as int?) ?? 0;
+  }
+
   // =====================================================================
   // QUARENTENA
   // =====================================================================
@@ -303,16 +317,12 @@ class Outbox {
   /// Devolve tudo à fila de uma vez. Devolve quantas voltaram.
   Future<int> requeueAll() async {
     final db = await LocalDb.instance.database;
-    return db.update(
-      'outbox',
-      {
-        'quarantined_at': null,
-        'quarantine_reason': null,
-        'attempts': 0,
-        'last_error': null,
-      },
-      where: 'quarantined_at IS NOT NULL AND synced_at IS NULL',
-    );
+    return db.update('outbox', {
+      'quarantined_at': null,
+      'quarantine_reason': null,
+      'attempts': 0,
+      'last_error': null,
+    }, where: 'quarantined_at IS NOT NULL AND synced_at IS NULL');
   }
 
   /// Apaga uma entrada em quarentena. **Perde o dado.**

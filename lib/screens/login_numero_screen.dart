@@ -20,6 +20,7 @@ class _LoginNumeroScreenState extends State<LoginNumeroScreen> {
   final _numero = TextEditingController();
   final _codigo = TextEditingController();
   final _nome = TextEditingController();
+  final _top = TextEditingController();
 
   bool _pedindo = false;
   bool _entrando = false;
@@ -31,6 +32,7 @@ class _LoginNumeroScreenState extends State<LoginNumeroScreen> {
     _numero.dispose();
     _codigo.dispose();
     _nome.dispose();
+    _top.dispose();
     super.dispose();
   }
 
@@ -38,6 +40,13 @@ class _LoginNumeroScreenState extends State<LoginNumeroScreen> {
     final numero = _numero.text.trim();
     if (!AcessoService.numeroValido(numero)) {
       setState(() => _erro = 'Digite o número do Legendários (só números).');
+      return;
+    }
+    // O Top é o que diz ao admin para qual evento liberar. Sem ele o
+    // pedido chega sem contexto e o admin tem de perguntar por fora.
+    final top = _top.text.trim();
+    if (!RegExp(r'^[0-9]{1,8}$').hasMatch(top)) {
+      setState(() => _erro = 'Digite o número do Top (só números).');
       return;
     }
     setState(() {
@@ -48,6 +57,7 @@ class _LoginNumeroScreenState extends State<LoginNumeroScreen> {
     try {
       final msg = await AcessoService.instance.solicitar(
         numero: numero,
+        top: top,
         nome: _nome.text,
       );
       if (mounted) setState(() => _aviso = msg);
@@ -183,12 +193,24 @@ class _LoginNumeroScreenState extends State<LoginNumeroScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Peça acesso com o seu número. Um administrador vai te '
-                'passar o código.',
+                'Peça acesso com o seu número e o número do Top. Um '
+                'administrador vai liberar e te passar o código.',
                 style: Theme.of(context).textTheme.bodySmall,
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 12),
+              TextField(
+                controller: _top,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: const InputDecoration(
+                  labelText: 'Número do Top',
+                  helperText: 'Ex.: 1782',
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
               TextField(
                 controller: _nome,
                 textCapitalization: TextCapitalization.words,

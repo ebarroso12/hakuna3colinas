@@ -283,6 +283,68 @@ async function acharUsuarioPorNumero(
   )
 }
 
+/** Numero do Top: so digito. Hoje sao 4 (1782); 8 sobra. */
+function numeroDoTopValido(n: unknown): n is string {
+  return typeof n === 'string' && /^[0-9]{1,8}$/.test(n.trim())
+}
+
+/**
+ * Coloca a pessoa DENTRO do Top: participante (top_senderistas) e ficha
+ * ligada a conta (top_participants).
+ *
+ * A ficha e reaproveitada quando ja existe com o mesmo numero no Top - e
+ * o caso de quem veio na planilha. Criar outra duplicaria a pessoa, e com
+ * duas fichas `participante_elegivel` escolhe com `limit 1`: comorbidade
+ * e alergia podiam ficar na ficha que ninguem abre.
+ *
+ * Falha aqui NAO desfaz a liberacao: a conta ja esta aprovada e ve todos
+ * os Tops ativos. O que falta (a ficha) o admin completa pela tela.
+ */
+async function colocarNoTop(
+  admin: Admin,
+  topId: string,
+  perfilId: string,
+  numero: string,
+  nome: string | null,
+  adminId: string,
+): Promise<string | null> {
+  const { error: erroPart } = await admin
+    .from('top_senderistas')
+    .upsert(
+      { top_id: topId, profile_id: perfilId },
+      { onConflict: 'top_id,profile_id', ignoreDuplicates: true },
+    )
+  if (erroPart) return `participante: ${erroPart.message}`
+
+  const { data: fichas } = await admin
+    .from('top_participants')
+    .select('id, linked_profile_id')
+    .eq('top_id', topId)
+    .eq('participant_code', numero)
+    .limit(1)
+  const ficha = Array.isArray(fichas) ? fichas[0] : null
+
+  if (ficha) {
+    if (!ficha.linked_profile_id) {
+      const { error } = await admin
+        .from('top_participants')
+        .update({ linked_profile_id: perfilId })
+        .eq('id', ficha.id)
+      if (error) return `ficha: ${error.message}`
+    }
+    return null
+  }
+
+  const { error: erroFicha } = await admin.from('top_participants').insert({
+    top_id: topId,
+    full_name: (nome ?? '').trim().toUpperCase() || `LEGENDARIO ${numero}`,
+    participant_code: numero,
+    linked_profile_id: perfilId,
+    registered_by: adminId,
+  })
+  return erroFicha ? `ficha: ${erroFicha.message}` : null
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
   if (req.method !== 'POST') return json({ error: 'metodo nao suportado' }, 405)
@@ -311,19 +373,75 @@ Deno.serve(async (req) => {
       return json({ error: 'Numero do Legendarios invalido.' }, 400)
     }
 
+    // Numero do Top: o que a pessoa digitou fica guardado mesmo sem Top
+    // correspondente. "Top 1922" na lista do admin diz que ela errou ou
+    // que o evento nao foi criado - jogar fora esconderia as duas coisas.
+    const topNumero = numeroDoTopValido(corpo.top) ? String(corpo.top).trim() : null
+    let topId: string | null = null
+    if (topNumero) {
+      const { data: top } = await admin
+        .from('tops')
+        .select('id')
+        .eq('top_number', topNumero)
+        .maybeSingle()
+      topId = top?.id ?? null
+    }
+
+    // Quem pede JA LOGADO (entrou pelo Google ou por e-mail e parou na
+    // tela de aprovacao) tem conta. Guardar o id faz o liberar aprovar
+    // essa conta em vez de criar outra com o mesmo numero - ou trocar a
+    // senha de quem nem usa senha. Sem login, o Authorization e a chave
+    // anon, `getUser` nao acha ninguem e segue sem conta.
+    let perfilId: string | null = null
+    const authPedido = req.headers.get('Authorization')
+    if (authPedido) {
+      const cliente = createClient(url, Deno.env.get('SUPABASE_ANON_KEY')!, {
+        global: { headers: { Authorization: authPedido } },
+      })
+      const { data } = await cliente.auth.getUser()
+      perfilId = data?.user?.id ?? null
+    }
+
+    const nome = typeof corpo.nome === 'string' && corpo.nome.trim()
+      ? corpo.nome.trim()
+      : null
+    const telefone = typeof corpo.telefone === 'string' && corpo.telefone.trim()
+      ? corpo.telefone.trim()
+      : null
+
     const { data: existente } = await admin
       .from('access_requests')
       .select('id')
       .eq('legendarios_number', numero)
       .eq('status', 'pendente')
+      .order('requested_at', { ascending: false })
+      .limit(1)
       .maybeSingle()
 
     if (!existente) {
       await admin.from('access_requests').insert({
         legendarios_number: numero,
-        full_name: typeof corpo.nome === 'string' ? corpo.nome.trim() : null,
-        phone: typeof corpo.telefone === 'string' ? corpo.telefone.trim() : null,
+        full_name: nome,
+        phone: telefone,
+        top_number: topNumero,
+        top_id: topId,
+        profile_id: perfilId,
       })
+    } else {
+      // Pedido repetido ATUALIZA o que veio de novo, sem apagar o que ja
+      // estava: quem pediu sem o Top e mandou de novo com ele tem de
+      // aparecer com o Top para o admin.
+      const novo: Record<string, unknown> = {}
+      if (nome) novo.full_name = nome
+      if (telefone) novo.phone = telefone
+      if (topNumero) {
+        novo.top_number = topNumero
+        novo.top_id = topId
+      }
+      if (perfilId) novo.profile_id = perfilId
+      if (Object.keys(novo).length > 0) {
+        await admin.from('access_requests').update(novo).eq('id', existente.id)
+      }
     }
 
     // Resposta IDENTICA tendo pedido novo ou repetido, e sem dizer se o
@@ -517,6 +635,81 @@ Deno.serve(async (req) => {
     const numero = String(corpo.numero ?? '').trim()
     if (!numeroValido(numero)) return json({ error: 'numero invalido' }, 400)
 
+    const { data: pedido } = await admin
+      .from('access_requests')
+      .select('id, full_name, top_id, profile_id')
+      .eq('legendarios_number', numero)
+      .eq('status', 'pendente')
+      .order('requested_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    const topDoPedido: string | null =
+      (typeof corpo.top_id === 'string' && corpo.top_id) || pedido?.top_id || null
+
+    let nomeDoTop: string | null = null
+    if (topDoPedido) {
+      const { data: t } = await admin
+        .from('tops').select('name').eq('id', topDoPedido).maybeSingle()
+      nomeDoTop = t?.name ?? null
+    }
+
+    // PEDIDO DE QUEM JA TEM CONTA (Google ou e-mail, parado na tela de
+    // aprovacao). Nao ha codigo a gerar: a pessoa ja entra do jeito dela.
+    // Gerar codigo aqui TROCARIA a senha de uma conta Google, que nem usa
+    // senha - e a pessoa receberia um codigo para algo que nao precisa.
+    if (pedido?.profile_id) {
+      const perfilId = pedido.profile_id as string
+      const { data: atual } = await admin
+        .from('profiles')
+        .select('legendarios_number')
+        .eq('id', perfilId)
+        .maybeSingle()
+
+      const mudancas: Record<string, unknown> = { approved: true }
+      // Conta criada pelo Google nasce com o uuid no lugar do numero
+      // (`handle_new_user` faz coalesce com new.id). Sem corrigir, ela
+      // nunca entra pelo numero e o admin nao a reconhece em Usuarios.
+      if (!numeroValido(String(atual?.legendarios_number ?? ''))) {
+        mudancas.legendarios_number = numero
+      }
+      const { error: erroAprovar } = await admin
+        .from('profiles').update(mudancas).eq('id', perfilId)
+      if (erroAprovar) {
+        const duplicado = erroAprovar.code === '23505'
+        return json(
+          {
+            error: duplicado
+              ? `O numero ${numero} ja pertence a outra conta. Confira com a pessoa.`
+              : erroAprovar.message,
+          },
+          duplicado ? 409 : 400,
+        )
+      }
+
+      const aviso = topDoPedido
+        ? await colocarNoTop(admin, topDoPedido, perfilId, numero, pedido.full_name, user.id)
+        : null
+
+      await admin
+        .from('access_requests')
+        .update({
+          status: 'liberado',
+          handled_by: user.id,
+          handled_at: new Date().toISOString(),
+        })
+        .eq('id', pedido.id)
+
+      return json({
+        ok: true,
+        numero,
+        codigo: null,
+        top_nome: nomeDoTop,
+        aviso,
+        mensagem: 'Conta aprovada. A pessoa ja pode entrar do jeito que entrou.',
+      })
+    }
+
     const codigo = gerarCodigo()
     const email = `${numero}@${DOMINIO}`
 
@@ -581,14 +774,30 @@ Deno.serve(async (req) => {
       })
       if (error) return json({ error: error.message }, 400)
     } else {
-      const { error } = await admin.auth.admin.createUser({
+      const { data: criado, error } = await admin.auth.admin.createUser({
         email,
         password: codigo,
         email_confirm: true,
-        user_metadata: { legendarios_number: numero },
+        user_metadata: {
+          legendarios_number: numero,
+          ...(pedido?.full_name ? { full_name: pedido.full_name } : {}),
+        },
       })
-      if (error) return json({ error: error.message }, 400)
+      if (error || !criado?.user) {
+        return json({ error: error?.message ?? 'falha ao criar conta' }, 400)
+      }
+      conta = { id: criado.user.id, email }
     }
+
+    // LIBERAR = APROVAR. Antes o codigo era gerado e `approved` ficava
+    // false: a pessoa entrava com o codigo e parava em "aguardando
+    // aprovacao", esperando uma segunda liberacao que ninguem sabia que
+    // faltava. A aprovacao vale para todos os Tops.
+    await admin.from('profiles').update({ approved: true }).eq('id', conta.id)
+
+    const aviso = topDoPedido
+      ? await colocarNoTop(admin, topDoPedido, conta.id, numero, pedido?.full_name ?? null, user.id)
+      : null
 
     const expira = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
     await admin
@@ -610,6 +819,8 @@ Deno.serve(async (req) => {
       numero,
       codigo,
       expira_em: expira.toISOString(),
+      top_nome: nomeDoTop,
+      aviso,
       mensagem: `Entregue este codigo ao Legendario ${numero}.`,
     })
   }

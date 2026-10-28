@@ -9,6 +9,16 @@ class PedidoAcesso {
   final String status;
   final DateTime solicitadoEm;
 
+  /// O número do Top que a pessoa DIGITOU, exista ele ou não.
+  final String? topNumero;
+
+  /// O Top que o servidor achou com esse número. Null quando não há Top
+  /// com esse número no app — a pessoa errou, ou o evento não foi criado.
+  final String? topId;
+
+  /// A conta de quem pediu, quando pediu já logado (Google ou e-mail).
+  final String? profileId;
+
   PedidoAcesso({
     required this.id,
     required this.numero,
@@ -16,6 +26,9 @@ class PedidoAcesso {
     required this.solicitadoEm,
     this.nome,
     this.telefone,
+    this.topNumero,
+    this.topId,
+    this.profileId,
   });
 
   factory PedidoAcesso.fromMap(Map<String, dynamic> map) => PedidoAcesso(
@@ -25,9 +38,39 @@ class PedidoAcesso {
     telefone: map['phone'] as String?,
     status: map['status'] as String,
     solicitadoEm: DateTime.parse(map['requested_at'] as String),
+    topNumero: map['top_number'] as String?,
+    topId: map['top_id'] as String?,
+    profileId: map['profile_id'] as String?,
   );
 
   bool get pendente => status == 'pendente';
+
+  /// Já tem conta: liberar só aprova, sem código. Ver [AcessoService.liberar].
+  bool get contaJaExiste => profileId != null;
+
+  /// Como o Top aparece para o admin. O texto distingue "não informou" de
+  /// "informou um Top que não existe" — o segundo pede ação do admin.
+  String get descricaoDoTop {
+    if (topNumero == null) return 'Top não informado';
+    if (topId == null) return 'Top $topNumero (não existe no app)';
+    return 'Top $topNumero';
+  }
+}
+
+/// Resultado de liberar um pedido.
+class Liberacao {
+  const Liberacao({this.codigo, this.topNome, this.aviso});
+
+  /// Código para entregar à pessoa. Null quando ela já tinha conta (entrou
+  /// pelo Google ou por e-mail): nesse caso liberar só aprova.
+  final String? codigo;
+
+  /// Nome do Top em que a pessoa foi colocada, se o pedido trazia um.
+  final String? topNome;
+
+  /// O que não deu certo ao colocar no Top. A conta fica aprovada mesmo
+  /// assim; o admin completa pela tela de participantes.
+  final String? aviso;
 }
 
 /// Entrada no app pelo número do Legendários.
@@ -115,8 +158,12 @@ class AcessoService {
   ///
   /// A resposta é sempre a mesma, exista o número ou não — senão daria
   /// para descobrir quem é Legendário testando números um a um.
+  ///
+  /// [top] é o número do Top. Quem chama já logado (tela de aprovação)
+  /// manda a sessão junto, e o servidor guarda a conta no pedido.
   Future<String> solicitar({
     required String numero,
+    String? top,
     String? nome,
     String? telefone,
   }) async {
@@ -125,6 +172,7 @@ class AcessoService {
       body: {
         'acao': 'solicitar',
         'numero': numero.trim(),
+        if (top != null && top.trim().isNotEmpty) 'top': top.trim(),
         if (nome != null && nome.trim().isNotEmpty) 'nome': nome.trim(),
         if (telefone != null && telefone.trim().isNotEmpty)
           'telefone': telefone.trim(),
@@ -323,7 +371,12 @@ class AcessoService {
     return linhas.map((l) => PedidoAcesso.fromMap(l)).toList();
   }
 
-  /// Libera o acesso e devolve o código em claro.
+  /// Libera o acesso: **aprova a conta** (vale para todos os Tops) e, se o
+  /// pedido trazia um Top, coloca a pessoa nele.
+  ///
+  /// Quem pediu já logado não recebe código — já entra do jeito dele, e
+  /// gerar código trocaria a senha de uma conta Google. Os demais recebem
+  /// o código em [Liberacao.codigo].
   ///
   /// O código volta **uma única vez**: o banco guarda só o hash. Admin que
   /// perder o código gera outro — é mais seguro que deixá-lo legível no
@@ -332,7 +385,7 @@ class AcessoService {
   /// Lança [ContaComEmailProprio] quando a pessoa já entra por e-mail: o
   /// servidor recusa com 409 em vez de trocar a senha calada. Para seguir,
   /// chame de novo com [confirmarTrocaDeSenha] — depois de perguntar.
-  Future<String> liberar(
+  Future<Liberacao> liberar(
     String numero, {
     bool confirmarTrocaDeSenha = false,
   }) async {
@@ -375,13 +428,48 @@ class AcessoService {
       throw const AcessoRecusado('Não foi possível falar com o servidor.');
     }
 
-    final codigo = dados['codigo'] as String?;
-    if (codigo == null) {
+    if (dados['ok'] != true) {
       throw AcessoRecusado(
-        dados['error'] as String? ?? 'Não foi possível gerar o código.',
+        dados['error'] as String? ?? 'Não foi possível liberar.',
       );
     }
-    return codigo;
+    return Liberacao(
+      codigo: dados['codigo'] as String?,
+      topNome: dados['top_nome'] as String?,
+      aviso: dados['aviso'] as String?,
+    );
+  }
+
+  /// Quantas pessoas esperam o admin. Para o número no ícone de
+  /// Administração: sem ele o pedido só é visto por quem abre a tela.
+  ///
+  /// Soma os pedidos pendentes e as contas não aprovadas que NÃO têm
+  /// pedido — quem entrou pelo Google e não mandou o número ainda está
+  /// esperando, só que em Usuários. Contar as duas listas sem tirar a
+  /// interseção diria "2" para uma pessoa só.
+  Future<int> pendentes() async {
+    try {
+      final pedidos = await _client
+          .from('access_requests')
+          .select('profile_id')
+          .eq('status', 'pendente');
+      final comPedido = {
+        for (final p in pedidos)
+          if (p['profile_id'] != null) p['profile_id'] as String,
+      };
+      final contas = await _client
+          .from('profiles')
+          .select('id')
+          .eq('approved', false);
+      final semPedido = contas
+          .where((c) => !comPedido.contains(c['id'] as String))
+          .length;
+      return pedidos.length + semPedido;
+    } catch (_) {
+      // Sem rede o número some, em vez de mostrar zero e afirmar que não
+      // há ninguém esperando.
+      return 0;
+    }
   }
 
   Future<void> negar(String numero, {String? motivo}) async {

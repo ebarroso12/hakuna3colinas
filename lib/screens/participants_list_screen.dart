@@ -5,7 +5,9 @@ import '../models/participant.dart';
 import '../models/profile.dart';
 import '../models/top.dart';
 import '../models/triage_rule.dart';
+
 import '../offline/dados_do_top.dart';
+import '../offline/sync_service.dart';
 import '../offline/texto_busca.dart';
 import '../services/exclusao_service.dart';
 import '../services/participante_service.dart';
@@ -249,7 +251,11 @@ class _ParticipantsListScreenState extends State<ParticipantsListScreen> {
   @override
   void initState() {
     super.initState();
-    _carregar();
+    // Disco primeiro, rede depois: a lista aparece na hora, com ou sem
+    // sinal, e se houver sinal se atualiza sozinha em seguida. Antes a
+    // lista só buscava o servidor no PRIMEIRO "Baixar" — depois disso,
+    // nada que entrasse por outro aparelho chegava a esta tela.
+    _carregar().then((_) => _atualizar(silencioso: true));
     _buscaNome.addListener(() => setState(() {}));
     _buscaFamilia.addListener(() => setState(() {}));
   }
@@ -299,26 +305,58 @@ class _ParticipantsListScreenState extends State<ParticipantsListScreen> {
   /// É o botão que o Hakuna aperta antes de subir a trilha. Depois dele a
   /// lista e a leitura de tag funcionam sem rede, inclusive se o sistema
   /// matar o app e ele reabrir no meio do mato.
-  Future<void> _baixar() async {
-    setState(() => _carregando = true);
+  Future<void> _baixar() => _atualizar(silencioso: false);
+
+  /// Busca no servidor o que mudou e regrava o disco.
+  ///
+  /// Envia a fila ANTES de baixar: ficha feita aqui sem sinal sobe
+  /// primeiro, e a lista que desce já a inclui. Se ainda sobrar ficha na
+  /// fila, [DadosDoTop.baixar] mantém a lista do disco — e a tela diz.
+  ///
+  /// [silencioso] é a atualização automática ao abrir: sem sinal ela falha
+  /// calada, porque a lista do disco já está na tela e um aviso de erro a
+  /// cada abertura no mato ensinaria a ignorar avisos.
+  Future<void> _atualizar({required bool silencioso}) async {
+    if (!silencioso) setState(() => _carregando = true);
     try {
+      try {
+        await SyncService.instance.syncNow();
+      } catch (_) {}
       final resumo = await DadosDoTop.instance.baixar(widget.top.id);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Baixado para o aparelho: ${resumo.participantes} participantes, '
-            '${resumo.tags} pulseiras, ${resumo.regras} regras de triagem.',
+      if (resumo.listaMantida) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '${resumo.fichasSoNoAparelho} ficha(s) deste aparelho ainda '
+              'não subiram. A lista fica como está para não perdê-las; '
+              'atualize de novo quando houver sinal.',
+            ),
           ),
-        ),
-      );
+        );
+      } else if (!silencioso) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Atualizado: ${resumo.participantes} participantes, '
+              '${resumo.tags} pulseiras, ${resumo.regras} regras de triagem.',
+            ),
+          ),
+        );
+      }
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Não deu para baixar agora: $e')));
+      if (mounted && !silencioso) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Sem conexão com o servidor. A lista mostra o que já estava '
+              'no aparelho.',
+            ),
+          ),
+        );
+      }
     }
-    await _carregar();
+    if (mounted) await _carregar();
   }
 
   /// Os dois filtros se somam: digitar nos dois campos restringe aos dois
@@ -365,8 +403,8 @@ class _ParticipantsListScreenState extends State<ParticipantsListScreen> {
           const BotaoInicio(),
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: 'Recarregar',
-            onPressed: _carregando ? null : _carregar,
+            tooltip: 'Atualizar do servidor',
+            onPressed: _carregando ? null : _baixar,
           ),
           if (_souMaster)
             IconButton(

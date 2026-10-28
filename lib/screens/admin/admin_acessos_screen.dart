@@ -10,6 +10,10 @@ import '../../widgets/botao_inicio.dart';
 /// O admin libera e **entrega o código à pessoa** — por WhatsApp,
 /// pessoalmente, como for. Não há envio automático: decisão de produto
 /// para manter custo zero e deixar o admin no controle de quem entra.
+///
+/// Liberar **aprova a conta** (vale para todos os Tops) e coloca a pessoa
+/// no Top que ela informou. Quem pediu já logado — entrou pelo Google ou
+/// por e-mail — não recebe código: já entra do jeito dela.
 class AdminAcessosScreen extends StatefulWidget {
   const AdminAcessosScreen({super.key});
 
@@ -37,12 +41,17 @@ class _AdminAcessosScreenState extends State<AdminAcessosScreen> {
 
   Future<void> _liberar(PedidoAcesso pedido, {bool confirmado = false}) async {
     try {
-      final codigo = await AcessoService.instance.liberar(
+      final r = await AcessoService.instance.liberar(
         pedido.numero,
         confirmarTrocaDeSenha: confirmado,
       );
       if (!mounted) return;
-      await _mostrarCodigo(pedido, codigo);
+      final codigo = r.codigo;
+      if (codigo != null) {
+        await _mostrarCodigo(pedido, codigo, r);
+      } else {
+        await _mostrarAprovado(pedido, r);
+      }
       _recarregar();
     } on ContaComEmailProprio catch (e) {
       // Não é erro: o servidor está perguntando. A tela pergunta de volta,
@@ -81,10 +90,7 @@ class _AdminAcessosScreenState extends State<AdminAcessosScreen> {
                 'próprio:',
               ),
               const SizedBox(height: 8),
-              Text(
-                email,
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
+              Text(email, style: const TextStyle(fontWeight: FontWeight.bold)),
               const SizedBox(height: 16),
               const Text(
                 'Gerar um código SUBSTITUI a senha dessa conta. A senha '
@@ -119,7 +125,64 @@ class _AdminAcessosScreenState extends State<AdminAcessosScreen> {
   /// O banco guarda só o hash — se o admin fechar sem anotar, precisa
   /// gerar outro. É de propósito: código legível guardado para sempre é
   /// senha em texto claro.
-  Future<void> _mostrarCodigo(PedidoAcesso pedido, String codigo) {
+  /// Linha que diz em qual Top a pessoa entrou — ou por que não entrou.
+  ///
+  /// O pedido pode chegar com Top que não existe ("Top 1922"). A conta é
+  /// aprovada do mesmo jeito; o que falta o admin precisa saber, senão
+  /// acha que a pessoa está num Top em que ela não está.
+  Widget _linhaDoTop(PedidoAcesso pedido, Liberacao r) {
+    final String texto;
+    if (r.topNome != null && r.aviso == null) {
+      texto = 'Colocado no Top ${pedido.topNumero ?? ''} · ${r.topNome}.';
+    } else if (r.topNome != null) {
+      texto =
+          'Aprovado, mas não deu para completar o Top ${r.topNome}: '
+          '${r.aviso}. Confira em Participantes do Top.';
+    } else if (pedido.topNumero != null) {
+      texto =
+          'O Top ${pedido.topNumero} não existe no app. A conta foi '
+          'aprovada e vê os Tops em andamento.';
+    } else {
+      texto =
+          'Sem Top no pedido. A conta foi aprovada e vê os Tops em '
+          'andamento.';
+    }
+    return Text(texto, textAlign: TextAlign.center);
+  }
+
+  /// Pedido de quem já tinha conta: não há código para entregar.
+  Future<void> _mostrarAprovado(PedidoAcesso pedido, Liberacao r) {
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Conta aprovada'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Legendário ${pedido.numero}'),
+            if (pedido.nome != null) Text(pedido.nome!),
+            const SizedBox(height: 16),
+            _linhaDoTop(pedido, r),
+            const SizedBox(height: 16),
+            const Text(
+              'Não há código para entregar: a pessoa já tinha conta e '
+              'entra do jeito que entrou (Google ou e-mail). Avise para '
+              'ela tocar em "Verificar de novo".',
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _mostrarCodigo(PedidoAcesso pedido, String codigo, Liberacao r) {
     return showDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -139,6 +202,8 @@ class _AdminAcessosScreenState extends State<AdminAcessosScreen> {
                 letterSpacing: 8,
               ),
             ),
+            const SizedBox(height: 16),
+            _linhaDoTop(pedido, r),
             const SizedBox(height: 16),
             const Text(
               'Entregue este código à pessoa. Ele aparece só agora — '
@@ -267,7 +332,8 @@ class _AdminAcessosScreenState extends State<AdminAcessosScreen> {
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                         subtitle: Text(
-                          '#${p.numero} · ${p.status}'
+                          '#${p.numero} · ${p.descricaoDoTop} · ${p.status}'
+                          '${p.contaJaExiste ? " · já tem conta" : ""}'
                           '${p.telefone != null ? " · ${p.telefone}" : ""}',
                         ),
                         trailing: p.pendente
@@ -276,7 +342,9 @@ class _AdminAcessosScreenState extends State<AdminAcessosScreen> {
                                 children: [
                                   IconButton(
                                     icon: const Icon(Icons.vpn_key),
-                                    tooltip: 'Liberar e gerar código',
+                                    tooltip: p.contaJaExiste
+                                        ? 'Aprovar a conta'
+                                        : 'Liberar e gerar código',
                                     onPressed: () => _liberar(p),
                                   ),
                                   IconButton(

@@ -4,6 +4,7 @@ import '../models/participant_tag.dart';
 import '../models/triage_rule.dart';
 import '../services/supabase_service.dart';
 import 'cache_local.dart';
+import 'outbox.dart';
 
 /// Resultado de uma descida de dados.
 class ResumoDownload {
@@ -12,12 +13,20 @@ class ResumoDownload {
   final int regras;
   final DateTime em;
 
+  /// Quantas fichas feitas NESTE aparelho ainda não subiram. Quando é
+  /// maior que zero a lista do disco foi MANTIDA, sem a versão do
+  /// servidor — ver [DadosDoTop.baixar].
+  final int fichasSoNoAparelho;
+
   const ResumoDownload({
     required this.participantes,
     required this.tags,
     required this.regras,
     required this.em,
+    this.fichasSoNoAparelho = 0,
   });
+
+  bool get listaMantida => fichasSoNoAparelho > 0;
 }
 
 /// Fonte única de leitura dos dados de um Top.
@@ -44,14 +53,28 @@ class DadosDoTop {
   /// Grava cada bloco assim que ele chega, em vez de esperar os três: com
   /// sinal ruim é comum o primeiro passar e o terceiro falhar, e aí ter
   /// participantes gravados já é melhor que não ter nada.
+  ///
+  /// **Não substitui a lista se houver ficha que só existe aqui.**
+  /// `salvarParticipantes` apaga o Top inteiro do disco e grava o que veio
+  /// do servidor. Ficha cadastrada ou editada sem sinal, ainda na fila,
+  /// sumiria da lista — ou voltaria à versão antiga — até sincronizar. Em
+  /// campo é a ficha que o Hakuna acabou de fazer desaparecendo da tela.
+  /// Nesse caso a lista do disco fica e só pulseiras e regras descem.
   Future<ResumoDownload> baixar(String topId) async {
-    final participantes = await SupabaseService.instance.fetchParticipants(
-      topId,
+    // Literal e não `ParticipanteService.entidade`: este arquivo é da
+    // camada de disco e não importa serviço de tela.
+    final soNoAparelho = await Outbox.instance.naoEnviadas(
+      entity: 'top_participants',
+      topId: topId,
     );
-    final nParticipantes = await _cache.salvarParticipantes(
-      topId,
-      participantes,
-    );
+
+    var nParticipantes = 0;
+    if (soNoAparelho == 0) {
+      final participantes = await SupabaseService.instance.fetchParticipants(
+        topId,
+      );
+      nParticipantes = await _cache.salvarParticipantes(topId, participantes);
+    }
 
     var nTags = 0;
     try {
@@ -74,6 +97,7 @@ class DadosDoTop {
       tags: nTags,
       regras: nRegras,
       em: DateTime.now(),
+      fichasSoNoAparelho: soNoAparelho,
     );
   }
 
