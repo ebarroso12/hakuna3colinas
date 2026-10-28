@@ -845,6 +845,14 @@ Deno.serve(async (req) => {
         access_code_hash: await hash(senha),
         access_code_set_at: new Date().toISOString(),
         access_code_set_by: user.id,
+        // Gerar senha e querer que gente se cadastre: abre a trava junto.
+        // Sem isto o admin geraria a senha, anunciaria ao grupo e so
+        // descobriria depois que o cadastro estava fechado.
+        //
+        // Esta linha existia SO na versao publicada (v9 no Supabase) e nao
+        // no repositorio. Trazida de volta em 28/10/2026, ao publicar a v10
+        // - senao o deploy a apagaria em silencio.
+        autocadastro_liberado: true,
       })
       .eq('id', topId)
       .select('id, name, top_number, status')
