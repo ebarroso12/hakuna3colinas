@@ -86,6 +86,15 @@ abstract final class ColunasEstado {
   /// sem nome e a faixa diz "Alguém do Top", que é verdade, em vez de
   /// mostrar um uuid.
   static const meuNome = 'meu_nome';
+
+  /// Última aprovação conhecida, no formato `<uid>|1` ou `<uid>|0`.
+  ///
+  /// Gravada a cada `fetchMyProfile` bem-sucedido. Existe para quem já
+  /// entrou continuar entrando quando o servidor não responde (projeto
+  /// pausado, sem rede). Só vale para o MESMO uid e só na falha de rede;
+  /// ver `podeEntrarSemServidor`. Mesma tabela chave-valor das demais:
+  /// não exige migração de esquema.
+  static const aprovacaoConhecida = 'aprovacao_conhecida';
 }
 
 /// Colunas de [Tabelas.participantes].

@@ -2,7 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../models/profile.dart';
+import '../offline/cache_local.dart';
+import '../offline/tabelas.dart';
 import '../services/alarme_service.dart';
+import '../services/entrada_sem_servidor.dart';
 import '../services/supabase_service.dart';
 import 'login_screen.dart';
 import 'pending_approval_screen.dart';
@@ -26,7 +30,32 @@ class _AuthGateState extends State<AuthGate> {
   /// Busca o próprio perfil e retorna se está aprovado. Guardado em
   /// [_approvalFuture] pra não refazer a query em todo rebuild.
   Future<bool> _checkApproval() async {
-    final profile = await SupabaseService.instance.fetchMyProfile();
+    final uid = SupabaseService.instance.currentUser?.id;
+    final Profile profile;
+    try {
+      profile = await SupabaseService.instance.fetchMyProfile();
+    } catch (erro) {
+      // Servidor fora (projeto pausado, sem rede): quem já foi aprovado
+      // neste aparelho continua entrando. A RLS segue sendo a fronteira —
+      // offline só se vê o que já está no disco do próprio aparelho — e na
+      // volta da rede o perfil real manda. Qualquer outro caso (erro que
+      // não é de rede, outra conta, não aprovado, sem cache, disco falhou)
+      // relança e cai na tela de erro.
+      if (uid != null && pareceErroDeRede(erro.toString())) {
+        final guardada = await _aprovacaoGuardada();
+        if (podeEntrarSemServidor(
+          uid: uid,
+          uidGuardado: guardada.uid,
+          aprovadoGuardado: guardada.aprovado,
+        )) {
+          // Não conecta agora; a escuta pega quando a rede voltar. Sem
+          // push: registrar exige o servidor.
+          AlarmeService.instance.escutar();
+          return true;
+        }
+      }
+      rethrow;
+    }
     // Liga a escuta de alarmes AQUI, e não no `build`.
     //
     // No build era chamado a cada rebuild do StreamBuilder. O
@@ -47,6 +76,17 @@ class _AuthGateState extends State<AuthGate> {
       unawaited(PushService.instance.registrar());
     }
     return profile.approved;
+  }
+
+  Future<({String? uid, bool? aprovado})> _aprovacaoGuardada() async {
+    try {
+      return lerAprovacaoGuardada(
+        await CacheLocal.instance.lerEstado(ColunasEstado.aprovacaoConhecida),
+      );
+    } catch (_) {
+      // Disco indisponível: o atalho simplesmente não se aplica.
+      return (uid: null, aprovado: null);
+    }
   }
 
   @override

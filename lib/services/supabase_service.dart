@@ -23,6 +23,7 @@ import '../models/triage_rule.dart';
 import '../models/vital_signs.dart';
 import '../offline/falha_de_envio.dart';
 import 'atendimento_service.dart';
+import 'entrada_sem_servidor.dart';
 
 /// Traduz os erros mais comuns de autenticação do Supabase pra mensagens
 /// que fazem sentido pro usuário — sem isso ele via a exceção crua (em
@@ -430,6 +431,17 @@ class SupabaseService {
     unawaited(
       CacheLocal.instance
           .guardarEstado(ColunasEstado.meuNome, perfil.fullName.trim())
+          .catchError((_) {}),
+    );
+    // Última aprovação conhecida desta conta, para entrar com o servidor
+    // fora (ver `podeEntrarSemServidor`). Mesmo padrão: sem await, erro
+    // engolido — se o disco falhar, o fallback só deixa de se aplicar.
+    unawaited(
+      CacheLocal.instance
+          .guardarEstado(
+            ColunasEstado.aprovacaoConhecida,
+            codificarAprovacao(uid, perfil.approved),
+          )
           .catchError((_) {}),
     );
     return perfil;
