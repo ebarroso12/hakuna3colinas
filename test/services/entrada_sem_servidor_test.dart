@@ -38,6 +38,13 @@ void main() {
       );
     });
 
+    test('uid vazio nunca entra, mesmo "igual" ao guardado', () {
+      expect(
+        podeEntrarSemServidor(uid: '', uidGuardado: '', aprovadoGuardado: true),
+        isFalse,
+      );
+    });
+
     test('sem nada guardado: não entra', () {
       expect(
         podeEntrarSemServidor(

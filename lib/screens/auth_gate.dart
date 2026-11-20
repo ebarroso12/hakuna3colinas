@@ -37,8 +37,10 @@ class _AuthGateState extends State<AuthGate> {
     } catch (erro) {
       // Servidor fora (projeto pausado, sem rede): quem já foi aprovado
       // neste aparelho continua entrando. A RLS segue sendo a fronteira —
-      // offline só se vê o que já está no disco do próprio aparelho — e na
-      // volta da rede o perfil real manda. Qualquer outro caso (erro que
+      // offline só se vê o que já está no disco do próprio aparelho — e o
+      // perfil real só volta a mandar na próxima abertura do app com rede
+      // (ou nos botões das telas de erro/espera): esta checagem só roda de
+      // novo quando o usuário muda. Qualquer outro caso (erro que
       // não é de rede, outra conta, não aprovado, sem cache, disco falhou)
       // relança e cai na tela de erro.
       if (uid != null && pareceErroDeRede(erro.toString())) {

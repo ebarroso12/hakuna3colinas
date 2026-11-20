@@ -6,9 +6,10 @@
 /// e vale SÓ enquanto a rede não responde.
 ///
 /// A RLS continua sendo a fronteira de segurança: sem servidor a pessoa só
-/// enxerga o que já está no disco do próprio aparelho, e na volta da rede
-/// o perfil real manda (aprovação revogada derruba o acesso na próxima
-/// checagem).
+/// enxerga o que já está no disco do próprio aparelho, e o perfil real
+/// só volta a mandar na próxima vez que o app abrir com rede (ou nos
+/// botões "Tentar de novo" / "Verificar" das telas de erro e de espera):
+/// a checagem não roda sozinha enquanto a conta é a mesma.
 library;
 
 /// Decide se dá para entrar sem consultar o servidor.
@@ -21,7 +22,8 @@ bool podeEntrarSemServidor({
   required String? uidGuardado,
   required bool? aprovadoGuardado,
 }) {
-  return uidGuardado != null &&
+  return uid.isNotEmpty &&
+      uidGuardado != null &&
       uidGuardado == uid &&
       aprovadoGuardado == true;
 }
