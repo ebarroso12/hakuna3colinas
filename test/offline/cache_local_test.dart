@@ -429,7 +429,9 @@ void main() {
       // v5 cache de MENSAGENS: sem rede o stream do Supabase fica calado,
       // e sem disco a tela mostrava so o que o proprio usuario escreveu —
       // a conversa da equipe sumia justamente para quem chega sem sinal.
-      expect(db.getVersion(), completion(5));
+      // v6 cache de TOPS: quem entrava com o servidor fora parava na tela
+      // inicial, sem caminho até o Top e o resto do cache.
+      expect(db.getVersion(), completion(6));
 
       final tabelas =
           (await db.rawQuery(
@@ -449,6 +451,7 @@ void main() {
           'cache_ultima_afericao',
           'estado_local',
           'cache_mensagens',
+          'cache_tops',
         ]),
       );
     });

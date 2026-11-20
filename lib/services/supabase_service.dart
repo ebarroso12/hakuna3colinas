@@ -25,9 +25,12 @@ import '../offline/falha_de_envio.dart';
 import 'atendimento_service.dart';
 import 'entrada_sem_servidor.dart';
 
-/// Traduz os erros mais comuns de autenticação do Supabase pra mensagens
-/// que fazem sentido pro usuário — sem isso ele via a exceção crua (em
-/// inglês, com jargão técnico) toda vez que algo dava errado no login.
+// `pareceErroDeRede` mora em `entrada_sem_servidor.dart`, junto da decisão
+// que depende dele (`entraNaFalha`), e é reexportado daqui para quem já o
+// importava deste arquivo — assim o arquivo puro não precisa importar o
+// Supabase inteiro, e não há import circular.
+export 'entrada_sem_servidor.dart' show pareceErroDeRede;
+
 /// Texto para quando o app não consegue nem falar com o servidor.
 ///
 /// Fica separado porque é a única recusa que NÃO é culpa de quem digitou:
@@ -38,31 +41,9 @@ const avisoServidorFora =
     'servidor está fora do ar — avise o administrador. A senha não tem '
     'nada a ver com isso.';
 
-/// Se a mensagem crua é de falha de rede (DNS, conexão, timeout), e não
-/// uma recusa do servidor.
-///
-/// Motivo de existir: em 20/11/2026 o projeto do Supabase estava pausado,
-/// o endereço `<ref>.supabase.co` deixou de resolver, e a tela de login
-/// mostrava `ClientException with SocketException: Failed host lookup`.
-/// Ninguém entrava e ninguém sabia por quê.
-bool pareceErroDeRede(String mensagem) {
-  final m = mensagem.toLowerCase();
-  const sinais = [
-    'failed host lookup',
-    'socketexception',
-    'connection refused',
-    'connection reset',
-    'connection closed',
-    'network is unreachable',
-    'timeoutexception',
-    'timed out',
-    'xmlhttprequest error',
-    'failed to fetch',
-    'handshakeexception',
-  ];
-  return sinais.any(m.contains);
-}
-
+/// Traduz os erros mais comuns de autenticação do Supabase pra mensagens
+/// que fazem sentido pro usuário — sem isso ele via a exceção crua (em
+/// inglês, com jargão técnico) toda vez que algo dava errado no login.
 String friendlyAuthError(Object error, {bool usouNumero = false}) {
   final message = error is AuthException ? error.message : error.toString();
   final lower = message.toLowerCase();

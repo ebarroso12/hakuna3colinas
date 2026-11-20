@@ -6,6 +6,7 @@ import '../offline/outbox.dart';
 import '../services/acesso_service.dart';
 import '../services/admin_service.dart';
 import '../services/atualizacao_service.dart';
+import '../services/lista_de_tops.dart';
 import '../services/supabase_service.dart';
 import '../widgets/app_logo.dart';
 import '../widgets/barra_inferior.dart';
@@ -17,6 +18,11 @@ import 'top_detail_screen.dart';
 
 /// Lista os "Tops" (eventos) aos quais o usuário logado está vinculado,
 /// seja como Hakuna liberado ou como Senderista inscrito.
+///
+/// Lê do DISCO primeiro e atualiza pela rede por baixo (ver
+/// `ListaDeTops`). Era só da rede, e com o servidor fora quem entrava pelo
+/// `AuthGate` parava aqui num erro cru, sem caminho até o Top — onde
+/// estão EMERGÊNCIA, a leitura da pulseira e os participantes guardados.
 class TopsScreen extends StatefulWidget {
   const TopsScreen({super.key});
 
@@ -25,7 +31,17 @@ class TopsScreen extends StatefulWidget {
 }
 
 class _TopsScreenState extends State<TopsScreen> {
-  late Future<List<Top>> _topsFuture;
+  /// Última lista guardada no aparelho para esta conta. Null só até o
+  /// disco responder.
+  List<Top>? _doDisco;
+
+  /// O que o servidor mandou nesta abertura. Null enquanto não respondeu.
+  List<Top>? _daRede;
+
+  /// Falha da última busca na rede. Nunca vai crua para a tela: quem
+  /// escolhe a frase é `telaDeTops`.
+  Object? _erroDaRede;
+
   Profile? _myProfile;
 
   /// Quantas entradas ainda não subiram, lido uma vez na abertura. Vai
@@ -48,11 +64,8 @@ class _TopsScreenState extends State<TopsScreen> {
   @override
   void initState() {
     super.initState();
-    _topsFuture = SupabaseService.instance.fetchMyTops();
-    SupabaseService.instance.fetchMyProfile().then((p) {
-      if (mounted) setState(() => _myProfile = p);
-      _contarEsperando();
-    });
+    _carregarTops();
+    _carregarPerfil();
     _verificarVersao();
     Outbox.instance.pendingCount().then((n) {
       if (mounted) setState(() => _pendentes = n);
@@ -62,10 +75,56 @@ class _TopsScreenState extends State<TopsScreen> {
   bool get _ehAdmin =>
       _myProfile?.role == UserRole.admin || _myProfile?.isMasterAdmin == true;
 
+  String? get _uid => SupabaseService.instance.currentUserId;
+
+  /// Disco primeiro, rede depois. A lista do disco aparece em
+  /// milissegundos; a da rede, quando (e se) vier, a substitui.
+  Future<void> _carregarTops() async {
+    final uid = _uid;
+    final disco = await ListaDeTops.instance.doDisco(uid);
+    if (!mounted) return;
+    setState(() => _doDisco = disco);
+    await _buscarNaRede(uid);
+  }
+
+  Future<void> _buscarNaRede(String? uid) async {
+    try {
+      final tops = await ListaDeTops.instance.daRede(uid);
+      if (!mounted) return;
+      setState(() {
+        _daRede = tops;
+        _erroDaRede = null;
+      });
+    } catch (erro) {
+      if (!mounted) return;
+      setState(() => _erroDaRede = erro);
+    }
+  }
+
+  /// Sem servidor, `fetchMyProfile` falha toda vez — e o `.then` sem
+  /// tratamento deixava um erro assíncrono solto a cada abertura. Aqui o
+  /// perfil fica null: o cabeçalho mostra o que tem, o ícone de
+  /// administração some até a rede voltar (sem perfil não se sabe se é
+  /// admin, e na dúvida não se mostra), e nada de texto cru na tela.
+  Future<void> _carregarPerfil() async {
+    try {
+      final p = await SupabaseService.instance.fetchMyProfile();
+      if (!mounted) return;
+      setState(() => _myProfile = p);
+    } catch (_) {
+      return;
+    }
+    await _contarEsperando();
+  }
+
   Future<void> _contarEsperando() async {
     if (!_ehAdmin) return;
-    final n = await AcessoService.instance.pendentes();
-    if (mounted) setState(() => _esperandoLiberacao = n);
+    try {
+      final n = await AcessoService.instance.pendentes();
+      if (mounted) setState(() => _esperandoLiberacao = n);
+    } catch (_) {
+      // Contagem é conveniência: sem rede, o número só não aparece.
+    }
   }
 
   Future<void> _verificarVersao() async {
@@ -80,9 +139,16 @@ class _TopsScreenState extends State<TopsScreen> {
   }
 
   Future<void> _refresh() async {
-    setState(() => _topsFuture = SupabaseService.instance.fetchMyTops());
+    setState(() {
+      // A lista que está na tela continua na tela enquanto a rede não
+      // responde: se a nova busca falhar, cai de volta nela com a faixa,
+      // em vez de sumir.
+      if (_daRede != null) _doDisco = _daRede;
+      _daRede = null;
+      _erroDaRede = null;
+    });
     _contarEsperando();
-    await _topsFuture;
+    await _buscarNaRede(_uid);
   }
 
   @override
@@ -174,27 +240,52 @@ class _TopsScreenState extends State<TopsScreen> {
           Expanded(
             child: RefreshIndicator(
               onRefresh: _refresh,
-              child: FutureBuilder<List<Top>>(
-                future: _topsFuture,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
+              child: Builder(
+                builder: (context) {
+                  final tela = telaDeTops(
+                    doDisco: _doDisco,
+                    daRede: _daRede,
+                    erroDaRede: _erroDaRede,
+                  );
+                  if (tela.carregando) {
                     return const Center(child: CircularProgressIndicator());
                   }
-                  if (snapshot.hasError) {
-                    return Center(
-                      child: Text('Erro ao carregar tops: ${snapshot.error}'),
-                    );
-                  }
-                  final tops = snapshot.data ?? [];
+                  final tops = tela.tops;
+                  final aviso = tela.aviso;
                   if (tops.isEmpty) {
-                    return const Center(
-                      child: Text('Nenhum Top vinculado ainda.'),
+                    // ListView, e não Center: o aviso manda puxar para
+                    // baixo, e o RefreshIndicator só responde a algo que
+                    // rola.
+                    return ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.all(24),
+                      children: [
+                        if (aviso != null) ...[
+                          const Icon(Icons.cloud_off, size: 48),
+                          const SizedBox(height: 16),
+                        ],
+                        Text(
+                          aviso ?? 'Nenhum Top vinculado ainda.',
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
                     );
                   }
+                  // Com lista e aviso, o aviso vai como primeira linha:
+                  // curto, e a lista logo abaixo é o que importa.
+                  final deslocamento = aviso == null ? 0 : 1;
                   return ListView.builder(
-                    itemCount: tops.length,
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    itemCount: tops.length + deslocamento,
                     itemBuilder: (context, index) {
-                      final top = tops[index];
+                      if (aviso != null && index == 0) {
+                        return ListTile(
+                          leading: const Icon(Icons.cloud_off),
+                          title: Text(aviso),
+                          dense: true,
+                        );
+                      }
+                      final top = tops[index - deslocamento];
                       final urlEmblema = AdminService.instance.urlEmblema(
                         top.emblemaPath,
                       );

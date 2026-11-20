@@ -74,4 +74,77 @@ void main() {
       }
     });
   });
+
+  // A decisão do `catch` de `AuthGate._checkApproval`, fora da tela para
+  // poder ser testada sem montar a árvore nem fingir o Supabase. Era ali,
+  // inline, que um erro de leitura (trocar `&&` por `||`, esquecer o uid)
+  // abriria a porta para quem não devia — e nada pegaria.
+  group('entraNaFalha', () {
+    const redeFora = 'ClientException with SocketException: Failed host lookup';
+
+    test('erro que não é de rede: não entra, mesmo aprovado', () {
+      expect(
+        entraNaFalha(
+          erro: Exception('PostgrestException: permission denied'),
+          uid: 'a',
+          guardado: codificarAprovacao('a', true),
+        ),
+        isFalse,
+      );
+    });
+
+    test('sem sessão (uid nulo): não entra', () {
+      expect(
+        entraNaFalha(
+          erro: Exception(redeFora),
+          uid: null,
+          guardado: codificarAprovacao('a', true),
+        ),
+        isFalse,
+      );
+    });
+
+    test('rede fora + mesma conta aprovada: entra', () {
+      expect(
+        entraNaFalha(
+          erro: Exception(redeFora),
+          uid: 'a',
+          guardado: codificarAprovacao('a', true),
+        ),
+        isTrue,
+      );
+    });
+
+    test('rede fora + outra conta guardada: não entra', () {
+      expect(
+        entraNaFalha(
+          erro: Exception(redeFora),
+          uid: 'b',
+          guardado: codificarAprovacao('a', true),
+        ),
+        isFalse,
+      );
+    });
+
+    test('rede fora + mesma conta NÃO aprovada: não entra', () {
+      expect(
+        entraNaFalha(
+          erro: Exception(redeFora),
+          uid: 'a',
+          guardado: codificarAprovacao('a', false),
+        ),
+        isFalse,
+      );
+    });
+
+    test('rede fora + nada guardado ou lixo: não entra', () {
+      for (final g in [null, '', 'lixo']) {
+        expect(
+          entraNaFalha(erro: Exception(redeFora), uid: 'a', guardado: g),
+          isFalse,
+          reason: '$g',
+        );
+      }
+    });
+  });
 }

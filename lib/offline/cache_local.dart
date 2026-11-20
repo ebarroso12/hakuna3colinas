@@ -5,6 +5,7 @@ import 'package:sqflite/sqflite.dart';
 import '../models/afericao.dart';
 import '../models/participant.dart';
 import '../models/participant_tag.dart';
+import '../models/top.dart';
 import '../models/triage_rule.dart';
 import 'local_db.dart';
 import 'tabelas.dart';
@@ -631,6 +632,79 @@ class CacheLocal {
       'SELECT COUNT(*) AS n FROM ${Tabelas.mensagens}',
     );
     return (r.first['n'] as int?) ?? 0;
+  }
+
+  // =====================================================================
+  // TOPS — a lista da tela inicial, por conta
+  // =====================================================================
+
+  /// Substitui a lista de Tops de [donoId] pela que o servidor mandou.
+  ///
+  /// Substitui, e não soma: Top que saiu da lista do servidor
+  /// (desvinculado, apagado) tem de sair do disco também. Transação pelo
+  /// mesmo motivo de [salvarParticipantes] — meia lista é pior que lista
+  /// velha. Só mexe nas linhas desta conta: a de outra conta no mesmo
+  /// aparelho fica como está (ver [ColunasTop.donoId]).
+  ///
+  /// uid vazio não grava: seria uma lista "de ninguém" que qualquer
+  /// leitura com uid vazio acharia.
+  Future<void> salvarTops(String donoId, List<Top> tops) async {
+    if (donoId.isEmpty) return;
+    final db = await _db;
+    final agora = DateTime.now().millisecondsSinceEpoch;
+    await db.transaction((txn) async {
+      await txn.delete(
+        Tabelas.tops,
+        where: '${ColunasTop.donoId} = ?',
+        whereArgs: [donoId],
+      );
+      final lote = txn.batch();
+      for (var i = 0; i < tops.length; i++) {
+        final t = tops[i];
+        lote.insert(Tabelas.tops, {
+          ColunasTop.donoId: donoId,
+          ColunasTop.id: t.id,
+          ColunasTop.name: t.name,
+          ColunasTop.topNumber: t.topNumber,
+          ColunasTop.location: t.location,
+          ColunasTop.cidade: t.cidade,
+          ColunasTop.diretorResponsavel: t.diretorResponsavel,
+          ColunasTop.emblemaPath: t.emblemaPath,
+          ColunasTop.description: t.description,
+          ColunasTop.status: t.status.name,
+          ColunasTop.startsAt: t.startsAt?.toIso8601String(),
+          ColunasTop.endsAt: t.endsAt?.toIso8601String(),
+          ColunasTop.autocadastroLiberado: t.autocadastroLiberado ? 1 : 0,
+          ColunasTop.ordem: i,
+          ColunasTop.baixadoEm: agora,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await lote.commit(noResult: true);
+    });
+  }
+
+  /// A última lista de Tops que o servidor mandou para [donoId], na mesma
+  /// ordem. Vazia se esta conta nunca baixou neste aparelho.
+  Future<List<Top>> tops(String donoId) async {
+    if (donoId.isEmpty) return const [];
+    final db = await _db;
+    final linhas = await db.query(
+      Tabelas.tops,
+      where: '${ColunasTop.donoId} = ?',
+      whereArgs: [donoId],
+      orderBy: ColunasTop.ordem,
+    );
+    return linhas
+        .map(
+          (l) => Top.fromMap({
+            ...l,
+            // SQLite devolve 0/1; `Top.fromMap` espera `bool`, como vem
+            // do Postgrest. Sem isto o cast falharia na leitura.
+            ColunasTop.autocadastroLiberado:
+                (l[ColunasTop.autocadastroLiberado] as int? ?? 1) == 1,
+          }),
+        )
+        .toList();
   }
 
   // =====================================================================

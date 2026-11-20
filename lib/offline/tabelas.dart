@@ -47,6 +47,18 @@ abstract final class Tabelas {
   // ---------------------------------------------------------------------
   static const mensagens = 'cache_mensagens';
 
+  // ---------------------------------------------------------------------
+  // CACHE DE TOPS (v6) — a porta de entrada sem rede
+  //
+  // Em 20/11/2026 o servidor ficou fora e o `AuthGate` passou a deixar
+  // entrar quem já estava aprovado no aparelho. Mas a tela seguinte, a
+  // lista de Tops, vinha só da rede: a pessoa entrava e caía num erro sem
+  // saída, longe do botão EMERGÊNCIA, da leitura da pulseira e dos
+  // participantes que JÁ estavam no disco. Sem esta tabela, todo o resto
+  // do cache era inalcançável.
+  // ---------------------------------------------------------------------
+  static const tops = 'cache_tops';
+
   /// Chave-valor para intenção que tem de sobreviver ao processo.
   ///
   /// Existe porque não somos donos do Foreground Service — ele é do
@@ -400,5 +412,72 @@ abstract final class ColunasMensagem {
       '''
     CREATE INDEX idx_mensagens_client_id
       ON ${Tabelas.mensagens} ($clientId)
+  ''';
+}
+
+/// Colunas de [Tabelas.tops].
+///
+/// Nomes idênticos aos do Postgres, como em [ColunasParticipante]: o mesmo
+/// `Top.fromMap` lê as duas origens. Só três colunas são locais, e nenhuma
+/// existe em `tops`: [donoId], [ordem] e [baixadoEm].
+abstract final class ColunasTop {
+  /// Só local: de QUAL CONTA é esta lista.
+  ///
+  /// A lista é guardada por conta, e não apagada no logout, de propósito.
+  /// Apagar no logout dependeria de o logout rodar inteiro — e sem rede ou
+  /// com o app morto no meio ele não roda, deixando a lista de A para B
+  /// ver. Com a chave no próprio dado, a separação vale por construção: B
+  /// consulta pelo uid dele e simplesmente não acha o que é de A. Mesma
+  /// regra de `aprovacao_conhecida`, que também só vale para o mesmo uid.
+  static const donoId = 'dono_id';
+
+  static const id = 'id';
+  static const name = 'name';
+  static const topNumber = 'top_number';
+  static const location = 'location';
+  static const cidade = 'cidade';
+  static const diretorResponsavel = 'diretor_responsavel';
+  static const emblemaPath = 'emblema_path';
+  static const description = 'description';
+  static const status = 'status';
+
+  /// ISO 8601 em texto, como o Postgrest devolve: `Top.fromMap` faz
+  /// `DateTime.parse` igual nas duas origens.
+  static const startsAt = 'starts_at';
+  static const endsAt = 'ends_at';
+
+  /// `boolean` no Postgres vira 0/1 aqui; a leitura converte de volta.
+  static const autocadastroLiberado = 'autocadastro_liberado';
+
+  /// Só local: posição na lista que o servidor mandou.
+  ///
+  /// O servidor ordena por `starts_at desc`, e o Postgres põe NULL
+  /// primeiro nessa ordem, ao contrário do SQLite. Reordenar aqui faria a
+  /// lista offline sair diferente da online; guardar a posição não.
+  static const ordem = 'ordem';
+
+  /// Só local: quando a lista foi baixada.
+  static const baixadoEm = 'baixado_em';
+
+  static const criar =
+      '''
+    CREATE TABLE ${Tabelas.tops} (
+      $donoId                TEXT    NOT NULL,
+      $id                    TEXT    NOT NULL,
+      $name                  TEXT    NOT NULL,
+      $topNumber             TEXT,
+      $location              TEXT,
+      $cidade                TEXT,
+      $diretorResponsavel    TEXT,
+      $emblemaPath           TEXT,
+      $description           TEXT,
+      $status                TEXT    NOT NULL,
+      $startsAt              TEXT,
+      $endsAt                TEXT,
+      $autocadastroLiberado  INTEGER NOT NULL DEFAULT 1,
+      $ordem                 INTEGER NOT NULL,
+      $baixadoEm             INTEGER NOT NULL,
+      PRIMARY KEY ($donoId, $id)
+    )
   ''';
 }

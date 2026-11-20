@@ -45,3 +45,57 @@ String codificarAprovacao(String uid, bool aprovado) =>
   if (flag != '1' && flag != '0') return (uid: null, aprovado: null);
   return (uid: uid, aprovado: flag == '1');
 }
+
+/// Se a mensagem crua é de falha de rede (DNS, conexão, timeout), e não
+/// uma recusa do servidor.
+///
+/// Motivo de existir: em 20/11/2026 o projeto do Supabase estava pausado,
+/// o endereço `<ref>.supabase.co` deixou de resolver, e a tela de login
+/// mostrava `ClientException with SocketException: Failed host lookup`.
+/// Ninguém entrava e ninguém sabia por quê.
+///
+/// Mora aqui, e não em `supabase_service.dart` (que o reexporta), porque
+/// [entraNaFalha] depende dele e este arquivo tem de continuar puro: sem
+/// Supabase, sem disco, testável direto.
+bool pareceErroDeRede(String mensagem) {
+  final m = mensagem.toLowerCase();
+  const sinais = [
+    'failed host lookup',
+    'socketexception',
+    'connection refused',
+    'connection reset',
+    'connection closed',
+    'network is unreachable',
+    'timeoutexception',
+    'timed out',
+    'xmlhttprequest error',
+    'failed to fetch',
+    'handshakeexception',
+  ];
+  return sinais.any(m.contains);
+}
+
+/// A decisão do `catch` de `AuthGate._checkApproval`: o perfil não veio,
+/// a pessoa entra mesmo assim?
+///
+/// Fora da tela para ter teste direto. Ali dentro, um `&&` trocado por
+/// `||` ou um uid esquecido abriria a porta para quem não devia, e só se
+/// verificaria montando a árvore e fingindo o Supabase.
+///
+/// Entra só com as três coisas juntas: a falha é de REDE (recusa do
+/// servidor é resposta, e resposta manda), há sessão ([uid] não nulo) e o
+/// [guardado] em disco diz que ESTA conta estava aprovada.
+bool entraNaFalha({
+  required Object erro,
+  required String? uid,
+  required String? guardado,
+}) {
+  if (uid == null) return false;
+  if (!pareceErroDeRede(erro.toString())) return false;
+  final g = lerAprovacaoGuardada(guardado);
+  return podeEntrarSemServidor(
+    uid: uid,
+    uidGuardado: g.uid,
+    aprovadoGuardado: g.aprovado,
+  );
+}

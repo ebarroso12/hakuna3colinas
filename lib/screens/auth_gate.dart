@@ -42,14 +42,14 @@ class _AuthGateState extends State<AuthGate> {
       // (ou nos botões das telas de erro/espera): esta checagem só roda de
       // novo quando o usuário muda. Qualquer outro caso (erro que
       // não é de rede, outra conta, não aprovado, sem cache, disco falhou)
-      // relança e cai na tela de erro.
+      // relança e cai na tela de erro. A regra está em `entraNaFalha`,
+      // que tem teste próprio; aqui só se lê o disco e se age.
+      //
+      // O disco só é lido quando a falha é de rede e há sessão: num erro
+      // qualquer não há motivo para tocar no SQLite.
       if (uid != null && pareceErroDeRede(erro.toString())) {
-        final guardada = await _aprovacaoGuardada();
-        if (podeEntrarSemServidor(
-          uid: uid,
-          uidGuardado: guardada.uid,
-          aprovadoGuardado: guardada.aprovado,
-        )) {
+        final guardado = await _aprovacaoGuardada();
+        if (entraNaFalha(erro: erro, uid: uid, guardado: guardado)) {
           // Não conecta agora; a escuta pega quando a rede voltar. Sem
           // push: registrar exige o servidor.
           AlarmeService.instance.escutar();
@@ -80,14 +80,15 @@ class _AuthGateState extends State<AuthGate> {
     return profile.approved;
   }
 
-  Future<({String? uid, bool? aprovado})> _aprovacaoGuardada() async {
+  /// O texto cru guardado; `entraNaFalha` o decodifica.
+  Future<String?> _aprovacaoGuardada() async {
     try {
-      return lerAprovacaoGuardada(
-        await CacheLocal.instance.lerEstado(ColunasEstado.aprovacaoConhecida),
+      return await CacheLocal.instance.lerEstado(
+        ColunasEstado.aprovacaoConhecida,
       );
     } catch (_) {
       // Disco indisponível: o atalho simplesmente não se aplica.
-      return (uid: null, aprovado: null);
+      return null;
     }
   }
 

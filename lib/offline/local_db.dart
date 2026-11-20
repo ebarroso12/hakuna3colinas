@@ -24,7 +24,7 @@ class LocalDb {
 
   /// Subir este número roda as migrações em [_upgrade]. Nunca editar uma
   /// migração já publicada: adicionar a próxima.
-  static const _schemaVersion = 5;
+  static const _schemaVersion = 6;
 
   Database? _db;
 
@@ -125,6 +125,7 @@ class LocalDb {
 
     await _criarCacheDeLeitura(db);
     await _criarCacheDeMensagens(db);
+    await _criarCacheDeTops(db);
   }
 
   /// Cache de leitura: o que o app precisa enxergar SEM rede.
@@ -176,6 +177,17 @@ class LocalDb {
     if (from < 3) await _criarQuarentena(db);
     if (from < 4) await _clientIdUnicoPorEntidade(db);
     if (from < 5) await _criarCacheDeMensagens(db);
+    if (from < 6) await _criarCacheDeTops(db);
+  }
+
+  /// v6: a lista de Tops passa a sobreviver sem rede.
+  ///
+  /// Sem ela, quem entrava com o servidor fora (ver
+  /// `entrada_sem_servidor.dart`) parava na tela inicial, com erro, sem
+  /// caminho até o Top — e todo o cache do Top ficava inalcançável. Só
+  /// cria tabela nova: não toca em nada que a v5 já tinha.
+  Future<void> _criarCacheDeTops(Database db) async {
+    await db.execute(ColunasTop.criar);
   }
 
   /// v4: `client_id` passa a ser unico POR ENTIDADE.
