@@ -2,28 +2,28 @@ name: Manter servidor acordado
 
 # POR QUE ISTO EXISTE
 #
-# Em 20/11/2026 ninguem conseguiu entrar no app: o projeto Supabase do plano
+# Em 20/11/2026 ninguém conseguiu entrar no app: o projeto Supabase do plano
 # gratuito foi PAUSADO por inatividade (cerca de 7 dias sem nenhuma chamada).
-# Projeto pausado nao responde a nada, entao o login falha para todo mundo.
+# Projeto pausado não responde a nada, então o login falha para todo mundo.
 #
-# Este workflow faz uma leitura minima (1 linha de app_versions) a cada 2
-# dias, as 09:17 UTC. Dois dias deixam folga de 3x sobre os ~7 dias que a
-# pausa leva, entao ate duas execucoes seguidas podem falhar sem que o
-# projeto pause. E de graca: roda no GitHub Actions, sem servidor nosso.
+# Este workflow faz uma leitura mínima (1 linha de app_versions) a cada 2
+# dias, às 09:17 UTC. Dois dias deixam folga de 3x sobre os ~7 dias que a
+# pausa leva, então até duas execucoes seguidas podem falhar sem que o
+# projeto pause. É de graça: roda no GitHub Actions, sem servidor nosso.
 #
-# SE O SERVIDOR JA ESTIVER PAUSADO, o passo 1 falha e o GitHub manda e-mail
-# ao dono por causa do job vermelho. E esse o aviso. Para resolver: entrar em
+# SE O SERVIDOR JÁ ESTIVER PAUSADO, o passo 1 falha e o GitHub manda e-mail
+# ao dono por causa do job vermelho. É esse o aviso. Para resolver: entrar em
 # supabase.com, abrir o projeto e clicar em "Restore project".
 #
-# Usa os secrets SUPABASE_URL e SUPABASE_ANON_KEY que o android-build.yml ja
-# usa. Nenhum segredo novo, e a chave nunca e impressa.
+# Usa os secrets SUPABASE_URL e SUPABASE_ANON_KEY que o android-build.yml já
+# usa. Nenhum segredo novo, e a chave nunca é impressa.
 
 on:
   schedule:
     - cron: '17 9 */2 * *'
   workflow_dispatch:
 
-# actions: write so para o passo 2 (reabilitar este proprio workflow).
+# actions: write só para o passo 2 (reabilitar este proprio workflow).
 permissions:
   actions: write
   contents: read
@@ -37,23 +37,27 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           ANON: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
-          # --fail-with-body: resposta 4xx/5xx derruba o passo (e mostra o
-          # corpo do erro) em vez de passar calado. Os headers vao so por
-          # variavel de ambiente; nada e ecoado no log.
+          # --fail-with-body: resposta 4xx/5xx derruba o passo em vez de
+          # passar calada. O corpo vai para um arquivo e, só se falhar, o log
+          # mostra o status e os primeiros 300 bytes dele (a resposta do
+          # servidor nunca contém a chave, que só vai nos headers).
           if ! curl --silent --show-error --fail-with-body \
                --retry 3 --max-time 30 \
                -H "apikey: $ANON" \
                -H "Authorization: Bearer $ANON" \
-               "$SUPABASE_URL/rest/v1/app_versions?select=build_number&limit=1" \
-               --output /dev/null; then
-            echo "::error::O servidor Supabase nao respondeu. Provavelmente foi pausado por inatividade. Entre em supabase.com, abra o projeto e clique em Restore project."
+               -o "$RUNNER_TEMP/resposta" \
+               -w 'HTTP %{http_code}\n' \
+               "$SUPABASE_URL/rest/v1/app_versions?select=build_number&limit=1"; then
+            head -c 300 "$RUNNER_TEMP/resposta" 2>/dev/null || true
+            echo
+            echo "::error::O servidor Supabase não respondeu. Provavelmente foi pausado por inatividade. Entre em supabase.com, abra o projeto e clique em Restore project."
             exit 1
           fi
           echo "Servidor respondeu."
 
-      # O GitHub desliga workflows agendados de repositorio publico depois de
-      # 60 dias sem commit. Reabilitar pela API reinicia essa contagem, entao
-      # o proprio workflow se mantem vivo. Roda mesmo se o passo 1 falhar, e
+      # O GitHub desliga workflows agendados de repositório público depois de
+      # 60 dias sem commit. Reabilitar pela API reinicia essa contagem, então
+      # o próprio workflow se mantem vivo. Roda mesmo se o passo 1 falhar, e
       # "|| true" evita que um erro aqui esconda o aviso do servidor.
       - name: Reabilitar este workflow (reinicia a contagem de 60 dias)
         if: always()
