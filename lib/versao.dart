@@ -14,13 +14,13 @@ class Versao {
   Versao._();
 
   /// `version:` do pubspec, parte antes do `+`. Aparece na gaveta.
-  static const nome = '1.0.45';
+  static const nome = '1.0.46';
 
   /// Parte depois do `+` — o `versionCode` do Android.
   ///
   /// É por ELE que se compara, nunca pelo texto: como string, "1.0.9" é
   /// maior que "1.0.10", e o app diria que está atualizado estando atrás.
-  static const build = 46;
+  static const build = 47;
 
   /// O que a tela mostra, no formato `1.0.35 (36)`.
   static const completa = '$nome ($build)';
