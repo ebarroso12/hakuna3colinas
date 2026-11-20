@@ -351,6 +351,10 @@ funciona.
 Nomes de coluna no SQLite são **idênticos** aos do Postgres, para o mesmo
 `fromMap` servir às duas origens. Ao adicionar campo, adicione nos dois.
 
+A lista de Tops da tela inicial também vem do disco desde 20/11/2026
+(`ListaDeTops`, `cache_tops`): sem ela, todo o resto do cache era
+inalcançável quando a rede faltava, porque é por ali que se chega ao Top.
+
 Ainda vêm **só da rede**, e isso é limite conhecido: a lista de perfis de
 `TopSenderistasScreen` e o histórico do servidor em `ProntuarioScreen` (o
 que está na fila local aparece sempre, com ou sem rede) e o mapa em tempo
@@ -1015,6 +1019,31 @@ estava logado ficava preso em "Erro ao carregar perfil" sem botão. Hoje
 senha não tem nada a ver), e o `AuthGate` dá "Tentar de novo" e "Sair".
 Travado por `test/services/login_com_servidor_fora_test.dart`.
 
+**O workflow `manter_servidor_acordado.yml` evita a pausa.** Faz uma
+leitura mínima a cada 2 dias, e o GitHub só roda agendamento a partir da
+branch padrão (`main`) — em outra branch ele não existe para o cron.
+Execução **vermelha** quer dizer que o servidor não respondeu: restaurar
+no painel do Supabase, não mexer no código. O segundo passo reabilita o
+próprio workflow pela API, porque o GitHub desliga agendamento de
+repositório sem commit há 60 dias; se esse passo falhar, ele aparece com
+aviso (`continue-on-error`) sem esconder o primeiro.
+
+**Flutter fixo em 3.47.8**, no `android-build.yml` **e** no
+`ios-build.yml`. Subir é decisão deliberada: testar numa branch e mudar os
+dois arquivos juntos. Com `stable` solto o CI pegou a 3.50.1, que dá 66
+avisos no `flutter analyze` (depreciações de `material.dart`) e derruba o
+build sem nenhuma linha nossa ter mudado.
+
+**Entrada sem servidor.** Quem já foi aprovado NESTE aparelho entra mesmo
+com o servidor fora (`entrada_sem_servidor.dart`: `entraNaFalha` só abre
+com falha de rede, sessão e aprovação guardada da mesma conta) e vê a
+lista de Tops guardada no disco (`cache_tops`, esquema v6, separada por
+conta). O perfil real volta a mandar na próxima abertura do app com rede
+(ou nos botões "Tentar de novo"/"Verificar"). O limite, dito sem
+enfeite: **aprovação revogada só vale na próxima abertura com rede** —
+até lá o aparelho vê o que já tinha no disco. A RLS continua sendo a
+fronteira: nada novo chega do servidor para quem não passa nela.
+
 ## Pendências conhecidas
 
 - **`flutter_nfc_kit` aplica o Kotlin Gradle Plugin.** O build avisa:
@@ -1097,7 +1126,7 @@ Travado por `test/services/login_com_servidor_fora_test.dart`.
   payload assinado no aparelho de origem — sem a assinatura, qualquer um
   injeta atendimento no nome de qualquer pessoa. Em dado clínico isso não
   se improvisa.
-- **Nenhum teste de hardware.** Os 535 testes cobrem lógica. NFC, câmera,
+- **Nenhum teste de hardware.** Os 573 testes cobrem lógica. NFC, câmera,
   GPS com tela bloqueada, o som do alarme e o `launchUrl` do botão
   Atualizar só se verificam em aparelho físico.
 - **`occurred_at` em `audit_log` não tem backfill.** As linhas antigas (não

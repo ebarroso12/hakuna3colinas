@@ -57,13 +57,22 @@ jobs:
 
       # O GitHub desliga workflows agendados de repositório público depois de
       # 60 dias sem commit. Reabilitar pela API reinicia essa contagem, então
-      # o próprio workflow se mantém vivo. Roda mesmo se o passo 1 falhar, e
-      # "|| true" evita que um erro aqui esconda o aviso do servidor.
+      # o próprio workflow se mantém vivo. Roda mesmo se o passo 1 falhar.
+      #
+      # continue-on-error, e não "|| true": o "|| true" engolia a falha e o
+      # passo saía verde mesmo sem reabilitar nada — a contagem de 60 dias
+      # correria sem ninguém saber. Assim o passo aparece com aviso, mas não
+      # pinta o job de vermelho nem esconde o resultado do passo 1, que é o
+      # aviso que importa (servidor fora).
       - name: Reabilitar este workflow (reinicia a contagem de 60 dias)
         if: always()
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh api -X PUT \
-            repos/${{ github.repository }}/actions/workflows/manter_servidor_acordado.yml/enable \
-            || true
+          if ! gh api -X PUT \
+               repos/${{ github.repository }}/actions/workflows/manter_servidor_acordado.yml/enable; then
+            echo "::warning::Não foi possível reabilitar este workflow pela API. Ele continua rodando, mas o GitHub pode desligá-lo depois de 60 dias sem commit no repositório. Confira em Actions se ele ainda está habilitado."
+            exit 1
+          fi
+          echo "Workflow reabilitado."
