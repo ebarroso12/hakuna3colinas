@@ -23,7 +23,7 @@ on:
     - cron: '17 9 */2 * *'
   workflow_dispatch:
 
-# actions: write só para o passo 2 (reabilitar este proprio workflow).
+# actions: write só para o passo 2 (reabilitar este próprio workflow).
 permissions:
   actions: write
   contents: read
@@ -57,7 +57,7 @@ jobs:
 
       # O GitHub desliga workflows agendados de repositório público depois de
       # 60 dias sem commit. Reabilitar pela API reinicia essa contagem, então
-      # o próprio workflow se mantem vivo. Roda mesmo se o passo 1 falhar, e
+      # o próprio workflow se mantém vivo. Roda mesmo se o passo 1 falhar, e
       # "|| true" evita que um erro aqui esconda o aviso do servidor.
       - name: Reabilitar este workflow (reinicia a contagem de 60 dias)
         if: always()
