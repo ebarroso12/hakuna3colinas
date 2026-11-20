@@ -999,6 +999,22 @@ Ao mudar as regras no banco, atualizar o fixture `_producao` em
 `test/services/triage_service_test.dart` junto — senão os testes passam
 validando uma configuração que não existe mais.
 
+## "Ninguém consegue entrar": confira o SERVIDOR antes do código
+
+Em 20/11/2026 ninguém entrava. O código não tinha mudado desde 28/10; o
+projeto `jitfbambhmfnqiatwoud` estava **pausado** — o plano gratuito do
+Supabase pausa após ~7 dias sem uso, e o endereço `<ref>.supabase.co`
+deixa de existir ("upstream dial failed", igual a um projeto que o
+painel mostra como `INACTIVE`). Sai do ar o login, a função `login`, o
+chat, tudo. **Restaurar é no painel do Supabase** (Restore project); só
+o dono da conta faz. Se ficar pausado por mais de 90 dias, não volta.
+
+O app mostrava o texto cru do Dart (`Failed host lookup`) e quem já
+estava logado ficava preso em "Erro ao carregar perfil" sem botão. Hoje
+`pareceErroDeRede` + `avisoServidorFora` dizem que é o servidor (e que a
+senha não tem nada a ver), e o `AuthGate` dá "Tentar de novo" e "Sair".
+Travado por `test/services/login_com_servidor_fora_test.dart`.
+
 ## Pendências conhecidas
 
 - **`flutter_nfc_kit` aplica o Kotlin Gradle Plugin.** O build avisa:

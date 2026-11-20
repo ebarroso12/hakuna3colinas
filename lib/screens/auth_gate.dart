@@ -85,10 +85,44 @@ class _AuthGateState extends State<AuthGate> {
               );
             }
             if (approvalSnapshot.hasError) {
+              // Antes era só o texto cru do erro, sem botão nenhum: com o
+              // servidor fora do ar (projeto pausado em 20/11/2026), quem
+              // já estava logado abria o app e ficava preso aqui. Agora a
+              // tela diz o que houve e dá as duas saídas possíveis.
+              final erro = approvalSnapshot.error!;
+              final texto = pareceErroDeRede(erro.toString())
+                  ? avisoServidorFora
+                  : 'Não foi possível carregar o seu perfil.\n\n$erro';
               return Scaffold(
                 body: Center(
-                  child: Text(
-                    'Erro ao carregar perfil: ${approvalSnapshot.error}',
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Icon(Icons.cloud_off, size: 56),
+                        const SizedBox(height: 16),
+                        Text(texto, textAlign: TextAlign.center),
+                        const SizedBox(height: 24),
+                        FilledButton.icon(
+                          onPressed: () => setState(
+                            () => _approvalFuture = _checkApproval(),
+                          ),
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Tentar de novo'),
+                        ),
+                        const SizedBox(height: 8),
+                        TextButton(
+                          // A sessão local sai antes da chamada de rede; sem
+                          // servidor, o erro da chamada não importa.
+                          onPressed: () => SupabaseService.instance
+                              .signOut()
+                              .catchError((_) {}),
+                          child: const Text('Sair e entrar com outra conta'),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               );

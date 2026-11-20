@@ -27,9 +27,47 @@ import 'atendimento_service.dart';
 /// Traduz os erros mais comuns de autenticação do Supabase pra mensagens
 /// que fazem sentido pro usuário — sem isso ele via a exceção crua (em
 /// inglês, com jargão técnico) toda vez que algo dava errado no login.
+/// Texto para quando o app não consegue nem falar com o servidor.
+///
+/// Fica separado porque é a única recusa que NÃO é culpa de quem digitou:
+/// dizer "senha incorreta" aqui manda a pessoa trocar a senha à toa.
+const avisoServidorFora =
+    'Não foi possível falar com o servidor do app.\n\n'
+    'Confira se há internet. Se houver e ninguém conseguir entrar, o '
+    'servidor está fora do ar — avise o administrador. A senha não tem '
+    'nada a ver com isso.';
+
+/// Se a mensagem crua é de falha de rede (DNS, conexão, timeout), e não
+/// uma recusa do servidor.
+///
+/// Motivo de existir: em 20/11/2026 o projeto do Supabase estava pausado,
+/// o endereço `<ref>.supabase.co` deixou de resolver, e a tela de login
+/// mostrava `ClientException with SocketException: Failed host lookup`.
+/// Ninguém entrava e ninguém sabia por quê.
+bool pareceErroDeRede(String mensagem) {
+  final m = mensagem.toLowerCase();
+  const sinais = [
+    'failed host lookup',
+    'socketexception',
+    'connection refused',
+    'connection reset',
+    'connection closed',
+    'network is unreachable',
+    'timeoutexception',
+    'timed out',
+    'xmlhttprequest error',
+    'failed to fetch',
+    'handshakeexception',
+  ];
+  return sinais.any(m.contains);
+}
+
 String friendlyAuthError(Object error, {bool usouNumero = false}) {
   final message = error is AuthException ? error.message : error.toString();
   final lower = message.toLowerCase();
+  // Primeiro, e antes de qualquer outra regra: se nem houve conversa com o
+  // servidor, nenhuma outra frase desta função é verdadeira.
+  if (pareceErroDeRede(message)) return avisoServidorFora;
   if (lower.contains('email rate limit') ||
       lower.contains('rate limit') ||
       lower.contains('429')) {
