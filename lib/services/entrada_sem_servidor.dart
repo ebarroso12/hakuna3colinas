@@ -60,6 +60,12 @@ String codificarAprovacao(String uid, bool aprovado) =>
 bool pareceErroDeRede(String mensagem) {
   final m = mensagem.toLowerCase();
   const sinais = [
+    // A biblioteca de login do Supabase embrulha TODA falha de rede nesta
+    // exceção ("retryable" = vale tentar de novo, não houve resposta). Com
+    // o projeto pausado e sessão vencida, era o erro que chegava aqui, e
+    // não sendo reconhecido a entrada sem servidor nunca se aplicava.
+    'authretryablefetchexception',
+    'proxy failed',
     'failed host lookup',
     'socketexception',
     'connection refused',
@@ -74,6 +80,15 @@ bool pareceErroDeRede(String mensagem) {
   ];
   return sinais.any(m.contains);
 }
+
+/// Quanto a tela de abertura espera o perfil antes de desistir do servidor.
+///
+/// Sem teto, medido em 21/11/2026 com o projeto pausado: 36 s de rodinha
+/// sem texto, porque a sessão vencida faz a biblioteca do Supabase tentar
+/// renovar várias vezes antes de falhar. Para quem segura o celular isso é
+/// "o app travou" — e a pessoa fecha antes de ver a mensagem. 8 s cobre
+/// uma resposta lenta de 3G e ainda parece espera, não travamento.
+const tempoMaximoParaEntrar = Duration(seconds: 8);
 
 /// A decisão do `catch` de `AuthGate._checkApproval`: o perfil não veio,
 /// a pessoa entra mesmo assim?

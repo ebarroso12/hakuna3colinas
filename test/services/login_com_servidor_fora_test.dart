@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:legendario_connect/services/entrada_sem_servidor.dart';
 import 'package:legendario_connect/services/supabase_service.dart';
 
 /// Em 20/11/2026 ninguém conseguia entrar no app, e a causa não era o app:
@@ -47,6 +48,33 @@ void main() {
     );
     expect(msg, startsWith('Número ou senha incorretos'));
     expect(msg, isNot(contains('servidor')));
+  });
+
+  // Medido em 21/11/2026, com o projeto pausado e uma sessão vencida
+  // salva no aparelho: o perfil demorava 36 s para falhar e falhava com
+  // ESTE texto, que não era reconhecido como rede. Resultado: rodinha
+  // girando sem texto (a "tela branca parada") e, no fim, a entrada sem
+  // servidor não se aplicava.
+  test('falha de renovação da sessão sem servidor é rede', () {
+    const reais = [
+      'AuthRetryableFetchException(message: ClientException: Proxy failed '
+          'to establish tunnel (502 Bad Gateway), uri=//x.supabase.co:443, '
+          'statusCode: null)',
+      'AuthRetryableFetchException(message: ClientException with '
+          "SocketException: Failed host lookup: 'x.supabase.co', "
+          'statusCode: null)',
+      'TimeoutException after 0:00:08.000000: Future not completed',
+    ];
+    for (final cru in reais) {
+      expect(pareceErroDeRede(cru), isTrue, reason: cru);
+    }
+  });
+
+  test('a espera pelo perfil tem teto curto', () {
+    // Acima disso a pessoa acha que o app travou e fecha. Abaixo, uma
+    // rede lenta de verdade (3G no mato) cairia à toa na tela de erro.
+    expect(tempoMaximoParaEntrar, lessThanOrEqualTo(const Duration(seconds: 10)));
+    expect(tempoMaximoParaEntrar, greaterThanOrEqualTo(const Duration(seconds: 5)));
   });
 
   test('pareceErroDeRede reconhece só rede', () {

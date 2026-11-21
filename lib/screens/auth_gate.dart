@@ -33,7 +33,12 @@ class _AuthGateState extends State<AuthGate> {
     final uid = SupabaseService.instance.currentUser?.id;
     final Profile profile;
     try {
-      profile = await SupabaseService.instance.fetchMyProfile();
+      // Com teto: sem ele, sessão vencida + servidor fora davam 36 s de
+      // rodinha (medido). O TimeoutException cai em `pareceErroDeRede` e
+      // segue o mesmo caminho de qualquer falha de rede.
+      profile = await SupabaseService.instance.fetchMyProfile().timeout(
+        tempoMaximoParaEntrar,
+      );
     } catch (erro) {
       // Servidor fora (projeto pausado, sem rede): quem já foi aprovado
       // neste aparelho continua entrando. A RLS segue sendo a fronteira —
@@ -123,8 +128,20 @@ class _AuthGateState extends State<AuthGate> {
           future: _approvalFuture,
           builder: (context, approvalSnapshot) {
             if (approvalSnapshot.connectionState == ConnectionState.waiting) {
+              // Rodinha sozinha em fundo branco é lida como "travou". Com
+              // texto, a pessoa sabe que o app está trabalhando e espera os
+              // poucos segundos até a resposta ou o aviso de servidor fora.
               return const Scaffold(
-                body: Center(child: CircularProgressIndicator()),
+                body: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(),
+                      SizedBox(height: 16),
+                      Text('Conectando ao servidor…'),
+                    ],
+                  ),
+                ),
               );
             }
             if (approvalSnapshot.hasError) {

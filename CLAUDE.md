@@ -1044,6 +1044,17 @@ enfeite: **aprovação revogada só vale na próxima abertura com rede** —
 até lá o aparelho vê o que já tinha no disco. A RLS continua sendo a
 fronteira: nada novo chega do servidor para quem não passa nela.
 
+**Abertura com sessão vencida e servidor fora: teto de 8 s.** Medido em
+21/11/2026 contra o projeto pausado: com uma sessão vencida no aparelho
+(quem não abria o app havia semanas), a biblioteca do Supabase tenta
+renovar o token por até 10 s a cada pedido, e o perfil levava **36 s**
+para falhar — com a rodinha girando sem texto, que o dono descreveu como
+"tela branca parada". E o erro (`AuthRetryableFetchException`) não era
+reconhecido como rede. Hoje `AuthGate` espera no máximo
+`tempoMaximoParaEntrar` (8 s), a tela de espera diz "Conectando ao
+servidor…", e `pareceErroDeRede` reconhece esse erro. Não aumentar o teto
+sem medir de novo: acima de ~10 s a pessoa fecha o app achando que travou.
+
 ## Pendências conhecidas
 
 - **`flutter_nfc_kit` aplica o Kotlin Gradle Plugin.** O build avisa:
