@@ -146,6 +146,13 @@ class _CadastroLegendarioScreenState extends State<CadastroLegendarioScreen> {
         // Nomes de coluna do Postgres, como o resto do projeto.
         ficha: {
           'full_name': _nome.text.trim(),
+          // Faltava, e o campo Família estava na tela desde sempre: a
+          // pessoa preenchia e o dado era descartado aqui, antes de sair
+          // do aparelho. Achado em 23/11/2026, cadastrando num Top sem
+          // lista prévia — onde este é o ÚNICO jeito de a família ser
+          // registrada, porque não há planilha de onde ela venha. E é por
+          // família que a lista de participantes busca e agrupa.
+          'familia': _texto(_familia),
           'nickname': _texto(_apelido),
           'phone': _texto(_telefone),
           'birth_date': _nascimento!.toIso8601String().split('T').first,

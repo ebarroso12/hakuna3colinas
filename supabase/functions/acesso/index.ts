@@ -87,7 +87,12 @@ const MIN_SENHA = 8
 interface ConviteOk {
   topId: string
   topNome: string
-  participanteId: string
+  /**
+   * `null` quando o numero NAO esta na lista do Top e o Top aceita isso
+   * (`tops.aceitar_fora_da_lista`). Nesse caso `cadastrar` CRIA a ficha
+   * com o que a pessoa digita, em vez de completar uma que ja existe.
+   */
+  participanteId: string | null
   nome: string
   familia: string | null
   /** Cadastro marcado como teste: a conta criada tambem sai marcada. */
@@ -119,7 +124,7 @@ async function validarConvite(
 
   const { data: top, error: erroTop } = await admin
     .from('tops')
-    .select('id, name, status, autocadastro_liberado')
+    .select('id, name, status, autocadastro_liberado, aceitar_fora_da_lista')
     .eq('access_code_hash', hashDaSenha)
     .maybeSingle()
 
@@ -160,7 +165,53 @@ async function validarConvite(
   if (erroEleg) return { erro: 'falha ao verificar o numero' }
 
   const p = Array.isArray(elegiveis) ? elegiveis[0] : elegiveis
-  if (!p) return recusa
+
+  // NUMERO FORA DA LISTA.
+  //
+  // O padrao e recusar: a lista e a segunda tranca, e a senha do Top e
+  // compartilhada. Mas um Top pode comecar SEM lista — foi o caso do
+  // "TRACK 3 Colinas 1 ano" em 23/11/2026, cuja lista morreu com o projeto
+  // Supabase apagado. Sem esta saida, 216 pessoas digitariam a senha certa
+  // e ouviriam "numero ou senha incorretos".
+  //
+  // Com `aceitar_fora_da_lista`, a ficha e criada no `cadastrar` a partir
+  // do que a pessoa digita. Ver `11_autocadastro_sem_lista.sql`, inclusive
+  // o que se perde ao ligar isto.
+  if (!p) {
+    if (top.aceitar_fora_da_lista !== true) return recusa
+
+    // Sem ficha, `ja_tem_conta` nao responde nada — ele olha
+    // `linked_profile_id` de uma ficha que nao existe. Entao a conta
+    // repetida tem de ser conferida direto em `profiles`, senao o
+    // `createUser` falharia depois com o texto cru do GoTrue
+    // ("user already exists") no lugar da frase que explica o que fazer.
+    const { data: conta, error: erroConta } = await admin
+      .from('profiles')
+      .select('id')
+      .eq('legendarios_number', numero)
+      .maybeSingle()
+    if (erroConta) return { erro: 'falha ao verificar o numero' }
+    if (conta) {
+      return {
+        erro: 'este numero ja tem conta. Entre com numero e senha, ou peca '
+          + 'uma senha nova ao administrador.',
+      }
+    }
+
+    return {
+      topId: top.id,
+      topNome: top.name,
+      // Sem ficha: `cadastrar` cria uma.
+      participanteId: null,
+      // Nome vazio de proposito. O formulario de cadastro tem "Nome
+      // completo *" como campo obrigatorio e editavel, pre-enchido com
+      // isto — entao a pessoa digita o proprio nome, que e quem sabe.
+      nome: '',
+      familia: null,
+      // Ficha nova nasce real. Teste se marca na ficha, pelo admin.
+      isTeste: false,
+    }
+  }
 
   if (p.ja_tem_conta) {
     return {
@@ -565,14 +616,31 @@ Deno.serve(async (req) => {
       return json({ error: `falha ao salvar o perfil: ${erroPerfil.message}` }, 400)
     }
 
-    // 3. Vincula a ficha que JA existe e completa os dados medicos.
-    //    Nao cria participante novo: os Legendarios do Top ja estao
-    //    cadastrados (hoje 71 dos 215), so sem conta.
-    const { error: erroFicha } = await admin
-      .from('top_participants')
-      .update({
+    // 3. A FICHA.
+    //
+    //    Dois caminhos, e a diferenca e `r.participanteId`:
+    //
+    //    . ficha JA EXISTE (numero na lista do Top) -> `update`. E o
+    //      caminho normal: os Legendarios do Top ja estao cadastrados, so
+    //      sem conta, e a ficha pode ter comorbidade e alergia que o admin
+    //      preencheu antes.
+    //    . ficha NAO EXISTE (`participanteId` nulo, Top com
+    //      `aceitar_fora_da_lista`) -> `insert`. Top sem lista previa; a
+    //      ficha nasce do que a pessoa digitou.
+    //
+    //    Os campos sao os MESMOS nos dois casos, por isso o payload e um
+    //    so: duas listas divergiriam, e divergir aqui significa campo
+    //    clinico que entra por um caminho e nao pelo outro.
+    const campos = {
         linked_profile_id: perfilId,
         full_name: ficha.full_name ?? r.nome,
+        // `familia` nao era gravada. O formulario mostra o campo, a pessoa
+        // preenche e o dado era DESCARTADO — o app nem o mandava. Achado em
+        // 23/11/2026. Num Top sem lista previa e o unico jeito de ter a
+        // familia, e e por ela que a tela de participantes busca e agrupa
+        // (`familia_normalizada`). `?? r.familia` preserva a da lista
+        // oficial quando o app antigo nao mandar o campo.
+        familia: ficha.familia ?? r.familia,
         nickname: ficha.nickname ?? null,
         phone: ficha.phone ?? null,
         birth_date: ficha.birth_date ?? null,
@@ -590,8 +658,31 @@ Deno.serve(async (req) => {
         plano_saude: ficha.plano_saude ?? null,
         medicamentos_continuos: ficha.medicamentos_continuos ?? null,
         restricoes_fisicas: ficha.restricoes_fisicas ?? null,
-      })
-      .eq('id', r.participanteId)
+    }
+
+    const { error: erroFicha } = r.participanteId
+      ? await admin
+        .from('top_participants')
+        .update(campos)
+        .eq('id', r.participanteId)
+      : await admin
+        .from('top_participants')
+        .insert({
+          ...campos,
+          id: crypto.randomUUID(),
+          top_id: r.topId,
+          participant_code: numero,
+          // `registered_by` e `not null` e aponta para `profiles`: quem
+          // cadastrou foi a propria pessoa, e a conta dela ja existe neste
+          // ponto do fluxo.
+          registered_by: perfilId,
+          // Marca de onde a ficha veio. A tela de participantes mostra
+          // `notes`, e o admin precisa distinguir a ficha da lista oficial
+          // da que a pessoa digitou — se a lista real aparecer depois, e
+          // por aqui que ele confere.
+          notes: 'ficha criada no autocadastro',
+          is_teste: false,
+        })
 
     if (erroFicha) {
       await admin.auth.admin.deleteUser(perfilId)

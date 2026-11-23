@@ -633,6 +633,70 @@ admin comum de teste: gerar → 403, abrir → 42501, fechar → 200, sobrescrev
 `access_code_hash` por `PATCH` → revertido em silêncio, editar o Top →
 200, e o master fazendo tudo.
 
+#### Top SEM lista prévia: `tops.aceitar_fora_da_lista`
+
+O Top de 26/11/2026 nasceu com a lista de participantes **vazia**, e a
+lista dos 216 do Top anterior **não existe em lugar nenhum**. Procurada em
+23/11/2026: nenhum `.csv`/`.xlsx` no repositório, nenhum em commit algum do
+histórico, nada apagado, nenhum número de Legendários no código além do do
+dono, nada nas transcrições das sessões, e o projeto antigo responde
+**NXDOMAIN** — apagado, não pausado (pausado o host resolve e o upstream
+falha). O token atual só alcança a organização `hakunasconnect`; o projeto
+antigo ficava em outra e devolve 403, então restaurar, se ainda for
+possível, só o dono consegue pelo painel da conta antiga.
+
+Sem o interruptor, o autocadastro é inútil num Top assim:
+`participante_elegivel` exige o número **na lista**, então todo mundo
+digitaria a senha certa e ouviria "número ou senha do Top incorretos" — que
+soa como senha errada.
+
+Com `aceitar_fora_da_lista = true`, quem tem a senha se cadastra sem ficha
+e **a ficha é criada a partir do que a pessoa digita**: nome, família,
+nascimento, comorbidade, alergia, contato de emergência. O autocadastro
+deixa de depender da lista e passa a ser **o jeito de construir a lista** —
+pelas próprias pessoas, que são as que sabem os dados.
+
+**O que se perde, e é real:** a lista era a segunda tranca. Ligado o
+interruptor, **a senha do Top passa a bastar** — quem a tiver entra com
+qualquer número. Quem entrar assim vê o Top, lê o chat geral e **pode
+disparar alarme**; não alcança prontuário (`top_hakunas`) nem a posição
+dos outros (`pode_ver_mapa`). Daí o padrão ser `false`, ser **por Top**, e
+ser do admin **master**, igual à senha: quem decide quem entra no evento é
+quem responde por ele. A mitigação continua a mesma — fechar
+`autocadastro_liberado` depois que a equipe entrou.
+
+A ficha criada assim sai com `notes = 'ficha criada no autocadastro'` e
+`registered_by` = o id da própria pessoa. A marca não é enfeite: a tela de
+participantes mostra `notes`, e se a lista oficial aparecer depois é por
+ali que o admin confere. O importador já desmarca duplicata por número e
+por nome.
+
+SQL em `supabase/11_autocadastro_sem_lista.sql`; a trava do master é a
+mesma função `tops_trava_senha_do_top`, estendida — **ligar** exige master,
+**desligar** qualquer admin pode, pela mesma razão de fechar o cadastro.
+
+#### O campo Família era descartado antes de sair do aparelho
+
+Achado em 23/11/2026, cadastrando num Top sem lista. "Família" está na tela
+de cadastro desde sempre, a pessoa preenche — e o mapa `ficha:` enviado a
+`acesso/cadastrar` tinha 18 chaves, sem `familia`. O dado morria no
+aparelho, antes de qualquer rede. A Edge Function também não gravava a
+coluna.
+
+Campo que a tela mostra e o app joga fora é **pior que campo ausente**: a
+pessoa digita, vê "cadastro concluído" e o dado não existe. Ninguém
+descobre até procurar por família e não achar — e é por família que a lista
+de participantes busca e agrupa.
+
+Corrigido nos dois lados. No servidor, `familia: ficha.familia ?? r.familia`
+preserva a da lista oficial quando um app antigo não mandar o campo.
+
+Travado por `test/cadastro_manda_a_ficha_inteira_test.dart`, que lê o
+código-fonte e exige que **as 19 chaves** que a tela pede estejam no mapa
+enviado. Teste de widget não pegaria: a tela renderiza o campo certo, o
+defeito estava no envio. O teste tem a outra metade da guarda também — se
+alguém tirar o campo da tela, ele falha em vez de passar por vacuidade.
+
 ### Lista de participantes: atualiza do servidor ao abrir
 
 Até a v1.0.44 a lista buscava o servidor **só no primeiro "Baixar"**, e o
