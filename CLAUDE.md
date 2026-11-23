@@ -566,6 +566,72 @@ partir do repositório apaga em silêncio o que só existe lá.
 da senha com `maybeSingle`; dois Tops com a mesma senha fazem a consulta
 falhar e ninguém se cadastra em nenhum dos dois. O 1782 usa a senha
 escolhida pelo dono; o próximo Top precisa de outra.
+escolhida pelo dono; o próximo Top precisa de outra.
+
+**Desde 23/11/2026 isso não é mais regra escrita: é índice único.**
+`idx_tops_access_code_unico` (parcial, `where access_code_hash is not
+null`) faz a colisão falhar no `update` do admin, na hora, em vez de
+falhar em 216 cadastros no dia do evento. `idx_tops_numero_unico` faz o
+mesmo pelo `top_number`, que é o que a pessoa digita ao pedir acesso.
+
+#### A senha do Top é do admin MASTER
+
+Decisão do dono em 23/11/2026, nestas palavras: *"esta senha deve ser
+gerada dentro do app somente pelos master... o master irá colocar o número
+do top, local, nome da pista, e diretor, aí terá o botão gerar senha, neste
+momento o admin tem a senha para distribuir entre os usuários do top... os
+admin master terão todo acesso"*.
+
+Antes **qualquer admin** gerava: a Edge Function liberava em
+`ehAdmin = is_master_admin || role === 'admin'`, e a tela do Top mostrava o
+botão para os dois.
+
+| | Admin comum | Admin master |
+|---|---|---|
+| Criar e editar o Top (número, pista, cidade, diretor, datas, emblema) | sim | sim |
+| **Gerar** a senha do Top | **não** (403) | sim |
+| **Abrir** o cadastro | **não** (42501) | sim |
+| **Fechar** o cadastro | **sim** | sim |
+| Distribuir a senha | sim — falar não é permissão | sim |
+
+**Fechar é de qualquer admin e abrir é só do master**, e a assimetria é
+deliberada: fechar é sempre o lado seguro (porta fechada por engano alguém
+reclama e resolve em um toque), abrir é dar acesso ao Top. Sem isso, a
+trava do master seria contornável — gerar a senha abre a trava junto, então
+um admin comum reabriria o cadastro com a senha antiga e o master não
+controlaria nada.
+
+Três camadas, e as três são necessárias:
+
+1. **`supabase/07_senha_do_top_so_o_master.sql`** — trigger
+   `tops_trava_senha`, `before update for each row`. É a fronteira.
+   `with check` **não serve**, pela mesma razão medida em 12/10/2026 com
+   `profiles.approved`: função que lê a tabela sendo alterada, chamada de
+   dentro do `with check` daquela alteração, não dá garantia sobre qual
+   versão da linha vê.
+2. **A Edge Function `acesso`** confere `is_master_admin` em
+   `gerar_senha_top`. Ela escreve com `service_role`, e o trigger deixa
+   `service_role` passar **justamente porque a conferência é ali** — as
+   duas andam juntas, e mexer numa sem a outra abre a porta.
+3. **A tela** (`AdminTopFormScreen.isMasterAdmin`) esconde o botão e trava
+   o interruptor na direção de abrir. É cortesia, não controle: a chave
+   anônima está dentro do APK e alcança `tops` por `PATCH` direto.
+
+E a tela **diz quem faz**, em vez de só esconder — "só o administrador
+master gera a senha deste Top, peça a senha a ele para distribuir". Porta
+fechada sem explicação parece defeito, e o admin tenta de novo.
+
+**Gerar exige número, local/pista e diretor preenchidos e salvos.** Não é
+zelo: sem `top_number` a pessoa não tem o que digitar no campo "número do
+Top" ao pedir acesso, e o pedido chega ao admin sem evento. Aconteceu com o
+Top criado em 23/11, que nasceu com `top_number` nulo porque foi criado por
+SQL e não pela tela.
+
+7 testes em `test/widgets/senha_do_top_so_o_master_test.dart`. Eles travam
+o lado da TELA; o lado do banco foi verificado chamando de verdade, com um
+admin comum de teste: gerar → 403, abrir → 42501, fechar → 200, sobrescrever
+`access_code_hash` por `PATCH` → revertido em silêncio, editar o Top →
+200, e o master fazendo tudo.
 
 ### Lista de participantes: atualiza do servidor ao abrir
 

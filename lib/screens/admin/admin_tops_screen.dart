@@ -10,7 +10,11 @@ import 'admin_top_form_screen.dart';
 /// de todos os Tops pra admin (não só os vinculados), então reaproveita
 /// fetchMyTops em vez de duplicar a query.
 class AdminTopsScreen extends StatefulWidget {
-  const AdminTopsScreen({super.key});
+  const AdminTopsScreen({super.key, required this.isMasterAdmin});
+
+  /// Repassado ao formulario: so o master gera a senha do Top e abre o
+  /// cadastro. Ver `AdminTopFormScreen.isMasterAdmin`.
+  final bool isMasterAdmin;
 
   @override
   State<AdminTopsScreen> createState() => _AdminTopsScreenState();
@@ -38,7 +42,10 @@ class _AdminTopsScreenState extends State<AdminTopsScreen> {
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
           await Navigator.of(context).push(
-            MaterialPageRoute<void>(builder: (_) => const AdminTopFormScreen()),
+            MaterialPageRoute<void>(
+              builder: (_) =>
+                  AdminTopFormScreen(isMasterAdmin: widget.isMasterAdmin),
+            ),
           );
           _reload();
         },
@@ -73,7 +80,10 @@ class _AdminTopsScreenState extends State<AdminTopsScreen> {
                 onTap: () async {
                   await Navigator.of(context).push(
                     MaterialPageRoute<void>(
-                      builder: (_) => AdminTopFormScreen(top: top),
+                      builder: (_) => AdminTopFormScreen(
+                        top: top,
+                        isMasterAdmin: widget.isMasterAdmin,
+                      ),
                     ),
                   );
                   _reload();

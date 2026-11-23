@@ -402,7 +402,10 @@ class _TopDetailScreenState extends State<TopDetailScreen> {
         aoEditar: podeEditarTop
             ? () => Navigator.of(context).push(
                 MaterialPageRoute<void>(
-                  builder: (_) => AdminTopFormScreen(top: widget.top),
+                  builder: (_) => AdminTopFormScreen(
+                    top: widget.top,
+                    isMasterAdmin: _myProfile?.isMasterAdmin ?? false,
+                  ),
                 ),
               )
             : null,

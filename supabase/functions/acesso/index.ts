@@ -835,6 +835,23 @@ Deno.serve(async (req) => {
   // acesso se a senha vazar para fora do grupo.
   // ---------------------------------------------------------------
   if (acao === 'gerar_senha_top') {
+    // SO O ADMIN MASTER. Decisao do dono em 23/11/2026: "esta senha deve
+    // ser gerada dentro do app somente pelos master". Antes bastava ser
+    // admin comum.
+    //
+    // Distribuir continua sendo de qualquer admin — distribuir e falar, nao
+    // e permissao. Gerar e que muda: uma senha nova INVALIDA a anterior na
+    // hora e ABRE o cadastro do Top, que e dar acesso.
+    //
+    // A trava de verdade e o trigger `tops_trava_senha`
+    // (`07_senha_do_top_so_o_master.sql`): esta funcao escreve com
+    // `service_role`, e o trigger deixa `service_role` passar justamente
+    // porque a conferencia e aqui. As duas andam juntas — mexer numa sem a
+    // outra abre a porta.
+    if (perfil?.is_master_admin !== true) {
+      return json({ error: 'apenas o administrador master' }, 403)
+    }
+
     const topId = String(corpo.top_id ?? '').trim()
     if (!topId) return json({ error: 'top_id obrigatorio' }, 400)
 

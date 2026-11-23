@@ -20,10 +20,25 @@ import 'admin_top_members_screen.dart';
 /// ela precisa do id, que num Top novo só existe depois do primeiro
 /// salvar. Ver `_BlocoSenhaDoTop`.
 class AdminTopFormScreen extends StatefulWidget {
-  const AdminTopFormScreen({super.key, this.top});
+  const AdminTopFormScreen({
+    super.key,
+    this.top,
+    required this.isMasterAdmin,
+  });
 
   /// Null = criando um Top novo.
   final Top? top;
+
+  /// Decisão do dono em 23/11/2026: **só o admin master gera a senha do
+  /// Top e abre o cadastro.** Admin comum continua criando e editando o
+  /// Top (nome, número, pista, cidade, diretor, datas, emblema) e pode
+  /// FECHAR o cadastro — fechar é sempre o lado seguro.
+  ///
+  /// Isto aqui é cortesia de tela, não a trava. A trava é o trigger
+  /// `tops_trava_senha` e a conferência dentro da Edge Function `acesso`:
+  /// a chave anônima está dentro do APK e alcança `tops` por `PATCH`
+  /// direto. Esconder o botão sem as duas não protege nada.
+  final bool isMasterAdmin;
 
   @override
   State<AdminTopFormScreen> createState() => _AdminTopFormScreenState();
@@ -425,7 +440,10 @@ class _AdminTopFormScreenState extends State<AdminTopFormScreen> {
           // servidor precisa do id). Em Top novo, aparece depois de salvar.
           if (widget.top != null) ...[
             const Divider(height: 40),
-            _BlocoSenhaDoTop(top: widget.top!),
+            _BlocoSenhaDoTop(
+              top: widget.top!,
+              isMasterAdmin: widget.isMasterAdmin,
+            ),
           ] else ...[
             const Divider(height: 40),
             // Sem este aviso o admin cria o Top, procura a senha e nao
@@ -456,9 +474,10 @@ class _AdminTopFormScreenState extends State<AdminTopFormScreen> {
 /// CADASTRO, nunca o login: quem se cadastra sai com senha propria. Ver
 /// `PrimeiroAcessoScreen`.
 class _BlocoSenhaDoTop extends StatefulWidget {
-  const _BlocoSenhaDoTop({required this.top});
+  const _BlocoSenhaDoTop({required this.top, required this.isMasterAdmin});
 
   final Top top;
+  final bool isMasterAdmin;
 
   @override
   State<_BlocoSenhaDoTop> createState() => _BlocoSenhaDoTopState();
@@ -504,6 +523,42 @@ class _BlocoSenhaDoTopState extends State<_BlocoSenhaDoTop> {
   }
 
   Future<void> _gerar() async {
+    // A senha é o que ABRE este Top, então o Top precisa estar
+    // identificado antes. Decisão do dono em 23/11/2026: o master coloca
+    // número, local/pista e diretor, e aí gera a senha.
+    //
+    // Não é zelo: sem `top_number` a pessoa não tem o que digitar no campo
+    // "número do Top" ao pedir acesso, e o pedido chega ao admin como
+    // "Top (não existe no app)". Aconteceu com o Top criado em 23/11.
+    final faltando = <String>[
+      if ((widget.top.topNumber ?? '').trim().isEmpty) 'Número do Top',
+      if ((widget.top.location ?? '').trim().isEmpty) 'Local / pista',
+      if ((widget.top.diretorResponsavel ?? '').trim().isEmpty)
+        'Diretor responsável',
+    ];
+    if (faltando.isNotEmpty) {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Falta identificar o Top'),
+          content: Text(
+            'Preencha e SALVE antes de gerar a senha:\n\n'
+            '· ${faltando.join('\n· ')}\n\n'
+            'A senha é o que abre este Top para a equipe. Sem o número, '
+            'quem pedir acesso não tem o que digitar no campo "número do '
+            'Top", e o pedido chega sem o evento.',
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Entendi'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     // Gerar de novo INVALIDA a anterior na hora. Quem ja se cadastrou nao
     // e afetado (tem senha propria), mas quem ainda nao, perde o convite
     // antigo - e isso precisa ser uma escolha consciente, nao um toque
@@ -643,7 +698,14 @@ class _BlocoSenhaDoTopState extends State<_BlocoSenhaDoTop> {
               : Theme.of(context).colorScheme.errorContainer,
           child: SwitchListTile(
             value: _liberado,
-            onChanged: _mudandoTrava ? null : _alternarTrava,
+            // Fechar: qualquer admin. ABRIR: só o master. Fechar é sempre
+            // o lado seguro — se der engano alguém reclama e resolve em um
+            // toque. Abrir é dar acesso ao Top. O banco recusa a abertura
+            // com 42501 (trigger `tops_trava_senha`); aqui o interruptor
+            // nem se move, para não parecer defeito do app.
+            onChanged: _mudandoTrava || (!_liberado && !widget.isMasterAdmin)
+                ? null
+                : _alternarTrava,
             title: Text(
               _liberado ? 'Cadastro ABERTO' : 'Cadastro FECHADO',
               style: const TextStyle(fontWeight: FontWeight.bold),
@@ -652,8 +714,12 @@ class _BlocoSenhaDoTopState extends State<_BlocoSenhaDoTop> {
               _liberado
                   ? 'Quem tem a senha e está na lista do Top consegue se '
                         'cadastrar agora. Feche depois que a equipe entrar.'
-                  : 'Ninguém se cadastra, mesmo com a senha certa. A senha '
-                        'fica guardada e volta a valer ao reabrir.',
+                  : widget.isMasterAdmin
+                  ? 'Ninguém se cadastra, mesmo com a senha certa. A senha '
+                        'fica guardada e volta a valer ao reabrir.'
+                  : 'Ninguém se cadastra, mesmo com a senha certa. Só o '
+                        'administrador master abre o cadastro — peça a ele. '
+                        'Você pode fechar a qualquer momento.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             secondary: Icon(_liberado ? Icons.lock_open : Icons.lock),
@@ -661,17 +727,35 @@ class _BlocoSenhaDoTopState extends State<_BlocoSenhaDoTop> {
         ),
         const SizedBox(height: 12),
 
-        OutlinedButton.icon(
-          onPressed: _gerando ? null : _gerar,
-          icon: _gerando
-              ? const SizedBox(
-                  height: 18,
-                  width: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.key),
-          label: const Text('Gerar senha do Top'),
-        ),
+        if (widget.isMasterAdmin)
+          OutlinedButton.icon(
+            onPressed: _gerando ? null : _gerar,
+            icon: _gerando
+                ? const SizedBox(
+                    height: 18,
+                    width: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.key),
+            label: const Text('Gerar senha do Top'),
+          )
+        else
+          // Dizer QUEM faz, e não só esconder o botão. Admin comum
+          // distribui a senha — distribuir é falar, não é permissão —, mas
+          // não a gera.
+          Row(
+            children: [
+              const Icon(Icons.lock_outline, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Só o administrador master gera a senha deste Top. '
+                  'Peça a senha a ele para distribuir à equipe.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+            ],
+          ),
       ],
     );
   }

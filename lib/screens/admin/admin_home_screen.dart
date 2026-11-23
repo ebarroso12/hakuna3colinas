@@ -51,7 +51,9 @@ class AdminHomeScreen extends StatelessWidget {
             subtitle: const Text('Criar, editar, gerenciar equipe'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const AdminTopsScreen()),
+              MaterialPageRoute<void>(
+                builder: (_) => AdminTopsScreen(isMasterAdmin: isMasterAdmin),
+              ),
             ),
           ),
           if (isMasterAdmin)
