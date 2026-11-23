@@ -247,9 +247,19 @@ escreve nela.
 ## Stack
 
 - **Flutter** (Android + iOS + web a partir do mesmo código)
-- **Supabase** — auth, Postgres, Realtime. Projeto `jitfbambhmfnqiatwoud`, região sa-east-1
+- **Supabase** — auth, Postgres, Realtime. Projeto **`vohowjyuvhalphstieqo`**,
+  região sa-east-1, organização `hakunasconnect`, plano **free**.
+
+  **O projeto anterior (`jitfbambhmfnqiatwoud`) FOI APAGADO** — confirmado em
+  23/11/2026 por NXDOMAIN no 8.8.8.8 e por ausência na listagem da
+  organização, com um hostname de controle resolvendo normalmente. O banco
+  foi reconstruído do zero a partir dos arquivos de `supabase/`, e foi essa
+  reconstrução que revelou **13 objetos que só existiam em produção** (ver
+  "Objetos que só existiam em produção", abaixo). Referências ao ref antigo
+  em outras partes deste arquivo são história, não configuração.
 - **Kotlin nativo** (Android) — HCE / emulação de cartão
-- `provider` para estado, `geolocator` para GPS, `nfc_manager` para NFC
+- `provider` para estado, `geolocator` para GPS, **`flutter_nfc_kit`** para
+  NFC (era `nfc_manager`; trocado em 11/10/2026 — ver a seção de NFC)
 
 ## Rodar
 
@@ -1055,8 +1065,81 @@ reconhecido como rede. Hoje `AuthGate` espera no máximo
 servidor…", e `pareceErroDeRede` reconhece esse erro. Não aumentar o teto
 sem medir de novo: acima de ~10 s a pessoa fecha o app achando que travou.
 
+## Objetos que só existiam em produção — 13 até agora
+
+Reconstruir o banco do zero em 23/11/2026 provou que o repositório **não
+descreve o esquema inteiro**. Treze objetos eram chamados pelo app ou pelas
+Edge Functions e nenhum arquivo os criava. Oito apareceram montando o
+schema; **cinco só apareceram quando o app foi exercitado de verdade.**
+
+| Objeto | O que quebrava sem ele |
+|---|---|
+| `top_participants` | fichas, prontuário, autocadastro |
+| `team_messages` | chat de todas as equipes |
+| `top_team_members` | equipes, anotações, `is_team_member` |
+| `audit_log` | auditoria de segurança |
+| bucket `emblemas` | imagem do Top (403 enganoso) |
+| `is_approved()` | alarme não compilava; anotações negadas a todos |
+| `tops.autocadastro_liberado` | autocadastro inteiro (42703) |
+| índice `idx_atendimentos_participante` | histórico da ficha lento |
+| `profiles.is_teste` | **ninguém se autocadastrava** |
+| versão certa de `tops_select_linked` | conta nova não via nenhum Top |
+| 6 valores de `atendimento_status` | **Painel do Top morria (22P02)** |
+| `atendimentos.participant_id` | **registrar e ler atendimento** |
+| `dependencias_do_perfil` / `_do_senderista` | admin master não apagava ninguém |
+
+### A lição é sobre o MÉTODO de conferir, não sobre o esquema
+
+A conferência que eu fiz primeiro foi por área do app: existe a tabela?
+tem RLS? tem policy? tem a função? **Passou em tudo, e quatro P0 estavam
+vivos.** Porque aquela conferência não vê:
+
+- **coluna faltando** numa tabela que existe (`profiles.is_teste`,
+  `atendimentos.participant_id`);
+- **valor faltando** num enum que existe (`atendimento_status`);
+- **policy restritiva demais**, que é o pior de todos: o objeto existe, o
+  nome está certo, e ela nega em silêncio (`tops_select_linked`);
+- **função chamada e inexistente**, que só aparece quando alguém chama.
+
+O que acha isso é **exercitar o caminho real de ponta a ponta**: cadastrar
+uma ficha marcada com `is_teste`, fazer o autocadastro por número + senha
+do Top, entrar com ela, escrever no chat, disparar alarme, registrar
+atendimento, abrir o Painel, e apagar a conta pelo caminho oficial. Dá uma
+hora de trabalho e foi o que achou os cinco últimos. **`is_teste` existe
+exatamente para isso** — a conta e a ficha de teste saem marcadas e se
+apagam em bloco depois.
+
+Ao mexer no esquema, a pergunta certa não é "a tabela existe?" e sim
+"**este fluxo funciona chamando de verdade?**".
+
 ## Pendências conhecidas
 
+- **O Top novo está VAZIO, e é o que falta para o app servir.** Estado em
+  23/11/2026, conferido no banco: Top "TRACK 3 Colinas 1 ano"
+  (`46d03f35-8588-4fb4-8afb-8bd0416d70bc`), `active`, 26/11 00:00 →
+  29/11 23:59, Franca-SP. **0 fichas**, 1 perfil (o admin master), 1 Hakuna
+  liberado (o admin, liberado em 23/11 — sem ele ninguém registra
+  atendimento, porque a cerca clínica exige `top_hakunas.released`).
+
+  Três coisas pendem, e nenhuma é de código:
+
+  1. **Importar os senderistas.** `participante_elegivel` exige o número
+     **na lista do Top**, então com a lista vazia o autocadastro recusa
+     todo mundo com a mensagem genérica "número ou senha do Top
+     incorretos" — que soa como senha errada. O importador lê CSV/XLSX.
+  2. **`tops.top_number` está NULO.** O pedido de acesso pede "número do
+     Legendários e número do Top", e `gerar_senha_top` devolve
+     `top_numero`. Sem número, a pessoa não tem o que digitar nesse campo
+     e o pedido chega ao admin como "Top X (não existe no app)". **Não
+     inventar** — quem define o número do evento é o dono.
+  3. **`autocadastro_liberado` está `false` de propósito.** A senha do Top
+     já foi gerada e está com o dono. Abrir antes de importar a lista
+     faria 216 pessoas digitarem a senha certa e ouvirem "senha
+     incorreta". Gerar a senha de novo pela tela de admin reabre a trava
+     sozinho — e invalida a senha anterior.
+
+  `diretor_responsavel` do Top segue nulo, pela mesma razão de sempre: quem
+  define o responsável por um evento médico é o dono do evento.
 - **`flutter_nfc_kit` aplica o Kotlin Gradle Plugin.** O build avisa:
   "Your app uses the following plugins that apply Kotlin Gradle Plugin
   (KGP): flutter_nfc_kit". Hoje é só warning e `android.builtInKotlin=false`
@@ -1151,6 +1234,11 @@ sem medir de novo: acima de ~10 s a pessoa fecha o app achando que travou.
 - **APK com 76 MB.** O modelo do ML Kit vai embutido para o QR funcionar
   sem rede (ver `android/gradle.properties`). Se virar problema, o caminho
   é `--split-per-abi`, não desligar o bundling.
+As três pendências abaixo são **história**: o Top 1782 vivia no projeto
+`jitfbambhmfnqiatwoud`, que foi apagado. Ficam porque a armadilha que elas
+descrevem se repete em qualquer Top novo — e o Top de hoje começa com a
+lista inteira vazia, que é o caso extremo da primeira.
+
 - **144 dos 216 senderistas do Top 1782 estão sem `participant_code`.**
   Conferido em 10/10/2026: 72 têm número do Legendários, 144 não. O
   autocadastro exige número **na lista do Top** (`participante_elegivel`,
