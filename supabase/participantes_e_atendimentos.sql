@@ -75,16 +75,30 @@ alter table public.atendimentos
 -- pode virar dois registros no historico clinico.
 create unique index if not exists idx_atendimentos_client_id
   on public.atendimentos (client_id) where client_id is not null;
--- `senderista_id`, nao `participant_id`. A coluna nunca se chamou
--- `participant_id` nesta tabela, entao este indice JAMAIS foi criado — o
--- comando falha com 42703 e, num arquivo rodado inteiro, derruba tudo que
--- vem depois dele. So apareceu em 23/11/2026, ao reconstruir o banco do
--- zero; em producao o defeito ficou escondido porque ninguem reaplicou o
--- arquivo. E a consulta que ele acelera e a mais usada da tela de ficha:
--- historico de atendimento de uma pessoa, do mais recente para o mais
--- antigo.
+-- Este indice JAMAIS foi criado neste banco, e a causa demorou a
+-- aparecer. Em 23/11/2026 eu concluí que a coluna "nunca se chamou
+-- `participant_id`" e troquei o indice para `senderista_id`. **Estava
+-- errado, e ao contrario:** quem faltava era a COLUNA, nao o indice.
+--
+-- A prova e tripla, e nenhuma parte dela esta neste arquivo:
+--   . `Atendimento.fromMap` le `map['participant_id'] as String` — sem
+--     `?`, ou seja, obrigatorio nas duas direcoes;
+--   . a funcao `painel_do_top` VIVA conta
+--     `count(distinct participant_id) from atendimentos`;
+--   . `exclusao_protegida.sql:76` descreve `atendimentos.participant_id`
+--     como `set null` para `top_participants`.
+--
+-- `senderista_id` e outra coisa: aponta para `profiles` ("quem esta sendo
+-- atendido, SE cadastrado"). `participant_id` aponta para a FICHA, que
+-- existe mesmo para quem nao tem conta — e e por isso que o prontuario
+-- funciona antes de a pessoa se cadastrar. Trocar um pelo outro nao e
+-- renomear, e ligar o atendimento na pessoa errada.
+--
+-- A coluna entra em `06_atendimentos_participant_id_e_exclusao.sql`.
+-- A consulta que este indice acelera e a mais usada da tela de ficha:
+-- historico de atendimento de uma pessoa, do mais recente para o antigo.
 create index if not exists idx_atendimentos_participante
-  on public.atendimentos (top_id, senderista_id, opened_at desc);
+  on public.atendimentos (top_id, participant_id, opened_at desc);
 
 
 -- ----------------------------------------------------------------------------

@@ -117,6 +117,14 @@ class ExclusaoService {
       add('auditoria', 'registro(s) de auditoria');
       add('tags_emitidas', 'pulseira(s)');
       add('alarmes', 'alarme(s)');
+      // Há NOVE outras referências bloqueantes a `profiles` sem rótulo
+      // próprio: anotação, ficha cadastrada, foto de ferida, leitura de
+      // pulseira, imagem de Top, revogação de pulseira, permissão de mapa,
+      // senha de Top e pedido de acesso atendido. Sem contá-las aqui, quem
+      // fosse bloqueado por uma delas cairia no texto de admin master
+      // abaixo — e o admin tentaria de novo para sempre, porque a tela
+      // daria um motivo que não é o verdadeiro.
+      add('outros_vinculos', 'outro(s) registro(s) ligado(s) a esta conta');
       // Sem nenhuma contagem e ainda assim bloqueado: é o admin master.
       if (motivos.isEmpty && m['pode_apagar'] != true) {
         motivos.add('é o administrador master');
