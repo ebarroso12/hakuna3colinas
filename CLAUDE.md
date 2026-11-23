@@ -1078,6 +1078,88 @@ triagem não discriminava nada justamente na faixa com mais participantes.
 Ao mudar as regras no banco, atualizar o fixture `_producao` em
 `test/services/triage_service_test.dart` junto — senão os testes passam
 validando uma configuração que não existe mais.
+validando uma configuração que não existe mais.
+
+**E vale na direção oposta também — foi o que aconteceu em 23/11/2026.**
+O banco reconstruído tinha **14 regras ativas**, não 8: o conjunto canônico
+mais o antigo, com o pega-tudo `41+, 0..999 -> vermelho` em `priority 1`.
+Como `_corPara` ordena por prioridade e devolve a primeira que casa, **todo
+participante de 41 anos ou mais era pintado de vermelho**, inclusive quem
+não tem comorbidade nenhuma (devia ser amarelo). Os 575 testes passavam:
+eles validam o fixture, que estava certo, e nunca olham o banco.
+
+A causa está no repositório e foi corrigida no mesmo dia: `schema.sql` e
+`admin_master_and_triage.sql` inseriam as 6 regras antigas **sem informar
+`active`**, e a coluna é `not null default true`. Qualquer reexecução
+desses arquivos — uma segunda passada dirigida, por exemplo — ressuscitava
+o pega-tudo. Hoje os dois inserem com `active = false` explícito, porque
+são história, não configuração. A correção de dados está em
+`supabase/08_triagem_uma_configuracao_so.sql`, e ela casa pela FORMA da
+regra, não por id.
+
+**Conferir a triagem é uma consulta, não leitura de código.** O rodapé
+daquele arquivo tem a consulta que calcula a matriz pelo mesmo critério do
+app; se o resultado não for exatamente
+
+```
+ 18 anos: blue  green  red     30 anos: green yellow red     50 anos: yellow red red
+```
+
+há duas configurações ativas de novo.
+
+## A auditoria linha a linha de 23/11/2026
+
+Depois de consertar 4 P0 pela manhã, o dono pediu revisão linha a linha. A
+auditoria achou **mais três**, e nenhum deles aparece em conferência de
+esquema — os três estavam no banco antigo também.
+
+| | O que estava quebrado |
+|---|---|
+| **P0** | Triagem com duas configurações ativas (acima) |
+| **P0** | `team_messages` fora da publicação `supabase_realtime` — o chat das 9 equipes e do `geral` **não recebia mensagem nova**. O `.stream()` faz a leitura inicial, então o histórico aparecia e nada mais chegava: dois celulares lado a lado não se viam. Corrigido em `09_realtime_do_chat_das_equipes.sql` |
+| **P0** | `anotacoes` sem policy de UPDATE — o bloco "editável" **nunca pôde ser editado**, nem em produção. A primeira versão subia; toda correção batia em 42501, que a fila classifica como permanente, e ia para a quarentena. Pior: aparecia certa no aparelho de quem escreveu e errada para os outros. Corrigido em `10_anotacoes_editaveis_de_verdade.sql` |
+
+### O que a auditoria conferiu, e o que vale repetir
+
+Cinco checagens valeram o tempo e devem ser refeitas em qualquer
+reconstrução:
+
+1. **A publicação do Realtime contra o que o app assina.**
+   `select tablename from pg_publication_tables where pubname =
+   'supabase_realtime'` tem de conter toda tabela que aparece num
+   `.stream(` do app. Faltava uma de cinco.
+2. **A matriz de policies por comando.** Para cada tabela, quantas
+   policies de SELECT/INSERT/UPDATE/DELETE existem — e cruzar com o que o
+   app faz. Tabela com `upsert` **sem** `ignoreDuplicates` precisa de
+   UPDATE; era o buraco de `anotacoes`. As append-only (`audit_log`,
+   `tag_leituras`, `vital_signs`, `top_alerts`, `atendimento_fotos`,
+   `hakuna_positions`, `top_hakuna_messages`) estão certas sem UPDATE.
+3. **Índice único completo, não parcial, para todo `onConflict`.** O
+   `CLAUDE.md` já registrava o risco (bug da v1.0.29); conferido, os 12
+   índices de `client_id`/`bloco_id` são completos.
+4. **Todo nome de coluna que o app usa contra `information_schema`.** As
+   142 chaves extraídas dos models e dos filtros dos services existem no
+   esquema; as 39 que não existem são chaves do JSON do `painel_do_top` e
+   textos de erro. Foi essa checagem que teria achado
+   `atendimentos.participant_id` de manhã.
+5. **Exercitar cada caminho com os VERBOS do app.** Não basta um `insert`:
+   a fila usa `upsert` com `resolution=ignore-duplicates` (append-only) ou
+   `merge-duplicates` (bloco editável), e a revogação de pulseira usa
+   `update`. Testar com o verbo errado produz falso alarme — três das
+   minhas primeiras falhas eram erro do teste, não do app. **Falso alarme
+   custa tempo; verbo certo acha defeito de verdade.**
+
+Exercitados e verificados em 23/11/2026, com dado de teste criado e
+apagado: autocadastro completo, login por número, chat geral (escreve,
+recusa alerta de membro comum, recusa outra equipe), chat de equipe com
+alerta de coordenador, chat clínico, alarme com GPS, posição própria,
+atendimento pela fila (incluindo reenvio idempotente) e encerramento,
+aferição, foto de ferida, pulseira emitida/lida/revogada, auditoria,
+anotação criada e editada três vezes, equipe montada, permissão de mapa,
+imagem de Top, dispositivo de push, pedido de acesso com código individual,
+Painel do Top, exclusão oficial de conta e as travas: anônimo barrado,
+membro não edita bloco alheio, não-membro não lê anotação de equipe.
+
 
 ## "Ninguém consegue entrar": confira o SERVIDOR antes do código
 

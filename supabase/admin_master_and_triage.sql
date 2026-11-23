@@ -175,13 +175,20 @@ create policy "triage_rules_write_master_admin" on public.triage_rules
 -- vermelho (fallback): qualquer combinação não coberta acima (≥2
 -- comorbidades em ≤40 anos) — em app médico, o padrão de segurança é
 -- classificar pro lado mais cauteloso quando a regra não é clara.
-insert into public.triage_rules (color, label, min_age, max_age, min_comorbidities, max_comorbidities, priority) values
-  ('red', 'Vermelho — acima de 40 anos', 41, null, 0, 999, 1),
-  ('blue', 'Azul — sem risco (até 25 anos, sem comorbidade)', 0, 25, 0, 0, 2),
-  ('green', 'Verde — 25 a 40 anos sem comorbidade', 25, 40, 0, 0, 3),
-  ('green', 'Verde — até 25 anos com 1 comorbidade', 0, 25, 1, 1, 4),
-  ('yellow', 'Amarelo — 25 a 40 anos com 1 comorbidade', 25, 40, 1, 1, 5),
-  ('red', 'Vermelho — 2 ou mais comorbidades (faixa não coberta acima)', 0, 40, 2, 999, 6);
+-- `active = false` EXPLICITO, e nao e detalhe: a coluna e
+-- `not null default true`, entao sem isto qualquer reexecucao deste
+-- arquivo RESSUSCITA o pega-tudo `41+, 0..999 -> vermelho` com priority 1
+-- e pinta todo mundo acima de 40 de vermelho. Foi o que aconteceu na
+-- reconstrucao de 23/11/2026 (ver `08_triagem_uma_configuracao_so.sql`).
+-- Estas 6 regras sao HISTORIA; a configuracao que vale esta em
+-- `team_roles_and_triage_v2.sql`.
+insert into public.triage_rules (color, label, min_age, max_age, min_comorbidities, max_comorbidities, priority, active) values
+  ('red', 'Vermelho — acima de 40 anos', 41, null, 0, 999, 1, false),
+  ('blue', 'Azul — sem risco (até 25 anos, sem comorbidade)', 0, 25, 0, 0, 2, false),
+  ('green', 'Verde — 25 a 40 anos sem comorbidade', 25, 40, 0, 0, 3, false),
+  ('green', 'Verde — até 25 anos com 1 comorbidade', 0, 25, 1, 1, 4, false),
+  ('yellow', 'Amarelo — 25 a 40 anos com 1 comorbidade', 25, 40, 1, 1, 5, false),
+  ('red', 'Vermelho — 2 ou mais comorbidades (faixa não coberta acima)', 0, 40, 2, 999, 6, false);
 
 -- Dr. Edson Barroso (número 203460) é o Admin Master do app.
 update public.profiles set is_master_admin = true, role = 'admin'
