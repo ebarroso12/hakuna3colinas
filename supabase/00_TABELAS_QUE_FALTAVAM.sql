@@ -277,7 +277,12 @@ create table if not exists public.team_messages (
   created_at  timestamptz not null default now(),
   edited_at   timestamptz,
 
-  client_id   text
+  -- UUID, nao text. `Outbox.novoClientId()` gera UUID v4 de verdade (versao
+  -- e variante carimbadas nos bytes 6 e 8), e as outras OITO tabelas da fila
+  -- ja usam `uuid`. Escrevi `text` na primeira versao e a conferencia pegou:
+  -- tipo divergente numa chave de idempotencia e convite a comparacao que
+  -- funciona em oito lugares e falha no nono.
+  client_id   uuid
 );
 
 create unique index if not exists idx_team_messages_client_id
@@ -344,7 +349,8 @@ create table if not exists public.audit_log (
   metadata       jsonb,
   occurred_at    timestamptz,
   created_at     timestamptz not null default now(),
-  client_id      text
+  -- uuid pelo mesmo motivo de `team_messages` — ver a nota la.
+  client_id      uuid
 );
 
 create unique index if not exists idx_audit_log_client_id

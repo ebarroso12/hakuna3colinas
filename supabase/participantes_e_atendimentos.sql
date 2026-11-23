@@ -75,8 +75,16 @@ alter table public.atendimentos
 -- pode virar dois registros no historico clinico.
 create unique index if not exists idx_atendimentos_client_id
   on public.atendimentos (client_id) where client_id is not null;
+-- `senderista_id`, nao `participant_id`. A coluna nunca se chamou
+-- `participant_id` nesta tabela, entao este indice JAMAIS foi criado — o
+-- comando falha com 42703 e, num arquivo rodado inteiro, derruba tudo que
+-- vem depois dele. So apareceu em 23/11/2026, ao reconstruir o banco do
+-- zero; em producao o defeito ficou escondido porque ninguem reaplicou o
+-- arquivo. E a consulta que ele acelera e a mais usada da tela de ficha:
+-- historico de atendimento de uma pessoa, do mais recente para o mais
+-- antigo.
 create index if not exists idx_atendimentos_participante
-  on public.atendimentos (top_id, participant_id, opened_at desc);
+  on public.atendimentos (top_id, senderista_id, opened_at desc);
 
 
 -- ----------------------------------------------------------------------------
