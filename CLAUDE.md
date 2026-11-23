@@ -32,6 +32,99 @@ clínico, em `top_hakuna_messages`, numa tabela separada. Hakuna é equipe
 **e** papel: a equipe é onde a pessoa trabalha, o papel (`user_role`) é o
 que ela pode fazer.
 
+### As equipes e as funções são FIXAS — ninguém cria outras pelo app
+
+Pergunta do dono em 23/11/2026: *"o admin pode adicionar outros grupos e
+funções?"* **Não, e não é esquecimento.** As três dimensões são enums,
+fechados nos dois lados:
+
+| | Valores | Onde está escrito |
+|---|---|---|
+| Equipes | 9 + `geral` | enum `team_key` no Postgres **e** `enum TeamKey` em `lib/models/team.dart` |
+| Funções na equipe | `coordenador`, `subcoordenador`, `membro` | enum `team_role` **e** `enum TeamRole` |
+| Papéis no app | `admin`, `hakuna`, `senderista` | enum `user_role` **e** `enum UserRole` |
+
+Criar uma equipe nova exige **três coisas juntas**: `alter type team_key
+add value`, o rótulo/ícone/cor em `TeamKeyUi` e um APK novo. Sem o terceiro
+a equipe existe no banco e o app quebra ao ler um valor que o `enum` do
+Dart não conhece. Então não é um botão que falta — é release.
+
+O que o admin faz é **atribuir** o que existe: pôr pessoa em equipe, dar
+cargo, liberar, bloquear, remover.
+
+### Quem monta equipe, e quem cria ficha — medido, não deduzido
+
+Medido em 23/11/2026 com contas de verdade (senderista aprovado, Hakuna
+liberado, admin comum, coordenador de equipe), conferindo **o dado depois
+de cada tentativa**:
+
+| Ação | Senderista | Hakuna liberado | Coordenador da equipe | Admin | Master |
+|---|---|---|---|---|---|
+| Criar ficha de participante | não | **sim** | não | **sim** | sim |
+| Editar ficha / **família** | não | **sim** | não | **sim** | sim |
+| Apagar ficha | não | não | não | não | **só ele** |
+| Pôr alguém na equipe | não | não | **sim, na dele** | **sim** | sim |
+| Dar cargo de coordenador | não | não | não | **sim** | sim |
+| Liberar / bloquear / remover membro | não | não | **sim, na dele** | **sim** | sim |
+| Emitir pulseira NFC/QR | não | não | não | **sim** | sim |
+| Liberar Hakuna no Top | não | não | não | **sim** | sim |
+| Definir quem vê o mapa | não | não | não | **sim** | sim |
+| Promover alguém a **admin** | não | não | não | **não** | **só ele** |
+| Mudar regra de triagem | não | não | não | **não** | **só ele** |
+| Gerar senha do Top / abrir cadastro | não | não | não | **não** | **só ele** |
+
+**Família se adiciona por quatro caminhos**, e todos existem hoje: o campo
+"Família" na ficha (admin e Hakuna, pela tela de participantes, funciona
+offline), o importador de planilha, o autocadastro (a pessoa digita a dela)
+e a edição posterior da ficha.
+
+#### A lição do método: `204` não quer dizer que mudou
+
+Três respostas desta tabela estavam **erradas na primeira medição**, e
+todas pelo mesmo motivo: `UPDATE` e `DELETE` cuja linha a RLS esconde
+voltam **204, sucesso, com zero linhas afetadas**. Pelo código de resposta,
+"senderista apaga ficha" e "senderista muda regra de triagem" pareciam
+permitidos. Eram 204 vazios.
+
+**Conferir permissão de escrita pelo status é inútil.** Grave um valor
+conhecido antes, tente mudar, leia depois. Foi assim que apareceu o defeito
+do coordenador, abaixo.
+
+### O coordenador tinha poder sobre a equipe e não via ninguém
+
+Achado em 23/11/2026, na medição acima. `top_team_members_select` era
+`profile_id = auth.uid() or is_admin()` — **o coordenador via só a própria
+linha.** E `update ... where` / `delete ... where` precisam LER as linhas
+para achar quais alterar, e essa leitura passa pela policy de SELECT.
+
+Resultado: as policies que davam poder a ele eram letra morta.
+
+```
+coordenador inclui membro na equipe dele .... funcionava (201)
+coordenador retira a liberação .............. 204, e NÃO retirava
+coordenador bloqueia ........................ 204, e NÃO bloqueava
+coordenador remove .......................... 204, e NÃO removia
+```
+
+E a equipe aparecia **vazia** para quem a coordena — inclusive quem ele
+mesmo acabou de incluir.
+
+Corrigido em `supabase/12_coordenador_ve_a_equipe_dele.sql`: a policy de
+SELECT ganhou `or is_team_admin(top_id, team)`. É `is_team_admin` e não
+`is_team_coordenador` porque a policy de INSERT já usa a primeira — o
+subcoordenador pode incluir, então tem de poder ver.
+
+**Não há recursão**, e isso precisa ser dito: `is_team_admin` lê
+`top_team_members` e está sendo chamada de dentro de uma policy dessa
+tabela. Não entra em laço porque é `security definer` — roda como o dono e
+não passa pela RLS. O mesmo arranjo que `top_team_members_update` já usava.
+Trocar a função por um `exists (select ... from top_team_members ...)`
+escrito dentro da policy **faria** o laço.
+
+Depois do conserto, medido: vê só a equipe dele (a linha do mesmo membro em
+outra equipe não aparece), libera, bloqueia e remove; continua **sem**
+promover a coordenador (403) e **sem** tocar em outra equipe.
+
 ### As 9 equipes têm de APARECER, não só existir
 
 O dono abriu o app em 11/10/2026 e não achou as 9. Os dois lados do mesmo
@@ -770,6 +863,49 @@ Dois achados que vieram antes de escrever a tela, em
   cair em cascata — e isso exige `service_role`, daí a ação
   `apagar_usuarios` na Edge Function.
 
+### A malha pedia permissão que o Android antigo NÃO TEM
+
+Achado em 23/11/2026, lendo o `permission_handler` até o fim.
+`MalhaService._pedirPermissoes` pedia `bluetoothScan`, `bluetoothAdvertise`
+e `bluetoothConnect` em **toda** versão e exigia as três concedidas. As
+três só existem no **Android 12 (SDK 31)**. E o plugin, ao receber um grupo
+que não tem permissão nenhuma naquela versão, devolve DENIED:
+
+```java
+if (names == null || names.isEmpty()) { ...
+    requestResults.put(permission, PERMISSION_STATUS_DENIED);
+```
+
+Então **em todo celular Android 11 ou mais antigo a malha se recusava a
+ligar**, dizendo que faltava permissão de Bluetooth — num aparelho onde
+`BLUETOOTH` e `BLUETOOTH_ADMIN` são de instalação, já concedidas, e o rádio
+funcionaria. O chat sem rede simplesmente não existia para quem tem celular
+mais velho, e a tela culpava o usuário.
+
+O código **já tratava disso** para `nearbyWifiDevices`, com o comentário
+certo. O mecanismo é idêntico para as três de Bluetooth, e elas ficaram
+fora da correção — é o tipo de defeito que uma exceção bem explicada
+esconde: parece que o caso já foi pensado.
+
+Hoje a régua é por versão, lida do aparelho (`device_info_plus`), em
+`MalhaService.permissoesPara(sdk)`:
+
+- **localização**: obrigatória em toda versão (o Android exige localização
+  para buscar por BLE, mesmo sem GPS);
+- **trio do Bluetooth**: só no 31+, e ali obrigatório — negado, o Nearby
+  não anuncia nem descobre, e falha calado;
+- **`nearbyWifiDevices`**: só no 33+, pedida e **não exigida** — é o salto
+  por WiFi depois do BLE; exigir faria quem recusasse perder a malha
+  inteira por causa do acelerador.
+
+Se não der para descobrir a versão, assume 31: pedir demais mostra um
+diálogo a mais, pedir de menos liga a malha sem permissão e ela não acha
+ninguém, calada.
+
+16 testes em `test/services/malha_permissoes_por_versao_test.dart`, faixa
+por faixa (24, 28, 29, 30, 31, 32, 33, 35, 36). A regra é pura e por isso
+se testa direto — não montando árvore e fingindo um celular.
+
 ### NFC: `flutter_nfc_kit`, e o UID vem sempre
 
 Trocado do `nfc_manager` em 11/10/2026, depois de abrir o APK do app de
@@ -1381,8 +1517,24 @@ Ao mexer no esquema, a pergunta certa não é "a tabela existe?" e sim
   sistema, a pedido do FCM — não há outro caminho. **O levantamento
   completo do que falta está em `docs/push_com_app_fechado.md`**: as
   quatro peças, o SQL da tabela `dispositivos`, o que só o dono do projeto
-  pode fazer (criar o Firebase) e o que o push NÃO resolve. Para quem está
-  com o app fechado, continua valendo o rádio.
+  pode fazer (criar o Firebase) e o que o push NÃO resolve.
+
+  **Esta frase estava aqui e era FALSA: "para quem está com o app fechado,
+  continua valendo o rádio".** Corrigida em 23/11/2026. O rádio **também**
+  exige o app aberto — ver abaixo. App fechado hoje significa **nada
+  chega**: nem Realtime, nem rádio, nem push (que não existe). É a maior
+  lacuna do produto, e não é de código: é de arquitetura.
+- **A malha por rádio exige o app ABERTO, nos dois aparelhos.** Medido em
+  23/11/2026, lendo o plugin: `nearby_connections` 4.3.0 chama
+  `Nearby.getConnectionsClient(activity)` — o rádio está amarrado à
+  **Activity** —, e nem o plugin nem o app declaram serviço em primeiro
+  plano. Celular no bolso com a tela apagada: o Android congela o processo
+  e a malha para, sem aviso.
+
+  Em campo isso muda a instrução: quem for ficar sem sinal precisa deixar
+  o app aberto, na tela, com a malha ligada. Resolver exige serviço nativo
+  em primeiro plano com notificação fixa — trabalho real, e o plugin não
+  ajuda, porque a sessão morre com a Activity.
 - **Comunicação sem rede nenhuma (3G/4G/WiFi) não existe no app.** Pedido
   do dono em 11/10/2026. **O levantamento está em
   `docs/comunicacao_sem_rede.md`**: alcance real de cada via, custo, e o

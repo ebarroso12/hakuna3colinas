@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -330,21 +331,89 @@ class MalhaService extends ChangeNotifier {
   /// Bluetooth e WiFi como capaz de revelar onde a pessoa está, e sem ela
   /// a busca devolve lista vazia **sem erro nenhum** — o pior modo de
   /// falhar, porque parece que a função não existe.
-  Future<bool> _pedirPermissoes() async {
-    final pedidos = await [
-      Permission.bluetoothScan,
-      Permission.bluetoothAdvertise,
-      Permission.bluetoothConnect,
-      Permission.nearbyWifiDevices,
+  /// Quais permissões pedir, e quais delas IMPEDEM a malha, para uma
+  /// versão do Android.
+  ///
+  /// Existe separada e pura porque foi aqui que estava o defeito, e
+  /// defeito de regra se prova com teste direto — não montando árvore e
+  /// fingindo um celular.
+  ///
+  /// ## O defeito, medido e não deduzido (23/11/2026)
+  ///
+  /// A versão anterior pedia `bluetoothScan`, `bluetoothAdvertise` e
+  /// `bluetoothConnect` **sempre**, e exigia as três concedidas. Essas três
+  /// só existem no **Android 12 (SDK 31)**. E o `permission_handler`, ao
+  /// receber um grupo que não tem permissão nenhuma naquela versão,
+  /// devolve `DENIED` — lido no código dele:
+  ///
+  /// ```java
+  /// if (names == null || names.isEmpty()) { ...
+  ///     requestResults.put(permission, PERMISSION_STATUS_DENIED);
+  /// ```
+  ///
+  /// Resultado: em **todo celular Android 11 ou mais antigo** as três
+  /// voltavam negadas, o `every(isGranted)` dava falso e a malha **se
+  /// recusava a ligar**, dizendo que faltava permissão de Bluetooth — em
+  /// um aparelho onde `BLUETOOTH` e `BLUETOOTH_ADMIN` são de instalação e
+  /// já estão concedidas, e onde o rádio funcionaria.
+  ///
+  /// O comentário antigo tratava disso **só** para `nearbyWifiDevices`. O
+  /// mecanismo é idêntico para as três de Bluetooth, e elas ficaram de
+  /// fora da correção.
+  ///
+  /// ## A régua por versão
+  ///
+  /// - **localização**: obrigatória em TODA versão. O Android exige
+  ///   localização para buscar aparelhos por BLE, mesmo sem usar GPS. Sem
+  ///   ela a busca devolve lista vazia sem erro.
+  /// - **trio do Bluetooth**: só existe no 31+; ali é obrigatório, porque
+  ///   negado o Nearby não anuncia nem descobre — e falha calado, que é o
+  ///   pior modo.
+  /// - **`nearbyWifiDevices`**: só no 33+, e **pedida sem ser exigida**. É
+  ///   o transporte por WiFi, que a Nearby usa para o salto rápido depois
+  ///   de achar por BLE. Sem ela a malha fica mais lenta; com ela exigida,
+  ///   quem recusasse perderia a malha inteira por causa do acelerador.
+  ///   Mantém a decisão que já estava aqui.
+  @visibleForTesting
+  static ({List<Permission> obrigatorias, List<Permission> opcionais})
+  permissoesPara(int sdk) => (
+    obrigatorias: <Permission>[
       Permission.location,
+      if (sdk >= 31) Permission.bluetoothScan,
+      if (sdk >= 31) Permission.bluetoothAdvertise,
+      if (sdk >= 31) Permission.bluetoothConnect,
+    ],
+    opcionais: <Permission>[if (sdk >= 33) Permission.nearbyWifiDevices],
+  );
+
+  /// Injetável para teste: ler a versão do Android exige o aparelho.
+  @visibleForTesting
+  static Future<int> Function()? sdkParaTestes;
+
+  Future<int> _sdkDoAndroid() async {
+    final injetado = sdkParaTestes;
+    if (injetado != null) return injetado();
+    try {
+      final info = await DeviceInfoPlugin().androidInfo;
+      return info.version.sdkInt;
+    } catch (_) {
+      // Não deu para descobrir a versão. Assume Android 12+, que é o lado
+      // seguro: pede as três de Bluetooth e exige. Errar para o lado de
+      // pedir demais mostra um diálogo a mais; errar para o outro lado faz
+      // a malha ligar sem permissão e não achar ninguém, calada.
+      return 31;
+    }
+  }
+
+  Future<bool> _pedirPermissoes() async {
+    final quais = permissoesPara(await _sdkDoAndroid());
+    final pedidos = await [
+      ...quais.obrigatorias,
+      ...quais.opcionais,
     ].request();
 
-    // `nearbyWifiDevices` não existe antes do Android 13 e volta
-    // `permanentlyDenied` lá — o que não é recusa do usuário, é a
-    // permissão não existir naquela versão. Tratar como impedimento
-    // bloquearia a malha em todo aparelho mais antigo.
-    return pedidos.entries
-        .where((e) => e.key != Permission.nearbyWifiDevices)
-        .every((e) => e.value.isGranted);
+    return quais.obrigatorias.every(
+      (p) => pedidos[p]?.isGranted ?? false,
+    );
   }
 }
