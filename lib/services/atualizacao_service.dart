@@ -66,7 +66,11 @@ class AtualizacaoService {
     try {
       final rows = await _client
           .from('app_versions')
-          .select()
+          // Colunas explícitas (as seis existem — conferido no esquema).
+          // `select()` pelado foi o caminho pelo qual o hash da senha do Top
+          // vazou de `tops`; aqui não há segredo, mas a regra é a mesma e o
+          // custo é zero.
+          .select('version, build_number, apk_url, notes')
           .eq('published', true)
           .order('build_number', ascending: false)
           .limit(1);

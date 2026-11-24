@@ -113,13 +113,41 @@ class _GavetaDoAppState extends State<GavetaDoApp> {
     );
     if (confirmou != true) return;
 
+    // `launchUrl` não só devolve `false` quando falha: ele LEVANTA
+    // `PlatformException` quando não há app que resolva o intent. Sem o
+    // `catch`, a exceção escapava de um callback async — em release isso é
+    // engolido, e o efeito para quem aperta é **nada acontecer, sem
+    // mensagem**. Num botão cuja única função é baixar a atualização, isso
+    // é indistinguível de app quebrado.
+    //
+    // O `<queries>` do AndroidManifest (ação VIEW + esquemas http/https) é
+    // o que faz o caminho normal funcionar no Android 11+; este `catch` é
+    // para o aparelho sem navegador nenhum, que existe.
+    var abriu = false;
+    String? falha;
     final uri = Uri.tryParse(v.apkUrl);
-    final abriu =
-        uri != null &&
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (uri == null) {
+      falha = 'o endereço publicado é inválido';
+    } else {
+      try {
+        abriu = await launchUrl(uri, mode: LaunchMode.externalApplication);
+        if (!abriu) falha = 'nenhum app deste celular abriu o link';
+      } catch (e) {
+        falha = 'o celular recusou abrir o link ($e)';
+      }
+    }
+
     if (!abriu && mounted) {
+      // O endereço vai na mensagem de propósito: dá para digitar no
+      // navegador à mão, que é a saída quando o `launchUrl` não serve.
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Não foi possível abrir ${v.apkUrl}')),
+        SnackBar(
+          content: Text(
+            'Não deu para abrir o download: $falha. '
+            'Baixe à mão em: ${v.apkUrl}',
+          ),
+          duration: const Duration(seconds: 12),
+        ),
       );
     }
   }

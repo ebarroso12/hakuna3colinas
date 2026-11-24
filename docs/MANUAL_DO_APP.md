@@ -1,6 +1,6 @@
 ---
 title: "Legendários Connect — Manual"
-subtitle: "Aplicativo de coordenação dos Tops · versão 1.0.53"
+subtitle: "Aplicativo de coordenação dos Tops · versão 1.0.54"
 date: "24 de novembro de 2026"
 lang: pt-BR
 ---
@@ -33,12 +33,12 @@ falta de rede.
 
 Abra o navegador do celular e digite este endereço:
 
-**github.com/ebarroso12/hakuna3colinas/releases/download/v1.0.53/legendarios1.0.53.apk**
+**github.com/ebarroso12/hakuna3colinas/releases/download/v1.0.54/legendarios1.0.54.apk**
 
 Se o seu celular for antigo (comprado antes de 2019), use este em vez do de
 cima:
 
-**github.com/ebarroso12/hakuna3colinas/releases/download/v1.0.53/legendarios1.0.53-32bits.apk**
+**github.com/ebarroso12/hakuna3colinas/releases/download/v1.0.54/legendarios1.0.54-32bits.apk**
 
 São uns 29 MB. Baixa sem precisar de login.
 
@@ -458,4 +458,4 @@ Dito com clareza, para ninguém contar com o que não existe:
 
 ---
 
-*Legendários Connect · versão 1.0.53 · 24 de novembro de 2026*
+*Legendários Connect · versão 1.0.54 · 24 de novembro de 2026*

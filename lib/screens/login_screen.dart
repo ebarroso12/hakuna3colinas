@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/acesso_service.dart';
 import '../services/supabase_service.dart';
+import '../versao.dart';
 import '../widgets/app_logo.dart';
 import '../widgets/password_field.dart';
 import 'primeiro_acesso_screen.dart';
@@ -192,6 +193,24 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 icon: const Icon(Icons.badge_outlined),
                 label: const Text('Primeiro acesso'),
+              ),
+
+              // A VERSAO INSTALADA, aqui e na gaveta.
+              //
+              // Esta e a unica tela que todo mundo ve ANTES de entrar, e e
+              // por ela que comeca qualquer suporte: "qual versao voce
+              // esta usando?" sem isto exige abrir a gaveta, que exige
+              // estar logado. Quem nao consegue entrar e exatamente quem
+              // mais precisa responder essa pergunta.
+              const SizedBox(height: 24),
+              Text(
+                'Versão ${Versao.completa}',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurfaceVariant.withValues(alpha: 0.8),
+                ),
               ),
             ],
           ),

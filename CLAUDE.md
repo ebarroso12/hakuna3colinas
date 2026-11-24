@@ -1966,6 +1966,96 @@ está com o dono, em conta marcada `is_teste` e apagada depois. É o método que
 este arquivo prescreve — "este fluxo funciona chamando de verdade?" — e é
 decisão do dono, porque cria ficha no Top real.
 
+### A cadeia de atualização, auditada elo por elo (24/11/2026)
+
+Pedido do dono, nestas palavras: *"sempre colocar a versão que está e avisar
+aos usuários sobre atualização, ter o botão de atualizar que irá baixar do
+github a atualização"*. Tudo isso já existia; auditar achou **três buracos
+reais** e um alinhamento que faltava.
+
+#### `launchUrl` LEVANTA, e o botão ficava sem resposta nenhuma
+
+O botão ATUALIZAR fazia:
+
+```dart
+final abriu = uri != null &&
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+if (!abriu && mounted) { ...snackbar... }
+```
+
+O tratamento cobria o `false` e **não cobria a exceção**. `launchUrl`
+levanta `PlatformException` quando nada resolve o intent — e exceção
+escapando de um callback `async` é **engolida em release**. Para quem
+aperta: nada acontece, sem mensagem. Num botão cuja única função é baixar a
+atualização, isso é indistinguível de app quebrado, e é o pior lugar
+possível para uma falha calada: quem está desatualizado é quem mais precisa
+que funcione.
+
+Hoje tem `try/catch`, a mensagem **diz o motivo** (endereço inválido,
+nenhum app abriu, o celular recusou) e **mostra a URL**, porque digitar no
+navegador é a saída real quando o `launchUrl` não serve.
+
+A armadilha do Android 11+ já estava coberta e vale dizer, para ninguém
+"limpar" o manifest: `<queries>` com `VIEW` + esquemas `http`/`https` é o
+que faz o `url_launcher` ver que existe navegador instalado. Sem isso
+`canLaunchUrl` devolve false e o botão não faz nada — e **não aparece em
+emulador antigo**.
+
+#### A caixa "o que mudou" estava sempre vazia
+
+`gaveta_do_app.dart` mostra `v.notas` no diálogo de atualizar, e
+`VersaoPublicada.fromMap` lê `map['notes']`. Mas **nada nunca escreveu a
+coluna**: `publicar_versao`, chamada pelo CI, grava versão, build e link, e
+`notes` fica nula.
+
+Ou seja: havia um lugar pronto para dizer ao usuário o que mudou, e ele
+nunca disse nada. Desde a 1.0.54 as notas são escritas junto da publicação,
+em português e **do ponto de vista de quem usa** — não "corrigido o hash da
+senha do Top", mas "correções de segurança (nada muda para quem usa)".
+
+#### A versão só aparecia depois de entrar
+
+`Versao.completa` aparecia na gaveta, que exige estar logado. **Quem não
+consegue entrar é exatamente quem mais precisa responder "qual versão você
+está usando?"** — e era a única pessoa que não tinha como descobrir.
+
+Agora aparece também no fim da tela de login.
+
+#### O repositório estava à frente do APK, e isso não pode virar hábito
+
+As correções da revisão de código estavam commitadas e **em nenhum APK**. Eu
+havia decidido deixá-las para "o próximo release" para não fazer o dono
+instalar duas vezes; ele corrigiu a decisão, e com razão: **versão no
+repositório que não existe em aparelho nenhum é dívida invisível** — some do
+radar e reaparece como "mas isso não estava consertado?".
+
+A regra fica: conserto que entra no `main` entra num APK. Se não vale um
+release, provavelmente não valia o commit separado.
+
+#### Travado por teste, porque cada elo já falhou uma vez
+
+`test/aviso_de_atualizacao_test.dart`, 13 casos: comparação por
+`build_number` (incluindo a armadilha `"1.0.9" > "1.0.10"`), `fromMap` com
+`num` em vez de `int` (o Postgrest manda `100.0`), colunas explícitas na
+consulta, `<queries>` no manifest, o `try/catch` **com** mensagem **e** com
+o endereço, a versão nas duas telas, e o portão do iOS (no iPhone não se
+oferece APK, porque `app_versions` aponta para um arquivo que o aparelho não
+abre).
+
+#### A lição de método desta rodada: teste que lê o fonte não compila o fonte
+
+Ao escrever esses testes eu quebrei um literal de string em
+`gaveta_do_app.dart` (um `\n` que virou quebra de linha de verdade ao passar
+pelo heredoc). Rodei os dois arquivos de teste novos: **passaram os 18**.
+
+Passaram porque eles leem o arquivo como **texto** — `File(...).readAsStringSync()`
+— e nunca o compilam. Quem pegou foi a suíte completa, onde
+`gaveta_do_app_test.dart` e `o_app_abre_test.dart` falharam em *loading*.
+
+**A regra: teste que varre código-fonte não substitui compilar.** Ao mexer
+num arquivo de widget, `flutter analyze` naquele arquivo é mais rápido que
+a suíte e pega o que a varredura textual é cega para ver.
+
 ## Pendências conhecidas
 
 - **Dropar as 3 colunas vestigiais de `tops` espera a base instalada.**
