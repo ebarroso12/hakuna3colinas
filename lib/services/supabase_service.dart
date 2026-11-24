@@ -261,15 +261,48 @@ class SupabaseService {
     'GOOGLE_IOS_CLIENT_ID',
   );
 
+  /// O provedor Google está ligado no projeto Supabase?
+  ///
+  /// **Hoje: não.** Conferido em 23/11/2026 na configuração do projeto
+  /// `vohowjyuvhalphstieqo`:
+  ///
+  ///     external_google_enabled .... false
+  ///     client_id .................. ausente
+  ///     secret ..................... ausente
+  ///
+  /// O projeto Supabase foi reconstruído do zero depois que o anterior foi
+  /// apagado, e essa configuração ficou no antigo.
+  ///
+  /// **O lado do Google está certo** — o client ID está dentro do APK e as
+  /// impressões da chave de produção estão registradas no Firebase (feito
+  /// em 12/10/2026). Quem está desligado é o Supabase. Por isso o botão não
+  /// falhava logo: o seletor de conta do Google ABRIA, a pessoa escolhia a
+  /// conta, e só então vinha a recusa do servidor. Pior que não aparecer —
+  /// parece que o app quebrou no meio.
+  ///
+  /// Isto é uma **constante de compilação**, e não há como ser diferente: o
+  /// app não tem como perguntar ao Supabase se o provedor está ligado sem
+  /// tentar entrar. Ao configurar o Google no painel do Supabase, troque
+  /// para `true` e publique versão nova — nas duas pontas ou em nenhuma.
+  ///
+  /// Decidido com o dono em 23/11/2026, a 3 dias do Top: esconder. E não é
+  /// só para evitar erro na tela — conta criada pelo Google nasce **sem o
+  /// número do Legendários** (`handle_new_user` põe o uuid no lugar), então
+  /// quem entrasse por ali nunca mais entraria pelo número e ficaria fora
+  /// do Top, exigindo conserto manual do admin, um por um. Com 216 pessoas
+  /// isso não escala. O caminho é número + senha.
+  static const googleProvedorLigado = false;
+
   /// Se o botão "Entrar com Google" deve aparecer neste aparelho.
   ///
   /// No iOS só com o client ID configurado. Esconder é melhor que mostrar
   /// um botão que fecha o app: quem toca nele acha que o app quebrou, e
   /// número + senha continua funcionando.
   static bool get googleDisponivel =>
-      kIsWeb ||
-      defaultTargetPlatform != TargetPlatform.iOS ||
-      _googleIosClientId.isNotEmpty;
+      googleProvedorLigado &&
+      (kIsWeb ||
+          defaultTargetPlatform != TargetPlatform.iOS ||
+          _googleIosClientId.isNotEmpty);
 
   /// Login nativo com Google: pega o ID token da conta Google do aparelho
   /// e troca por uma sessão do Supabase — sem senha, sem e-mail.
