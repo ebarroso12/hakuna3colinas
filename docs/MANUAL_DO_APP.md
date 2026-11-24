@@ -1,6 +1,6 @@
 ---
 title: "Legendários Connect — Manual"
-subtitle: "Aplicativo de coordenação dos Tops · versão 1.0.52"
+subtitle: "Aplicativo de coordenação dos Tops · versão 1.0.53"
 date: "24 de novembro de 2026"
 lang: pt-BR
 ---
@@ -33,12 +33,12 @@ falta de rede.
 
 Abra o navegador do celular e digite este endereço:
 
-**github.com/ebarroso12/hakuna3colinas/releases/download/v1.0.52/legendarios1.0.52.apk**
+**github.com/ebarroso12/hakuna3colinas/releases/download/v1.0.53/legendarios1.0.53.apk**
 
 Se o seu celular for antigo (comprado antes de 2019), use este em vez do de
 cima:
 
-**github.com/ebarroso12/hakuna3colinas/releases/download/v1.0.52/legendarios1.0.52-32bits.apk**
+**github.com/ebarroso12/hakuna3colinas/releases/download/v1.0.53/legendarios1.0.53-32bits.apk**
 
 São uns 29 MB. Baixa sem precisar de login.
 
@@ -353,6 +353,9 @@ Dentro do Top, no menu de três pontinhos:
 | Promover alguém a admin | não | não | não | não | **só ele** |
 | Mudar regras de triagem | não | não | não | não | **só ele** |
 | Gerar a senha do Top e abrir o cadastro | não | não | não | não | **só ele** |
+| **Fechar** o cadastro | não | não | não | **sim** | sim |
+| **Aceitar** quem não está na lista | não | não | não | não | **só ele** |
+| **Deixar de aceitar** quem não está na lista | não | não | não | **sim** | sim |
 
 As **nove equipes** e os **três cargos** são fixos — não é possível criar
 outros pelo app.
@@ -376,6 +379,35 @@ Anuncie ao grupo assim:
 > Baixe o app, toque em **Primeiro acesso**, digite o **seu número dos
 > Legendários** e a senha do Top **XXXXXXXX**. Preencha sua ficha e crie a
 > sua senha. Depois você entra só com o seu número e a sua senha.
+
+## Quem pode se cadastrar: o interruptor da lista
+
+Ainda na tela da senha há um segundo interruptor, **"Só quem está na lista
+do Top" / "Aceita quem NÃO está na lista"**.
+
+| Posição | O que acontece |
+|---|---|
+| **Só quem está na lista** (padrão) | Para se cadastrar é preciso a senha **e** o número estar na lista de participantes do Top. Duas trancas. |
+| **Aceita quem não está na lista** | A senha **basta**. Qualquer número se cadastra, e a ficha é criada com o que a própria pessoa digitar. |
+
+**Ligar é só do administrador master**, e o app pede confirmação explicando
+o que muda. **Desligar qualquer administrador pode** — desligar é o lado
+seguro.
+
+**Para que serve:** Top que começa sem lista de participantes. Com o
+interruptor ligado, o autocadastro deixa de depender da lista e passa a ser
+**o jeito de montar a lista** — feita pelas próprias pessoas, que são as que
+sabem os dados.
+
+> **O que se perde, dito sem enfeite.** Ligado, a lista deixa de ser a
+> segunda tranca: quem receber a senha repassada entra, com qualquer número.
+> Quem entra assim vê o Top, lê o chat geral e pode disparar alarme — **não**
+> alcança prontuário nem a posição dos outros. A proteção é fechar o cadastro
+> depois que a equipe entrar.
+
+Fichas criadas assim ficam marcadas com *"ficha criada no autocadastro"* na
+tela de participantes. É por aí que o administrador confere se a lista
+oficial aparecer depois.
 
 ## Fechar depois do evento
 
@@ -426,4 +458,4 @@ Dito com clareza, para ninguém contar com o que não existe:
 
 ---
 
-*Legendários Connect · versão 1.0.52 · 24 de novembro de 2026*
+*Legendários Connect · versão 1.0.53 · 24 de novembro de 2026*
