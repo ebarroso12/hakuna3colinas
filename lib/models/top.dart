@@ -8,6 +8,27 @@ TopStatus topStatusFromString(String value) {
 }
 
 class Top {
+  /// As colunas que [Top.fromMap] lê, na forma que o PostgREST espera.
+  ///
+  /// Existe como constante porque **`select()` sem lista é `select *`**, e
+  /// `*` arrastava `access_code_hash` — o hash da senha do Top — para todo
+  /// aparelho. Medido em 24/11/2026: um membro comum aprovado lia a coluna.
+  ///
+  /// Duas armadilhas que esta constante fecha:
+  ///
+  /// 1. **Duas consultas divergirem.** `fetchMyTops` e
+  ///    `AdminService.createTop` leem a mesma tabela; a segunda ficou com
+  ///    `select()` pelado e só não quebrou porque o `revoke` da coluna
+  ///    ainda não entrou.
+  /// 2. **Esquecer uma coluna nova aqui.** O default de
+  ///    `autocadastro_liberado` em [fromMap] é `true`, ou seja, falha
+  ///    ABERTA: a coluna ausente diria que o cadastro está aberto. Travado
+  ///    por `test/top_select_tem_todas_as_colunas_test.dart`.
+  static const colunasSelect =
+      'id, name, top_number, location, cidade, diretor_responsavel, '
+      'emblema_path, description, status, starts_at, ends_at, '
+      'autocadastro_liberado, aceitar_fora_da_lista';
+
   final String id;
   final String name;
   final String? topNumber;

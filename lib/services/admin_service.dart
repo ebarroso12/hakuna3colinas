@@ -137,7 +137,11 @@ class AdminService {
           'starts_at': startsAt?.toIso8601String(),
           'ends_at': endsAt?.toIso8601String(),
         })
-        .select()
+        // Colunas explícitas, nunca `select()` pelado: `*` traria
+        // `access_code_hash`, e quando o `revoke` daquela coluna entrar um
+        // `select *` aqui faria a CRIAÇÃO DE TOP falhar — em qualquer
+        // versão do app, inclusive a nova.
+        .select(Top.colunasSelect)
         .single();
     return Top.fromMap(row);
   }

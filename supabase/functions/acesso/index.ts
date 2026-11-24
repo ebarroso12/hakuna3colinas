@@ -109,8 +109,12 @@ async function hash(texto: string): Promise<string> {
  * SHA-256 cru seria pior que o erro -- pareceria funcionar e estaria
  * desprotegido.
  *
- * Se o pepper for trocado algum dia, toda senha de Top em vigor para de
- * valer e precisa ser gerada de novo. Nao trocar sem querer isso.
+ * Trocar OU PERDER o pepper invalida toda senha de Top em vigor, de todos
+ * os Tops, de uma vez. Ele vive so nos segredos desta funcao: nao esta no
+ * repositorio, nao esta no banco, nao esta em backup nenhum. Guardar uma
+ * copia fora da maquina do dono e obrigacao dele, mesma categoria do
+ * keystore. Reversivel (o master gera senha nova pela tela), mas custa
+ * reanunciar a 216 pessoas.
  */
 async function hashDoTop(texto: string): Promise<string> {
   const pepper = Deno.env.get('SENHA_TOP_PEPPER') ?? ''
@@ -225,23 +229,24 @@ async function validarConvite(
 
   if (erroCodigo) return { erro: 'falha ao verificar a senha' }
 
-  const { data: top, error: erroTop } = codigo
-    ? await admin
-        .from('tops')
-        .select(
-          'id, name, status, autocadastro_liberado, aceitar_fora_da_lista',
-        )
-        .eq('id', codigo.top_id)
-        .maybeSingle()
-    : { data: null, error: null };
-
-  if (erroTop) return { erro: 'falha ao verificar a senha' }
-
   // Mensagem IDENTICA para senha errada e para numero fora da lista. Sao
   // causas diferentes, mas distingui-las na resposta transformaria isto
   // num oraculo: daria para descobrir quem esta inscrito num Top testando
   // numeros com uma senha qualquer.
   const recusa = { erro: 'numero ou senha do Top incorretos' }
+
+  // Sai aqui em vez de levar `codigo` nulo num ternario ate a consulta
+  // seguinte: menos um estado para o leitor carregar, e nao depende de como
+  // o TS alarga a uniao com `PostgrestSingleResponse`.
+  if (!codigo) return recusa
+
+  const { data: top, error: erroTop } = await admin
+    .from('tops')
+    .select('id, name, status, autocadastro_liberado, aceitar_fora_da_lista')
+    .eq('id', codigo.top_id)
+    .maybeSingle()
+
+  if (erroTop) return { erro: 'falha ao verificar a senha' }
   if (!top) return recusa
 
   if (top.status === 'draft') {
@@ -512,6 +517,25 @@ Deno.serve(async (req) => {
   const admin = createClient(url, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   })
+
+  // O pepper e conferido AQUI, e nao so dentro de `hashDoTop`.
+  //
+  // `hashDoTop` falha fechada levantando -- o que esta certo, porque cair de
+  // volta no SHA-256 cru pareceria funcionar e estaria desprotegido. Mas uma
+  // excecao escapando deste handler vira **500 cru, sem os headers de CORS e
+  // sem corpo JSON**: o app nao tem o que mostrar, e no build web o navegador
+  // bloqueia a resposta antes de qualquer `catch` do Dart. Ou seja: falha
+  // fechada, porem indiagnosticavel.
+  //
+  // Acontece de verdade se o segredo nao estiver configurado -- projeto
+  // recriado, rotacao de segredo, deploy novo. Entao o erro sai aqui,
+  // nomeando o que falta, para quem le o log saber em um segundo.
+  if (!Deno.env.get('SENHA_TOP_PEPPER')) {
+    return json({
+      error: 'servidor sem SENHA_TOP_PEPPER configurado: a senha do Top nao ' +
+        'pode ser conferida nem gerada. Avise o administrador.',
+    }, 500)
+  }
 
   let corpo: Record<string, unknown>
   try {
@@ -1055,28 +1079,25 @@ Deno.serve(async (req) => {
 
     const senha = gerarSenhaDoTop()
 
-    // O Top PRIMEIRO, e sem tocar na senha: se o id nao existir, nada e
-    // gravado em `top_access_codes` e nao sobra codigo orfao apontando para
-    // Top nenhum.
+    // A SENHA PRIMEIRO, o cadastro depois. A ordem importa e foi corrigida
+    // em 24/11/2026, numa revisao de codigo.
     //
-    // `autocadastro_liberado: true` porque gerar senha e querer que gente
-    // se cadastre -- sem isto o admin geraria a senha, anunciaria ao grupo e
-    // so descobriria depois que o cadastro estava fechado. Esta linha
-    // existia SO na versao publicada (v9) e nao no repositorio; trazida de
-    // volta em 28/10/2026, senao o deploy a apagaria em silencio.
-    const { data: top, error } = await admin
-      .from('tops')
-      .update({ autocadastro_liberado: true })
-      .eq('id', topId)
-      .select('id, name, top_number, status')
-      .maybeSingle()
-
-    if (error) return json({ error: error.message }, 400)
-    if (!top) return json({ error: 'Top nao encontrado' }, 404)
-
-    // Agora a senha, fora de `tops`. `upsert` por `top_id` porque gerar de
-    // novo SUBSTITUI a senha do Top -- e assim que se corta o acesso se ela
-    // vazar para fora do grupo.
+    // Na ordem inversa (abrir o cadastro, depois gravar a senha), falhar no
+    // segundo passo deixava o PIOR estado possivel: cadastro **ABERTO** com
+    // a senha **antiga** valendo -- mudanca persistente que o admin nao
+    // pediu, num caminho de erro. Com `aceitar_fora_da_lista` ligado isso e
+    // exatamente "a senha basta" mais a porta aberta.
+    //
+    // Nesta ordem o pior caso e "senha nova vale, cadastro nao abriu", que
+    // `validarConvite` reporta com mensagem propria ("o cadastro deste Top
+    // esta FECHADO") em vez de dar acesso a quem nao devia.
+    //
+    // E o medo que justificava a ordem antiga -- codigo orfao apontando para
+    // Top nenhum -- nao existe: `top_access_codes.top_id` e FK para
+    // `tops(id)`, entao id invalido falha com 23503 e nada e gravado.
+    //
+    // `upsert` por `top_id` porque gerar de novo SUBSTITUI a senha do Top --
+    // e assim que se corta o acesso se ela vazar para fora do grupo.
     const { error: erroCodigo } = await admin
       .from('top_access_codes')
       .upsert({
@@ -1086,15 +1107,37 @@ Deno.serve(async (req) => {
         set_by: user.id,
       }, { onConflict: 'top_id' })
 
-    // Falhou aqui: o cadastro ficou ABERTO e a senha nao trocou. Dizer isso
-    // em vez de devolver uma senha que nao vale -- o admin anunciaria ao
-    // grupo e 216 pessoas ouviriam "senha incorreta".
     if (erroCodigo) {
+      // 23503 = o `top_id` nao existe. Vale a pena distinguir: "Top nao
+      // encontrado" e erro do admin; o resto e erro do servidor.
+      const naoExiste = erroCodigo.code === '23503'
       return json({
-        error: 'o Top foi aberto mas a senha NAO foi gravada: ' +
-          erroCodigo.message + '. A senha anterior continua valendo.',
+        error: naoExiste
+          ? 'Top nao encontrado'
+          : 'a senha NAO foi gravada: ' + erroCodigo.message +
+            '. A senha anterior continua valendo e o cadastro nao foi aberto.',
+      }, naoExiste ? 404 : 400)
+    }
+
+    // Agora abre o cadastro: gerar senha e querer que gente se cadastre.
+    // Sem isto o admin geraria a senha, anunciaria ao grupo e so descobriria
+    // depois que o cadastro estava fechado. Esta linha existia SO na versao
+    // publicada (v9) e nao no repositorio; trazida de volta em 28/10/2026,
+    // senao o deploy a apagaria em silencio.
+    const { data: top, error } = await admin
+      .from('tops')
+      .update({ autocadastro_liberado: true })
+      .eq('id', topId)
+      .select('id, name, top_number, status')
+      .maybeSingle()
+
+    if (error) {
+      return json({
+        error: 'a senha NOVA ja vale, mas o cadastro nao foi aberto: ' +
+          error.message + '. Abra o cadastro na tela do Top.',
       }, 400)
     }
+    if (!top) return json({ error: 'Top nao encontrado' }, 404)
 
     // A senha em claro volta UMA vez, so para o admin que pediu. O banco
     // guarda apenas o hash: se o admin perder, gera outra (e a anterior

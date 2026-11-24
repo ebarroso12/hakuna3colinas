@@ -1,0 +1,57 @@
+-- ===========================================================================
+-- UM NÚMERO POR TOP — RESGATADO DE UM ARQUIVO QUE AGORA SE RECUSA A RODAR
+--
+-- Este arquivo existe por um efeito colateral que eu mesmo criei em
+-- 24/11/2026, e vale registrar o mecanismo porque ele se repete.
+--
+-- `idx_tops_numero_unico` era criado **só** por
+-- `07_senha_do_top_so_o_master.sql`. No mesmo dia, o `07` ganhou uma guarda
+-- que **levanta 42501** se a trava do Top já estiver na versão nova — para
+-- impedir que reexecutá-lo rebaixasse a trava em silêncio. A guarda está
+-- certa; mas ela roda no TOPO do arquivo, então tudo o que vinha depois
+-- ficou inalcançável, inclusive este índice.
+--
+-- Em produção ele existe (foi criado antes da guarda). Mas um banco
+-- reconstruído deste repositório sairia **sem** ele, e nada avisaria.
+--
+-- **A lição, que é a parte reutilizável:** guarda que aborta um arquivo
+-- inteiro transforma em órfão todo objeto que aquele arquivo era o único a
+-- criar. Ao pôr uma guarda dessas, a pergunta seguinte é obrigatória —
+-- *"o que mais este arquivo criava?"*. Da primeira vez eu não fiz essa
+-- pergunta; quem achou foi a revisão de código.
+--
+-- ---------------------------------------------------------------------------
+-- POR QUE A UNICIDADE DO NÚMERO IMPORTA
+--
+-- O pedido de acesso pede "número do Legendários **e número do Top**"
+-- (`access_requests.top_number`, o que foi DIGITADO). Dois Tops com o mesmo
+-- número deixariam o admin sem saber de qual evento a pessoa está falando —
+-- e a liberação é feita olhando essa tela.
+--
+-- Parcial (`where top_number is not null`) de propósito: vários Tops em
+-- rascunho, ainda sem número, convivem. Em Postgres NULL não conflita com
+-- NULL num índice único, então o `where` não é estritamente necessário —
+-- ele deixa a intenção explícita e não indexa linha que não tem o valor.
+--
+-- **Aqui o parcial é seguro**, ao contrário dos índices de `client_id`:
+-- este não é alvo de `onConflict` em lugar nenhum (`AdminService.createTop`
+-- usa `insert`, e `updateTop` usa `update ... eq`). O que quebra com índice
+-- parcial é a inferência do `ON CONFLICT` (bug da v1.0.29).
+--
+-- A unicidade da SENHA não está aqui: desde
+-- `16_senha_do_top_fora_da_tabela_lida.sql` ela é
+-- `idx_top_access_codes_hash`, em `top_access_codes` — o hash saiu de
+-- `tops`, que é legível por toda conta aprovada.
+-- ===========================================================================
+
+create unique index if not exists idx_tops_numero_unico
+  on public.tops (top_number)
+  where top_number is not null;
+
+-- ---------------------------------------------------------------------------
+-- Conferência:
+--   select indexrelid::regclass from pg_index
+--    where indrelid = 'public.tops'::regclass;
+--   -- deve conter idx_tops_numero_unico, e NÃO conter
+--   -- idx_tops_access_code_unico (dropado no 16).
+-- ---------------------------------------------------------------------------

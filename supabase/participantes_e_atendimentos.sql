@@ -73,8 +73,14 @@ alter table public.atendimentos
 
 -- client_id unico: o mesmo atendimento reenviado apos queda de rede nao
 -- pode virar dois registros no historico clinico.
+-- NAO PARCIAL. Era `where client_id is not null` e isso e exatamente o
+-- bug da v1.0.29: o Postgres nao infere indice parcial na forma simples do
+-- `ON CONFLICT`, entao `upsert(onConflict: 'client_id')` falha com 42P10 e
+-- a fila manda todo atendimento para quarentena. NULL nao conflita com
+-- NULL em indice unico, logo a versao completa tambem aceita as linhas
+-- antigas sem `client_id`.
 create unique index if not exists idx_atendimentos_client_id
-  on public.atendimentos (client_id) where client_id is not null;
+  on public.atendimentos (client_id);
 -- Este indice JAMAIS foi criado neste banco, e a causa demorou a
 -- aparecer. Em 23/11/2026 eu concluí que a coluna "nunca se chamou
 -- `participant_id`" e troquei o indice para `senderista_id`. **Estava

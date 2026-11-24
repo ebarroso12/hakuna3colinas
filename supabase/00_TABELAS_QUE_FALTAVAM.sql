@@ -217,7 +217,14 @@ create table if not exists public.top_team_members (
   team_role  team_role not null default 'membro',
   released   boolean   not null default false,
   blocked    boolean   not null default false,
-  is_team_admin boolean,
+  -- GERADA, como em producao. Era `boolean` comum aqui, e um banco
+  -- reconstruido deste arquivo sairia com a coluna sempre NULA --
+  -- `is_team_admin(top_id, team)` devolveria falso para todo coordenador.
+  -- Inserir valor nela levanta 428C9, de proposito.
+  is_team_admin boolean generated always as (
+    team_role = any (array['coordenador'::team_role,
+                           'subcoordenador'::team_role])
+  ) stored,
   created_at timestamptz not null default now(),
 
   -- Uma pessoa, uma linha por equipe. Sem isto, incluir duas vezes criaria
@@ -236,9 +243,21 @@ alter table public.top_team_members enable row level security;
 -- Cada um vê os próprios vínculos; admin vê todos. Sem a parte do admin, a
 -- tela "Equipes do Top" ficaria vazia justamente para quem monta as equipes.
 drop policy if exists top_team_members_select on public.top_team_members;
+-- `is_team_admin(top_id, team)` faz parte desta policy desde
+-- `12_coordenador_ve_a_equipe_dele.sql`. Esta linha ficou com a versao
+-- ANTIGA (`profile_id = auth.uid() or is_admin()`) ate 24/11/2026, e como
+-- este arquivo da `drop policy if exists` do proprio nome, roda-lo sozinho
+-- REBAIXAVA controle de acesso em silencio: o coordenador voltava a ter
+-- poder sobre a equipe e a nao ver ninguem (update/delete leem as linhas, e
+-- essa leitura passa pelo SELECT). Sem recursao: `is_team_admin` e
+-- `security definer` e nao passa pela RLS.
 create policy top_team_members_select
   on public.top_team_members for select
-  using (profile_id = auth.uid() or is_admin());
+  using (
+    profile_id = auth.uid()
+    or is_admin()
+    or is_team_admin(top_id, team)
+  );
 
 -- Só admin monta equipe. Coordenador incluir membro é decisão de produto que
 -- ainda não foi tomada — e policy mais aberta do que a decisão é como se
@@ -287,9 +306,10 @@ create table if not exists public.team_messages (
   client_id   uuid
 );
 
+-- NAO PARCIAL, igual a producao: `upsert(onConflict: 'client_id')` do chat
+-- offline nao infere indice parcial (bug da v1.0.29).
 create unique index if not exists idx_team_messages_client_id
-  on public.team_messages (client_id)
-  where client_id is not null;
+  on public.team_messages (client_id);
 create index if not exists idx_team_messages_sender
   on public.team_messages (sender_id);
 create index if not exists idx_team_messages_conversa

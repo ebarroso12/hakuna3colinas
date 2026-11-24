@@ -1509,8 +1509,13 @@ Três coisas que não se pode mexer sem entender:
 
 1. **Falha fechada.** Sem o segredo, `hashDoTop` levanta. Cair de volta no
    SHA-256 cru pareceria funcionar e estaria desprotegido — pior que o erro.
-2. **Trocar o pepper invalida toda senha de Top em vigor.** Não trocar sem
-   querer isso.
+2. **Trocar OU PERDER o pepper invalida toda senha de Top em vigor** — de
+   todos os Tops, de uma vez. O pepper vive só nos segredos da Edge
+   Function: não está no repositório, não está no banco, não está em backup
+   nenhum. **Guardar uma cópia fora desta máquina é obrigação do dono do
+   projeto**, mesma categoria do keystore `.jks`. A diferença: perder o
+   pepper é reversível (o master gera senha nova pela tela), mas custa
+   **reanunciar a 216 pessoas** — e no dia do evento isso é caro.
 3. **O código individual (`access_requests.code_hash`) continua no `hash()`
    simples, e isso foi conferido, não presumido:** `access_requests` **não
    tem policy de SELECT nenhuma**, e RLS sem policy nega para todos. Aquele
@@ -1822,6 +1827,144 @@ uma tabela de prontuário, então: fotografia das assinaturas (nome, comando,
 roles, `using`, `with check`) antes, roda duas vezes, fotografia depois,
 `diff`. Saiu **vazio** — as 12 ficaram idênticas, caractere por caractere. É
 a diferença entre "escrevi o arquivo" e "o arquivo é a produção".
+
+### A revisão de código de 24/11/2026: seis defeitos, três deles criados no mesmo dia
+
+Depois das duas rodadas de conserto, o dono pediu uma revisão de código
+formal. Ela achou **um crítico e cinco importantes** — e três eram efeito
+colateral dos próprios consertos. Vale registrar, porque o padrão se repete:
+**mexer em arquivo histórico conserta uma coisa e desarma outra.**
+
+#### O crítico: remover um índice duplicado deixou o `drop` órfão
+
+`revisao_completa_correcoes.sql` tinha, nesta ordem:
+
+```sql
+drop index if exists idx_atendimentos_client_id;   -- linha 84
+...
+create unique index atendimentos_client_id_key     -- linha 95, a duplicata
+  on public.atendimentos (client_id);
+```
+
+O `drop` só existia porque o `create` logo abaixo recriava a unicidade sob o
+outro nome. Ao apagar a duplicata (`15_indices_duplicados.sql`) eu removi o
+`create` e **deixei o `drop`**.
+
+E este arquivo é o **último** a falar sobre esse índice numa reexecução
+ordenada: `participantes_e_atendimentos.sql` <
+`revisao_10_10_correcoes.sql` < `revisao_completa_correcoes.sql`. Resultado
+de um banco reconstruído deste repositório: `atendimentos.client_id` **sem
+unicidade**, `upsert(onConflict: 'client_id')` devolvendo **42P10**, que
+`_motivoPermanente` classifica como PERMANENTE — e **todo atendimento indo
+para quarentena**. Dado clínico, sem erro visível em lugar nenhum.
+
+Produção não estava afetada (o índice existia). O gatilho é qualquer replay
+— e este projeto reconstruiu o banco do zero no dia anterior.
+
+**A regra: `drop` e `create` do mesmo objeto são um PAR. Ao remover um
+`create` de um arquivo, procure o `drop` que o acompanhava.** Um `drop`
+sozinho num arquivo que roda por último é a forma mais silenciosa de perder
+uma constraint.
+
+No mesmo rastro apareceu um segundo defeito, independente e mais antigo:
+`participantes_e_atendimentos.sql` criava o mesmo índice **parcial**
+(`where client_id is not null`), que pela regra deste arquivo já quebra
+`onConflict` (bug da v1.0.29). Os dois agora criam completo.
+
+#### Guarda que aborta o arquivo inteiro deixa órfão o que vem depois
+
+As guardas postas em `07` e `11` (levantar 42501 em vez de rebaixar a trava)
+rodam **no topo** do arquivo. Correto para o que elas protegem — e elas
+tornaram **inalcançável tudo o que vinha depois**, inclusive
+`idx_tops_numero_unico`, que `07` era o **único** arquivo a criar.
+
+Em produção o índice existe (foi criado antes da guarda); um banco
+reconstruído sairia sem ele, calado. Resgatado em
+`14_idx_tops_numero_unico.sql`.
+
+**A regra: ao pôr uma guarda que aborta um arquivo, a pergunta seguinte é
+obrigatória — "o que mais este arquivo criava?"** Guarda que protege um
+objeto e abandona três não é conserto, é troca de defeito.
+
+#### `00_TABELAS_QUE_FALTAVAM.sql` rebaixava controle de acesso a prontuário
+
+O arquivo-base da reconstrução dá `drop policy if exists` do próprio nome e
+recriava `top_team_members_select` na versão **pré-12**
+(`profile_id = auth.uid() or is_admin()`) — exatamente a policy que deixava
+o coordenador com poder sobre a equipe e **sem ver ninguém**. Rodá-lo
+sozinho rebaixava a RLS em silêncio.
+
+Também declarava `is_team_admin boolean` comum (produção tem **GERADA**, e
+sem isso `is_team_admin()` devolveria falso para todo coordenador) e criava
+`idx_team_messages_client_id` **parcial** (produção tem completo — o
+`onConflict` do chat offline depende dele).
+
+Os três alinhados com produção. **Arquivo-base de reconstrução não é
+história: ele tem de descrever o presente**, senão cada conserto posterior
+vira uma corrida entre arquivos.
+
+#### Ordem de duas escritas: o pior estado não pode morar no caminho de erro
+
+`gerar_senha_top` escrevia na ordem: abre o cadastro, depois grava a senha.
+Falhando o segundo passo, o estado persistente era o **pior possível** —
+cadastro **ABERTO** com a senha **antiga** valendo, mudança que o admin não
+pediu. Com `aceitar_fora_da_lista` ligado é "a senha basta" mais a porta
+aberta.
+
+Invertido: senha primeiro. O medo que justificava a ordem antiga — código
+órfão apontando para Top nenhum — **não existe**, e isso foi medido:
+`top_access_codes.top_id` é FK para `tops(id)`, então id inválido falha com
+**23503** e nada é gravado (conferido: a tabela ficou com as mesmas linhas).
+
+Agora o pior caso é "senha nova vale, cadastro não abriu", que
+`validarConvite` reporta com mensagem própria em vez de dar acesso.
+
+**A regra: numa sequência de escritas sem transação, ordene para que a
+falha intermediária deixe o estado MAIS restritivo, não o mais permissivo.**
+
+#### Falhar fechado também precisa de entrega
+
+`hashDoTop` levanta se o pepper não estiver configurado — certo, porque cair
+no SHA-256 cru pareceria funcionar e estaria desprotegido. Mas o
+`Deno.serve` **não tem `try/catch` global**: a exceção virava **500 cru, sem
+os headers de CORS e sem corpo JSON**. No app não cai em mensagem tratada
+nenhuma, e no build web o navegador bloqueia a resposta antes de qualquer
+`catch` do Dart.
+
+Ou seja: falha fechada e **indiagnosticável** — o pior dos dois mundos para
+quem está no suporte. Hoje o pepper é conferido no topo do handler e o erro
+sai nomeando o segredo que falta.
+
+#### A lista de colunas precisava de guarda, e o default dela falha ABERTO
+
+Trocar `select()` por lista explícita resolveu o vazamento do hash e criou
+duas armadilhas novas:
+
+1. **Duas consultas divergirem.** `fetchMyTops` ganhou a lista;
+   `AdminService.createTop` ficou com `.select()` pelado e só não quebrou
+   porque o `revoke` da coluna ainda não entrou — quando entrar, **criar Top
+   falharia em qualquer versão do app**.
+2. **Esquecer uma coluna nova na lista.** O default de
+   `autocadastro_liberado` em `Top.fromMap` é `true`, de propósito — então
+   coluna fora da lista faz o app **afirmar que o cadastro está aberto** sem
+   ter perguntado ao servidor. Falha aberta, silenciosa.
+
+Hoje a lista é `Top.colunasSelect`, uma constante só, e
+`test/top_select_tem_todas_as_colunas_test.dart` trava as duas pontas: toda
+chave lida por `fromMap` está na lista, nada além dela está, as três colunas
+de senha **nunca** aparecem, e nenhum `from('tops')` volta a usar
+`.select()` pelado. Com auto-teste do varredor, pela razão já registrada
+neste arquivo: guarda que não é verificada é pior que guarda nenhuma.
+
+#### O que a revisão NÃO conseguiu verificar, e por isso continua sendo tarefa
+
+A restrição dura — "a senha em circulação tem de continuar valendo" — **não
+é verificável lendo o repositório**. O que dá para provar daqui é
+`validar_convite` contra a função publicada (feito, depois de cada passo, e
+de novo na v10). A prova completa é um `cadastrar` de verdade com a senha que
+está com o dono, em conta marcada `is_teste` e apagada depois. É o método que
+este arquivo prescreve — "este fluxo funciona chamando de verdade?" — e é
+decisão do dono, porque cria ficha no Top real.
 
 ## Pendências conhecidas
 

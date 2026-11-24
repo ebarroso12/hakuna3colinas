@@ -495,11 +495,7 @@ class SupabaseService {
     // ele quebraria todo APK <= 1.0.52, que ainda manda `*`.
     final rows = await _client
         .from('tops')
-        .select(
-          'id, name, top_number, location, cidade, diretor_responsavel, '
-          'emblema_path, description, status, starts_at, ends_at, '
-          'autocadastro_liberado, aceitar_fora_da_lista',
-        )
+        .select(Top.colunasSelect)
         .order('starts_at', ascending: false);
     return rows.map((r) => Top.fromMap(r)).toList();
   }

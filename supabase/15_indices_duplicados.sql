@@ -39,10 +39,24 @@
 -- `schema.sql` foi reexecutado.
 --
 -- Então o conserto é nos dois lados: este arquivo apaga o que existe, e a
--- criação do nome descartado saiu do arquivo que a fazia. O nome que fica é
--- sempre o de `00_TABELAS_QUE_FALTAVAM.sql`, que é a base da reconstrução —
--- exceto em `atendimentos`, onde fica `idx_atendimentos_client_id`, criado
--- por três arquivos contra um.
+-- criação do nome descartado saiu do arquivo que a fazia.
+--
+-- O nome que fica é o criado pelo arquivo com mais chance de rodar, e isso
+-- **não é sempre o `00`** — a primeira versão deste cabeçalho dizia que era,
+-- e estava errada:
+--
+--   `idx_atendimentos_client_id` ....... `participantes_e_atendimentos.sql`
+--                                        (+ `revisao_10_10`, `revisao_completa`)
+--   `idx_audit_log_top` ................ `fila_offline_chat_e_auditoria.sql` (+ `00`)
+--   `idx_participants_perfil` .......... `auditoria_seguranca_e_indices.sql` (+ `00`)
+--   `idx_participants_registered_by` ... `00`
+--   `idx_participants_perfil_unico` .... `00`
+--   `idx_team_members_profile` ......... `00`
+--
+-- Consequência prática de dois deles não estarem no `00`: uma reconstrução
+-- limitada aos arquivos numerados sai sem `idx_audit_log_top` e sem
+-- `idx_participants_perfil`. São só performance — nenhum é alvo de
+-- `onConflict` nem sustenta unicidade.
 -- ===========================================================================
 
 -- atendimentos.client_id — os dois são UNIQUE; sobra o que 3 arquivos criam.

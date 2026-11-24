@@ -76,8 +76,34 @@ alter table public.top_access_codes enable row level security;
 -- juntos sobrevivem a alguém criar uma policy por engano.
 revoke all on public.top_access_codes from anon, authenticated;
 
+-- E o `grant` explicito de quem DEVE alcancar. Em producao funciona sem
+-- esta linha porque as default privileges do Supabase ja concederam na
+-- criacao; num banco com default privileges diferentes a Edge Function
+-- levaria 42501 aqui e o autocadastro inteiro morreria -- com a mensagem
+-- genERica de "senha incorreta", indistinguIvel de senha errada. A linha
+-- tambem documenta que este e o unico alcance pretendido.
+grant select, insert, update, delete on public.top_access_codes to service_role;
+
 -- ---------------------------------------------------------------------------
 -- Migra o que existe, sem inventar e sem perder
+--
+-- ATENCAO: este `insert` copia o hash **VERBATIM**. Ele NAO converte nada.
+--
+-- Em 24/11/2026 o hash da senha do Top deixou de ser SHA-256 cru e passou a
+-- ser HMAC com pepper (`hashDoTop`, na Edge Function). A reescrita do valor
+-- em vigor foi feita como acao de producao, FORA deste arquivo, antes de
+-- rodar este insert.
+--
+-- Entao: rodar este arquivo sobre um banco cujo `access_code_hash` ainda
+-- seja SHA-256 produz um `code_hash` que `hashDoTop` **nunca vai casar** --
+-- e a falha aparece como "numero ou senha do Top incorretos",
+-- indistinguivel de senha errada, para todo mundo que tentar se cadastrar.
+--
+-- Num banco reconstruido do zero isto nao acontece (nao ha senha antiga: o
+-- admin master gera a primeira pela tela, e ela ja nasce HMAC). O risco e
+-- so no caminho do meio: banco que tinha senha ANTES da mudanca. Nesse
+-- caso, a saida certa nao e converter -- nao da, o pepper nao desfaz
+-- SHA-256 -- e **gerar senha nova pela tela e reanunciar**.
 -- ---------------------------------------------------------------------------
 insert into public.top_access_codes (top_id, code_hash, set_at, set_by)
 select t.id, t.access_code_hash,
@@ -112,5 +138,9 @@ drop index if exists public.idx_tops_access_code_unico;
 --   select relrowsecurity from pg_class where relname='top_access_codes'; -> t
 --   select count(*) from pg_policy p join pg_class c on c.oid=p.polrelid
 --    where c.relname='top_access_codes';                                 -> 0
---   -- e, pela Edge Function publicada, a senha em vigor continua valendo.
+--   -- A senha em vigor continuar valendo NAO e garantido por este arquivo
+--   -- (ver o ATENCAO acima). Prova-se chamando a funcao publicada:
+--   --   POST /functions/v1/acesso
+--   --   {"acao":"validar_convite","numero":"<qualquer>","senha_top":"<a senha>"}
+--   -- tem de devolver `ok: true` com o top_id certo.
 -- ---------------------------------------------------------------------------

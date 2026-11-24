@@ -76,7 +76,7 @@ abstract final class ColunasEstado {
 
   static const criar =
       '''
-    CREATE TABLE ${Tabelas.estado} (
+    CREATE TABLE IF NOT EXISTS ${Tabelas.estado} (
       $chave      TEXT PRIMARY KEY,
       $valor      TEXT,
       $gravadoEm  INTEGER NOT NULL
@@ -166,7 +166,7 @@ abstract final class ColunasParticipante {
 
   static const criar =
       '''
-    CREATE TABLE ${Tabelas.participantes} (
+    CREATE TABLE IF NOT EXISTS ${Tabelas.participantes} (
       $id                       TEXT PRIMARY KEY,
       $topId                    TEXT NOT NULL,
       $fullName                 TEXT NOT NULL,
@@ -224,7 +224,7 @@ abstract final class ColunasAfericao {
 
   static const criar =
       '''
-    CREATE TABLE ${Tabelas.ultimaAfericao} (
+    CREATE TABLE IF NOT EXISTS ${Tabelas.ultimaAfericao} (
       $participantId  TEXT PRIMARY KEY,
       $topId          TEXT NOT NULL,
       $systolicBp     INTEGER,
@@ -253,7 +253,7 @@ abstract final class ColunasTag {
   /// e nada mais. Essa é a busca que precisa ser instantânea no mato.
   static const criar =
       '''
-    CREATE TABLE ${Tabelas.tags} (
+    CREATE TABLE IF NOT EXISTS ${Tabelas.tags} (
       $token          TEXT PRIMARY KEY,
       $id             TEXT NOT NULL,
       $participantId  TEXT NOT NULL,
@@ -288,7 +288,7 @@ abstract final class ColunasRegraTriagem {
 
   static const criar =
       '''
-    CREATE TABLE ${Tabelas.regrasTriagem} (
+    CREATE TABLE IF NOT EXISTS ${Tabelas.regrasTriagem} (
       $id                INTEGER PRIMARY KEY,
       $color             TEXT NOT NULL,
       $label             TEXT NOT NULL,
@@ -374,7 +374,7 @@ abstract final class ColunasMensagem {
 
   static const criar =
       '''
-    CREATE TABLE ${Tabelas.mensagens} (
+    CREATE TABLE IF NOT EXISTS ${Tabelas.mensagens} (
       $chave      TEXT PRIMARY KEY,
       $entidade   TEXT    NOT NULL,
       -- NULL no que chegou por radio: nunca passou pelo servidor, entao
@@ -464,7 +464,7 @@ abstract final class ColunasTop {
 
   static const criar =
       '''
-    CREATE TABLE ${Tabelas.tops} (
+    CREATE TABLE IF NOT EXISTS ${Tabelas.tops} (
       $donoId                TEXT    NOT NULL,
       $id                    TEXT    NOT NULL,
       $name                  TEXT    NOT NULL,

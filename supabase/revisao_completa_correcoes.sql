@@ -92,11 +92,23 @@ alter table public.atendimentos
 alter table public.atendimento_fotos
   alter column client_id type uuid using nullif(client_id, '')::uuid;
 
--- REMOVIDO em 24/11/2026: criava um indice IDENTICO a idx_atendimentos_client_id, e o
--- Postgres obedecia aos dois -- duas estruturas iguais na mesma tabela,
--- custando escrita em todo insert. Ver 15_indices_duplicados.sql, que
--- apaga o que ja existia. A criacao sai daqui para o duplicado nao
--- VOLTAR na proxima reconstrucao do banco.
+-- Em 24/11/2026 esta linha criava `atendimentos_client_id_key`, um indice
+-- IDENTICO a `idx_atendimentos_client_id` (ver 15_indices_duplicados.sql).
+-- Ao remover a duplicata eu quase criei um defeito pior: o
+-- `drop index if exists idx_atendimentos_client_id` logo acima ficou ORFAO,
+-- e este arquivo e o ULTIMO a falar sobre esse indice numa reexecucao
+-- (`participantes...` < `revisao_10_10...` < `revisao_completa...`).
+--
+-- Resultado de um banco reconstruido: `atendimentos.client_id` SEM
+-- unicidade, `upsert(onConflict: 'client_id')` devolvendo 42P10, que
+-- `_motivoPermanente` classifica como PERMANENTE -- e TODO atendimento
+-- indo para quarentena. Dado clinico. Achado na revisao do mesmo dia.
+--
+-- Entao o `drop` acima passa a ter par: recria sob o nome que fica.
+-- NAO PARCIAL -- o Postgres nao infere indice parcial na forma simples do
+-- `ON CONFLICT` (bug da v1.0.29).
+create unique index if not exists idx_atendimentos_client_id
+  on public.atendimentos (client_id);
 create unique index atendimento_fotos_client_id_key
   on public.atendimento_fotos (client_id);
 
