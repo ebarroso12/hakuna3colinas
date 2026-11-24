@@ -2113,32 +2113,58 @@ a suíte e pega o que a varredura textual é cega para ver.
   vazada e ver se passa. A traducao da mensagem ja esta em
   `friendlyAuthError`.
 
-- **O Top novo está VAZIO, e é o que falta para o app servir.** Estado em
-  23/11/2026, conferido no banco: Top "TRACK 3 Colinas 1 ano"
+- **O Top já está identificado e o cadastro está ABERTO.** Estado em
+  24/11/2026, lido no banco (não deduzido): Top "TRACK 3 Colinas 1 ano"
   (`46d03f35-8588-4fb4-8afb-8bd0416d70bc`), `active`, 26/11 00:00 →
-  29/11 23:59, Franca-SP. **0 fichas**, 1 perfil (o admin master), 1 Hakuna
-  liberado (o admin, liberado em 23/11 — sem ele ninguém registra
-  atendimento, porque a cerca clínica exige `top_hakunas.released`).
+  29/11 23:59, **número 1922**, Pista 3 Colinas, Franca-SP,
+  `autocadastro_liberado = true`, `aceitar_fora_da_lista = true`.
+  **0 fichas**, 1 perfil (o admin master), 1 Hakuna liberado (sem ele
+  ninguém registra atendimento, porque a cerca clínica exige
+  `top_hakunas.released`).
 
-  Três coisas pendem, e nenhuma é de código:
+  O que isso muda em relação ao que estava escrito aqui em 23/11:
 
-  1. **Importar os senderistas.** `participante_elegivel` exige o número
-     **na lista do Top**, então com a lista vazia o autocadastro recusa
-     todo mundo com a mensagem genérica "número ou senha do Top
-     incorretos" — que soa como senha errada. O importador lê CSV/XLSX.
-  2. **`tops.top_number` está NULO.** O pedido de acesso pede "número do
-     Legendários e número do Top", e `gerar_senha_top` devolve
-     `top_numero`. Sem número, a pessoa não tem o que digitar nesse campo
-     e o pedido chega ao admin como "Top X (não existe no app)". **Não
-     inventar** — quem define o número do evento é o dono.
-  3. **`autocadastro_liberado` está `false` de propósito.** A senha do Top
-     já foi gerada e está com o dono. Abrir antes de importar a lista
-     faria 216 pessoas digitarem a senha certa e ouvirem "senha
-     incorreta". Gerar a senha de novo pela tela de admin reabre a trava
-     sozinho — e invalida a senha anterior.
+  1. **Importar a lista deixou de ser pré-requisito.** Com
+     `aceitar_fora_da_lista` ligado, `participante_elegivel` não é mais o
+     portão: quem tem a senha se cadastra e **a ficha nasce do que a
+     pessoa digita**. O autocadastro passou de "depende da lista" a "é o
+     jeito de construir a lista". O importador continua existindo para
+     quando a lista oficial aparecer, e desmarca duplicata por número e
+     por nome.
+  2. **`tops.top_number` não está mais nulo** — é **1922**, definido pelo
+     dono. É o que a pessoa digita no campo "número do Top" ao pedir
+     acesso, e o que `gerar_senha_top` devolve em `top_numero`.
+  3. **`autocadastro_liberado` está `true`**, por decisão do dono em
+     24/11. A tranca que resta é a senha do Top — e só ela, porque
+     `aceitar_fora_da_lista` também está ligado. **Fechar o cadastro
+     depois que a equipe entrar continua sendo a mitigação**, e fechar é
+     de qualquer admin.
 
-  `diretor_responsavel` do Top segue nulo, pela mesma razão de sempre: quem
-  define o responsável por um evento médico é o dono do evento.
+  **`diretor_responsavel` está "Edson Barroso TESTE", e o "TESTE" é
+  literal.** O dono pediu nestas palavras: *"DIRETOR RESPONSAVEL COLOCA MEU
+  NOME POIS E TESTE"*. Precisa ser trocado pelo responsável de verdade
+  antes do evento — o campo aparece na tela do Top e é o que identifica
+  quem responde pelo evento médico.
+
+  **A senha do Top foi rotacionada em 24/11 e a anterior morreu na hora.**
+  Gerada pela Edge Function, não por SQL, de propósito: era o único elo
+  que faltava exercitar depois de inverter a ordem das escritas em
+  `gerar_senha_top` (senha primeiro, cadastro depois). Resultado medido:
+  `top_access_codes` com 1 linha e `set_by` = o master,
+  `tops.access_code_hash` **nulo**, cadastro aberto, a senha nova valida em
+  `validar_convite` e a antiga devolve "numero ou senha do Top incorretos".
+
+  **A senha em claro não entra neste arquivo nem em commit** — o
+  repositório é público, e a regra já valia para o hash. Ela vive com o
+  dono. Cada "Gerar senha do Top" invalida a anterior e **obriga a
+  reavisar todo mundo**; o texto de instalação já enviado passa a citar
+  uma senha morta.
+
+  **O que ainda NÃO foi verificado chamando de verdade:** um `cadastrar`
+  completo com a senha em vigor. `validar_convite` foi testado contra a
+  função publicada depois de cada passo; o cadastro inteiro cria ficha no
+  Top real e é decisão do dono (o caminho previsto é conta marcada
+  `is_teste`, apagada depois).
 - **`flutter_nfc_kit` aplica o Kotlin Gradle Plugin.** O build avisa:
   "Your app uses the following plugins that apply Kotlin Gradle Plugin
   (KGP): flutter_nfc_kit". Hoje é só warning e `android.builtInKotlin=false`
