@@ -85,25 +85,50 @@ Deno.serve(async (req) => {
   }
   const build = Number(linha[2])
 
-  // Notas da release em texto curto: a gaveta mostra no dialogo.
-  const notas = typeof release.body === 'string' && release.body.trim()
-    ? release.body.trim().slice(0, 500)
-    : null
+  // NOTAS DA VERSAO -- o texto que a gaveta mostra no dialogo de atualizar.
+  //
+  // Duas coisas aqui foram consertadas em 24/11/2026, e as duas eram
+  // invisiveis:
+  //
+  // 1. O corpo da release do GitHub, quando ninguem escreve nada, vem
+  //    preenchido automaticamente com
+  //    `**Full Changelog**: https://github.com/.../compare/v1.0.52...v1.0.53`.
+  //    Isso era gravado em `notes` e exibido num `Text` do Flutter -- com os
+  //    asteriscos crus -- para um voluntario na trilha. Um link de diff nao
+  //    diz a ninguem o que mudou no app. Era pior que vazio: ocupava o lugar
+  //    da explicacao e parecia defeito.
+  //
+  // 2. Esta funcao e chamada pelo CI a cada build, e fazia `notes: notas`
+  //    SEMPRE -- entao uma nota escrita a mao era APAGADA no proximo
+  //    disparo do workflow, sem aviso. Hoje, quando nao ha nota humana, a
+  //    chave `notes` fica FORA do payload: o upsert do PostgREST so altera
+  //    as colunas que recebe, e o texto que ja estava la sobrevive.
+  const corpoDaRelease = typeof release.body === 'string' ? release.body : ''
+  const notaHumana = corpoDaRelease
+    // Fora a linha automatica do GitHub, em qualquer posicao.
+    .replace(/\*\*Full Changelog\*\*:?\s*\S+/gi, '')
+    .replace(/https?:\/\/\S*\/compare\/\S+/gi, '')
+    .trim()
+    .slice(0, 500)
 
   const admin = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     { auth: { autoRefreshToken: false, persistSession: false } },
   )
+  const linhaDaVersao: Record<string, unknown> = {
+    version: versao,
+    build_number: build,
+    apk_url: anexo.browser_download_url,
+    published: true,
+    published_at: new Date().toISOString(),
+  }
+  // So entra se houver texto de gente. Sem isto, nota escrita a mao morre
+  // no proximo build.
+  if (notaHumana) linhaDaVersao.notes = notaHumana
+
   const { error } = await admin.from('app_versions').upsert(
-    {
-      version: versao,
-      build_number: build,
-      apk_url: anexo.browser_download_url,
-      notes: notas,
-      published: true,
-      published_at: new Date().toISOString(),
-    },
+    linhaDaVersao,
     { onConflict: 'version' },
   )
   if (error) return json({ error: error.message }, 500)

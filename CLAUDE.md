@@ -2001,17 +2001,46 @@ que faz o `url_launcher` ver que existe navegador instalado. Sem isso
 `canLaunchUrl` devolve false e o botão não faz nada — e **não aparece em
 emulador antigo**.
 
-#### A caixa "o que mudou" estava sempre vazia
+#### A caixa "o que mudou" mostrava um link de diff do GitHub
 
-`gaveta_do_app.dart` mostra `v.notas` no diálogo de atualizar, e
-`VersaoPublicada.fromMap` lê `map['notes']`. Mas **nada nunca escreveu a
-coluna**: `publicar_versao`, chamada pelo CI, grava versão, build e link, e
-`notes` fica nula.
+**Primeiro eu afirmei que a coluna `notes` nunca era escrita. Era falso**, e
+a verdade é pior de outro jeito. `publicar_versao` escreve
+`release.body` — e quando ninguém redige a release, o GitHub preenche o
+corpo sozinho:
 
-Ou seja: havia um lugar pronto para dizer ao usuário o que mudou, e ele
-nunca disse nada. Desde a 1.0.54 as notas são escritas junto da publicação,
-em português e **do ponto de vista de quem usa** — não "corrigido o hash da
-senha do Top", mas "correções de segurança (nada muda para quem usa)".
+```
+**Full Changelog**: https://github.com/.../compare/v1.0.52...v1.0.53
+```
+
+Era isso que a gaveta mostrava, num `Text` do Flutter, **com os asteriscos
+crus**, para um voluntário na trilha. Um link de diff não diz a ninguém o
+que mudou no app: ocupava o lugar da explicação e parecia defeito da tela.
+
+E havia um segundo defeito, invisível: a função é chamada pelo CI **a cada
+build** e fazia `notes: notas` sempre — então uma nota escrita à mão era
+**apagada no disparo seguinte do workflow**, sem aviso.
+
+Os dois consertados em `publicar_versao`:
+
+1. a linha automática do GitHub e as URLs de `compare/` são removidas antes
+   de gravar;
+2. quando não sobra texto de gente, a chave `notes` fica **fora do
+   payload** — o upsert do PostgREST só altera as colunas que recebe, então
+   a nota humana sobrevive ao próximo build.
+
+As notas das versões antigas (1.0.49 a 1.0.53) foram zeradas pela **mesma
+regra** da função: remove o automático, e se não sobrar nada, vira nulo —
+assim uma nota humana que por acaso cite "Full Changelog" não é destruída.
+
+A nota passa a ser escrita junto da publicação, em português e **do ponto de
+vista de quem usa**: não "corrigido o hash da senha do Top", mas "correções
+de segurança (nada muda para quem usa)".
+
+**A lição não é sobre `notes`.** Eu olhei o código (`publicar_versao` grava
+versão, build e link), não olhei o DADO, e afirmei que a coluna estava
+vazia. Uma consulta de uma linha — `select version, notes from
+app_versions` — teria mostrado o contrário na hora. **Afirmação sobre o
+conteúdo de uma tabela se faz lendo a tabela.**
 
 #### A versão só aparecia depois de entrar
 
