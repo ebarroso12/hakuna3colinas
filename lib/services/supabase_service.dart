@@ -90,6 +90,20 @@ String friendlyAuthError(Object error, {bool usouNumero = false}) {
       lower.contains('user_already_exists')) {
     return 'Esse e-mail já está cadastrado. Entre em vez de se cadastrar.';
   }
+  // O servidor recusa senha fraca ou que já apareceu em vazamento conhecido
+  // (`weak_password`, e a checagem do HaveIBeenPwned quando ligada). O texto
+  // do GoTrue vem em inglês e caía no `return message` do fim desta função.
+  //
+  // A frase diz O QUE FAZER, não só que deu errado: quem lê "senha fraca"
+  // tenta a mesma senha com um "1" no fim.
+  if (lower.contains('weak_password') ||
+      lower.contains('known to be weak') ||
+      lower.contains('password is too short') ||
+      (lower.contains('password') && lower.contains('pwned'))) {
+    return 'Essa senha é fácil de descobrir — ela aparece em listas de '
+        'senhas vazadas. Escolha outra, com pelo menos 8 caracteres, '
+        'misturando letras e números.';
+  }
   // O cadastro falha DENTRO do trigger `handle_new_user`, que insere em
   // `profiles`. A única restrição que ele pode violar é
   // `profiles_legendarios_number_key` (o id é novo, então a chave primária

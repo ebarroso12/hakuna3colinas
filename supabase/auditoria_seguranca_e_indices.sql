@@ -53,12 +53,18 @@ create index if not exists idx_fotos_atendimento
   on public.atendimento_fotos (atendimento_id);
 create index if not exists idx_fotos_top
   on public.atendimento_fotos (top_id);
-create index if not exists idx_participants_registrado_por
-  on public.top_participants (registered_by);
+-- REMOVIDO em 24/11/2026: criava um indice IDENTICO a idx_participants_registered_by, e o
+-- Postgres obedecia aos dois -- duas estruturas iguais na mesma tabela,
+-- custando escrita em todo insert. Ver 15_indices_duplicados.sql, que
+-- apaga o que ja existia. A criacao sai daqui para o duplicado nao
+-- VOLTAR na proxima reconstrucao do banco.
 create index if not exists idx_participants_perfil
   on public.top_participants (linked_profile_id) where linked_profile_id is not null;
-create index if not exists idx_team_members_perfil
-  on public.top_team_members (profile_id);
+-- REMOVIDO em 24/11/2026: criava um indice IDENTICO a idx_team_members_profile, e o
+-- Postgres obedecia aos dois -- duas estruturas iguais na mesma tabela,
+-- custando escrita em todo insert. Ver 15_indices_duplicados.sql, que
+-- apaga o que ja existia. A criacao sai daqui para o duplicado nao
+-- VOLTAR na proxima reconstrucao do banco.
 create index if not exists idx_team_messages_sender
   on public.team_messages (sender_id);
 create index if not exists idx_tags_top

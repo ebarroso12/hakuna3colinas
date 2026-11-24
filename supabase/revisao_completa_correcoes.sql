@@ -92,8 +92,11 @@ alter table public.atendimentos
 alter table public.atendimento_fotos
   alter column client_id type uuid using nullif(client_id, '')::uuid;
 
-create unique index atendimentos_client_id_key
-  on public.atendimentos (client_id);
+-- REMOVIDO em 24/11/2026: criava um indice IDENTICO a idx_atendimentos_client_id, e o
+-- Postgres obedecia aos dois -- duas estruturas iguais na mesma tabela,
+-- custando escrita em todo insert. Ver 15_indices_duplicados.sql, que
+-- apaga o que ja existia. A criacao sai daqui para o duplicado nao
+-- VOLTAR na proxima reconstrucao do banco.
 create unique index atendimento_fotos_client_id_key
   on public.atendimento_fotos (client_id);
 

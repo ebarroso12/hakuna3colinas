@@ -134,9 +134,11 @@ create index if not exists idx_participants_nome
   on public.top_participants (top_id, lower(full_name));
 create index if not exists idx_participants_registered_by
   on public.top_participants (registered_by);
-create index if not exists idx_participants_linked_profile
-  on public.top_participants (linked_profile_id)
-  where linked_profile_id is not null;
+-- REMOVIDO em 24/11/2026: criava um indice IDENTICO a idx_participants_perfil, e o
+-- Postgres obedecia aos dois -- duas estruturas iguais na mesma tabela,
+-- custando escrita em todo insert. Ver 15_indices_duplicados.sql, que
+-- apaga o que ja existia. A criacao sai daqui para o duplicado nao
+-- VOLTAR na proxima reconstrucao do banco.
 
 alter table public.top_participants enable row level security;
 
@@ -356,8 +358,11 @@ create table if not exists public.audit_log (
 create unique index if not exists idx_audit_log_client_id
   on public.audit_log (client_id)
   where client_id is not null;
-create index if not exists idx_audit_log_top_quando
-  on public.audit_log (top_id, coalesce(occurred_at, created_at) desc);
+-- REMOVIDO em 24/11/2026: criava um indice IDENTICO a idx_audit_log_top, e o
+-- Postgres obedecia aos dois -- duas estruturas iguais na mesma tabela,
+-- custando escrita em todo insert. Ver 15_indices_duplicados.sql, que
+-- apaga o que ja existia. A criacao sai daqui para o duplicado nao
+-- VOLTAR na proxima reconstrucao do banco.
 
 alter table public.audit_log enable row level security;
 

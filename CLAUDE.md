@@ -180,10 +180,18 @@ problema, os dois corrigidos:
    `supabase/team_key_as_nove_equipes.sql`, idempotente, com a consulta
    de conferência.
 
-**Ainda fora do repositório: `top_team_members` e `team_messages`.** As
-duas só existem em produção. Não as escrevi de memória de propósito —
-`create table` inventado parece fonte da verdade e diverge calado. Extrair
-com `pg_dump --schema-only` e versionar.
+**`top_team_members` e `team_messages` finalmente estão no repositório**,
+desde 24/11/2026: `supabase/17_top_team_members_e_team_messages.sql`. Por
+mais de um mês esta linha dizia que faltavam, com o motivo certo para não
+inventá-las — `create table` escrito de memória parece fonte da verdade e
+diverge calado.
+
+Não foram escritas de memória: saíram do catálogo do banco
+(`information_schema.columns`, `pg_constraint`, `pg_get_indexdef`,
+`pg_get_expr` sobre `pg_policy`). E a cópia foi **verificada**: fotografia
+das assinaturas das 12 policies antes, arquivo rodado duas vezes,
+fotografia depois, `diff` vazio. É a diferença entre "escrevi o arquivo" e
+"o arquivo é a produção".
 
 ## O módulo clínico é uma PARTE, e tem cerca própria
 
@@ -1672,24 +1680,176 @@ O erro foi do método: procurei `kIsWeb` em `botao_da_malha.dart` e
 camada. **Ausência de uma marca nos arquivos que eu escolhi olhar não é
 ausência da proteção** — seguir a chamada até o fim custa um grep a mais.
 
+### Segunda rodada de 24/11/2026: advisors, duplicatas e o hash fora de alcance
+
+Depois de consertar o crítico da senha, o dono pediu "conserte tudo, revise
+e deixe perfeito". O que a segunda varredura achou, e o que foi feito.
+
+#### Os advisors do Supabase: 168 avisos, 7 reais
+
+Nunca tinha usado `/v1/projects/<ref>/advisors/{security,performance}`.
+Vale usar, **mas quase tudo é ruído para este projeto** — e saber quais são
+é o que torna a ferramenta útil em vez de assustadora.
+
+**Segurança: 35 avisos, 1 real.**
+
+Trinta e quatro são `*_security_definer_function_executable`. Medido um por
+um, chamando pela API com a chave anon:
+
+| Tipo | Veredito |
+|---|---|
+| `handle_new_user`, `profiles_trava_colunas_de_permissao`, `tops_trava_senha_do_top` | **Falso positivo.** PostgREST **não expõe** função que retorna `trigger` — as três devolvem `PGRST202`, "could not find the function". Não há o que revogar |
+| `is_admin`, `is_approved`, `is_master_admin`, `my_*`, `is_team_*`, `pertence_ao_top`, `pode_ver_mapa`, `pode_alarmar_no_top` | Por design. Só falam do PRÓPRIO chamador. E `authenticated` **precisa** de `EXECUTE`: as policies as chamam, e revogar faria a avaliação da policy falhar com permission denied |
+| `dependencias_do_perfil`, `dependencias_do_senderista` | Guardadas por dentro. Medido: `42501 apenas administradores` para anon |
+| `painel_do_top` | `42501 permission denied for function` — anon não tem nem EXECUTE |
+
+O único real é `auth_leaked_password_protection`, e **não foi ligado** — ver
+abaixo.
+
+**Performance: 133 avisos, 6 reais.** `auth_rls_initplan` (34) pede
+`(select auth.uid())` no lugar de `auth.uid()` para não reavaliar por linha:
+é real, e irrelevante com 216 pessoas e tabelas pequenas — reescrever 34
+policies de controle de acesso a prontuário a 2 dias do evento é risco sem
+retorno. `multiple_permissive_policies` (~60) é a soma deliberada de
+policies que este arquivo já documenta ("policies do mesmo comando são OR
+entre si, então somar `is_admin()` amplia e não tira nada").
+
+Os 6 reais eram `duplicate_index`.
+
+#### A checagem de senha vazada NÃO foi ligada, e o motivo é concreto
+
+O cadastro dos 216 passa por `admin.auth.admin.createUser` (service_role).
+**Eu não tenho certeza se a checagem do HaveIBeenPwned se aplica à API de
+admin.** Se aplicar, alguém com senha fraca é recusado com o texto cru do
+GoTrue, em inglês, no meio do cadastro — e são 216 pessoas em dois dias.
+
+Trocar um risco certo de quebrar o cadastro por um ganho que o caminho
+principal nem usa é mau negócio. Fica para depois do evento, e com teste:
+criar uma conta pela API de admin com uma senha conhecidamente vazada e ver
+se passa.
+
+O que FOI feito de graça: `friendlyAuthError` passou a traduzir
+`weak_password` / "known to be weak" / "pwned". Antes caía no `return
+message` do fim e saía em inglês. Quando a checagem for ligada, a frase já
+está pronta — e ela diz **o que fazer**, porque quem lê "senha fraca" tenta
+a mesma senha com um "1" no fim.
+
+#### Seis pares de índices idênticos, e por que apagar no banco não bastava
+
+`duplicate_index` achou seis pares — mesma tabela, mesmas colunas, mesmo
+`WHERE`, nomes diferentes (um em português, outro em inglês). Não dão
+resposta errada; custam escrita em todo insert e confundem quem lê o
+esquema.
+
+A causa é a reconstrução: arquivos diferentes de `supabase/` criam o mesmo
+índice com nomes diferentes, e o Postgres obedece aos dois.
+
+Cinco conferências antes de apagar qualquer um, todas necessárias:
+
+1. os pares são idênticos de verdade (`pg_get_indexdef`, não o nome);
+2. **nenhum é apoiado por constraint** (`pg_constraint.conindid` nulo nos
+   doze) — apagar um que sustenta constraint derrubaria a constraint;
+3. **nenhum é alvo de `onConflict`**. O app usa `id`, `client_id`,
+   `bloco_id`, `fcm_token`, `top_id,ordem`, `top_id,profile_id`; nenhum par
+   cobre essas colunas. Este era o risco grande: índice parcial quebra
+   `upsert(onConflict:)` (bug da v1.0.29);
+4. de cada par ÚNICO, um fica — `atendimentos.client_id` continua com
+   unicidade, que é o que faz o reenvio da fila ser idempotente;
+5. nenhum nome aparece em `lib/` nem nas Edge Functions.
+
+**E o conserto teve de ser nos DOIS lados.** Todo nome dos doze é criado por
+algum arquivo do repositório: apagar só no banco faria o duplicado VOLTAR na
+próxima reconstrução — o mesmo mecanismo que ressuscitou a regra pega-tudo
+da triagem em 23/11. Então `15_indices_duplicados.sql` apaga o que existe, e
+a criação do nome descartado **saiu do arquivo que a fazia** (quatro
+arquivos editados). Conferido depois: zero pares idênticos no banco.
+
+#### O hash da senha saiu da tabela que todo mundo lê
+
+Segunda metade do conserto do crítico. O pepper já tinha tirado o valor do
+vazamento; faltava o vazamento.
+
+O caminho óbvio, `revoke select (access_code_hash)`, **não serve**: APK
+≤ 1.0.52 manda `select *` em `fetchMyTops`, e com a coluna revogada o
+PostgREST recusa a CONSULTA INTEIRA — a lista de Tops sumiria para quem não
+atualizou, e é por ela que se chega a todo o resto do app.
+
+A saída foi **mover o valor, não a coluna** (`16_senha_do_top_fora_da_tabela_lida.sql`):
+o hash vive em `top_access_codes`, com RLS ligada e **nenhuma policy**, mais
+`revoke all` — cinto e suspensório. As colunas de `tops` ficam, **vazias**:
+
+* APK antigo manda `select *`, recebe as colunas nulas e **nada quebra**;
+* o trigger `tops_trava_senha` segue referenciando as três. Dropá-las faria
+  `new.access_code_hash := old.access_code_hash` estourar em TODO update de
+  Top — o admin não editaria nem o nome do evento;
+* nenhuma linha de `lib/` lê essas colunas (conferido por grep).
+
+**Aplicado em três passos, para não haver um segundo de janela:** criar a
+tabela e COPIAR o hash (a função antiga ainda funcionava) → publicar a
+função nova (v9) → esvaziar as colunas antigas. Fazer na ordem contrária
+deixaria o cadastro quebrado entre um passo e outro.
+
+Medido depois, com um membro comum aprovado em transação desfeita:
+
+```
+membro ve hash em tops? ....... NENHUM (nulo)
+membro le top_access_codes? ... BARRADO: 42501
+policies em top_access_codes .. 0      RLS ligada: true
+```
+
+E a senha em vigor continuou valendo, testada na função publicada depois de
+cada passo. **A senha nunca mudou** — nenhum aviso precisou ser repetido a
+ninguém.
+
+Falta dropar as três colunas vestigiais, e isso espera a base instalada
+estar toda na 1.0.53+.
+
+#### `top_team_members` e `team_messages`, finalmente versionadas
+
+Eram as duas últimas da lista de "objetos que só existiam em produção".
+Este arquivo pedia, desde 11/10/2026, para extrair com `pg_dump
+--schema-only` em vez de escrever de memória, porque `create table`
+inventado "parece fonte da verdade e diverge calado".
+
+`17_top_team_members_e_team_messages.sql` saiu do **catálogo**:
+`information_schema.columns`, `pg_constraint`, `pg_get_indexdef` e
+`pg_get_expr` sobre `pg_policy`. Inclui as 12 policies, a coluna GERADA
+`is_team_admin`, o índice único **não parcial** de `client_id` e o
+`alter publication supabase_realtime`.
+
+**E foi verificado em vez de presumido.** O arquivo recria as 12 policies de
+uma tabela de prontuário, então: fotografia das assinaturas (nome, comando,
+roles, `using`, `with check`) antes, roda duas vezes, fotografia depois,
+`diff`. Saiu **vazio** — as 12 ficaram idênticas, caractere por caractere. É
+a diferença entre "escrevi o arquivo" e "o arquivo é a produção".
+
 ## Pendências conhecidas
 
-- **O `revoke` da coluna do hash espera a base instalada.** Desde 24/11/2026
-  o hash da senha do Top é HMAC com pepper, então vazar a coluna já não
-  entrega a senha — mas `authenticated` continua com `GRANT SELECT` em
-  `tops.access_code_hash`, e toda conta aprovada lê todo Top não-rascunho.
-  O conserto que falta é uma linha:
+- **Dropar as 3 colunas vestigiais de `tops` espera a base instalada.**
+  Desde 24/11/2026 o hash vive em `top_access_codes` (RLS sem policy) e
+  `tops.access_code_hash/_set_at/_set_by` estao NULAS. As colunas ficam
+  porque APK <= 1.0.52 manda `select *` e porque o trigger
+  `tops_trava_senha` as referencia. Quando todo aparelho estiver na
+  1.0.53+:
 
   ```sql
-  revoke select (access_code_hash, access_code_set_at, access_code_set_by)
-    on public.tops from authenticated, anon;
+  -- primeiro tirar as 3 linhas do trigger em 13_..., senao todo update de Top estoura
+  alter table public.tops
+    drop column access_code_hash,
+    drop column access_code_set_at,
+    drop column access_code_set_by;
   ```
 
-  **Não rodar antes de todo aparelho estar na 1.0.53+.** APK <= 1.0.52 manda
-  `select *` em `fetchMyTops`, e com a coluna revogada o PostgREST recusa a
-  consulta inteira: a lista de Tops sumiria para quem não atualizou, que é
-  o caminho para todo o resto do app. Conferir com `app_versions` e com o
-  aviso de atualização antes.
+  Conferir `app_versions` e o aviso de atualizacao antes. **Nao e urgente:**
+  as colunas estao vazias, nao vaza nada.
+- **Checagem de senha vazada (HaveIBeenPwned) segue DESLIGADA.** O advisor
+  de seguranca pede para ligar. Nao foi ligada porque o cadastro dos 216
+  passa por `admin.auth.admin.createUser`, e nao esta medido se a checagem
+  se aplica a API de admin -- se aplicar, senha fraca e recusada com texto
+  cru em ingles no meio do cadastro. Ligar DEPOIS do evento, testando
+  primeiro: criar conta pela API de admin com uma senha conhecidamente
+  vazada e ver se passa. A traducao da mensagem ja esta em
+  `friendlyAuthError`.
 
 - **O Top novo está VAZIO, e é o que falta para o app servir.** Estado em
   23/11/2026, conferido no banco: Top "TRACK 3 Colinas 1 ano"

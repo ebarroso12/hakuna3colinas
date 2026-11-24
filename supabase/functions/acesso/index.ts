@@ -209,11 +209,31 @@ async function validarConvite(
 ): Promise<{ erro: string } | ConviteOk> {
   const hashDaSenha = await hashDoTop(senhaDoTop.trim().toUpperCase())
 
-  const { data: top, error: erroTop } = await admin
-    .from('tops')
-    .select('id, name, status, autocadastro_liberado, aceitar_fora_da_lista')
-    .eq('access_code_hash', hashDaSenha)
+  // O hash vive em `top_access_codes`, nao em `tops`: `tops` e legivel por
+  // toda conta aprovada e RLS e por LINHA, nao por coluna. Ver
+  // `16_senha_do_top_fora_da_tabela_lida.sql`. `top_access_codes` tem RLS
+  // ligada e NENHUMA policy -- so `service_role`, que e quem roda aqui.
+  //
+  // Sao duas consultas onde antes havia uma. O custo e um round-trip por
+  // cadastro, uma vez por pessoa, contra o hash da senha do evento ficar
+  // legivel por 216 aparelhos. Nao e troca difIcil.
+  const { data: codigo, error: erroCodigo } = await admin
+    .from('top_access_codes')
+    .select('top_id')
+    .eq('code_hash', hashDaSenha)
     .maybeSingle()
+
+  if (erroCodigo) return { erro: 'falha ao verificar a senha' }
+
+  const { data: top, error: erroTop } = codigo
+    ? await admin
+        .from('tops')
+        .select(
+          'id, name, status, autocadastro_liberado, aceitar_fora_da_lista',
+        )
+        .eq('id', codigo.top_id)
+        .maybeSingle()
+    : { data: null, error: null };
 
   if (erroTop) return { erro: 'falha ao verificar a senha' }
 
@@ -1034,27 +1054,47 @@ Deno.serve(async (req) => {
     if (!topId) return json({ error: 'top_id obrigatorio' }, 400)
 
     const senha = gerarSenhaDoTop()
+
+    // O Top PRIMEIRO, e sem tocar na senha: se o id nao existir, nada e
+    // gravado em `top_access_codes` e nao sobra codigo orfao apontando para
+    // Top nenhum.
+    //
+    // `autocadastro_liberado: true` porque gerar senha e querer que gente
+    // se cadastre -- sem isto o admin geraria a senha, anunciaria ao grupo e
+    // so descobriria depois que o cadastro estava fechado. Esta linha
+    // existia SO na versao publicada (v9) e nao no repositorio; trazida de
+    // volta em 28/10/2026, senao o deploy a apagaria em silencio.
     const { data: top, error } = await admin
       .from('tops')
-      .update({
-        access_code_hash: await hashDoTop(senha),
-        access_code_set_at: new Date().toISOString(),
-        access_code_set_by: user.id,
-        // Gerar senha e querer que gente se cadastre: abre a trava junto.
-        // Sem isto o admin geraria a senha, anunciaria ao grupo e so
-        // descobriria depois que o cadastro estava fechado.
-        //
-        // Esta linha existia SO na versao publicada (v9 no Supabase) e nao
-        // no repositorio. Trazida de volta em 28/10/2026, ao publicar a v10
-        // - senao o deploy a apagaria em silencio.
-        autocadastro_liberado: true,
-      })
+      .update({ autocadastro_liberado: true })
       .eq('id', topId)
       .select('id, name, top_number, status')
       .maybeSingle()
 
     if (error) return json({ error: error.message }, 400)
     if (!top) return json({ error: 'Top nao encontrado' }, 404)
+
+    // Agora a senha, fora de `tops`. `upsert` por `top_id` porque gerar de
+    // novo SUBSTITUI a senha do Top -- e assim que se corta o acesso se ela
+    // vazar para fora do grupo.
+    const { error: erroCodigo } = await admin
+      .from('top_access_codes')
+      .upsert({
+        top_id: topId,
+        code_hash: await hashDoTop(senha),
+        set_at: new Date().toISOString(),
+        set_by: user.id,
+      }, { onConflict: 'top_id' })
+
+    // Falhou aqui: o cadastro ficou ABERTO e a senha nao trocou. Dizer isso
+    // em vez de devolver uma senha que nao vale -- o admin anunciaria ao
+    // grupo e 216 pessoas ouviriam "senha incorreta".
+    if (erroCodigo) {
+      return json({
+        error: 'o Top foi aberto mas a senha NAO foi gravada: ' +
+          erroCodigo.message + '. A senha anterior continua valendo.',
+      }, 400)
+    }
 
     // A senha em claro volta UMA vez, so para o admin que pediu. O banco
     // guarda apenas o hash: se o admin perder, gera outra (e a anterior

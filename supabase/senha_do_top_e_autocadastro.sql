@@ -99,9 +99,11 @@ grant  execute on function public.participante_elegivel(uuid, text) to service_r
 -- preenchidos e não nasce participante duplicado.
 -- ----------------------------------------------------------------------------
 
-create unique index if not exists idx_participants_profile_unico
-  on public.top_participants (top_id, linked_profile_id)
-  where linked_profile_id is not null;
+-- REMOVIDO em 24/11/2026: criava um indice IDENTICO a idx_participants_perfil_unico, e o
+-- Postgres obedecia aos dois -- duas estruturas iguais na mesma tabela,
+-- custando escrita em todo insert. Ver 15_indices_duplicados.sql, que
+-- apaga o que ja existia. A criacao sai daqui para o duplicado nao
+-- VOLTAR na proxima reconstrucao do banco.
 
 -- ----------------------------------------------------------------------------
 -- 4. Índice para a conferência do número
