@@ -79,6 +79,39 @@
 -- ---------------------------------------------------------------------------
 -- 1. Só o admin master gera a senha e abre o cadastro
 -- ---------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
+-- ATENCAO: ESTE ARQUIVO TEM A VERSAO ANTIGA DA TRAVA. NAO RODE SOZINHO.
+--
+-- A definicao valida de `tops_trava_senha_do_top()` esta em
+-- `13_trava_do_top_sem_uid_nulo.sql`. Esta aqui abre a porta com
+-- `auth.uid() is null`, que tambem e verdade para A CHAVE ANON -- a que
+-- esta dentro do APK (revisao de 24/11/2026).
+--
+-- A guarda abaixo existe porque este e exatamente o modo de falha que
+-- custou caro em 23/11/2026: `schema.sql` reexecutado RESSUSCITOU a regra
+-- pega-tudo da triagem e repintou de vermelho todo mundo acima de 40 anos,
+-- sem erro em lugar nenhum. Reexecutar este arquivo rebaixaria a trava do
+-- mesmo jeito, calado. Entao ele FALHA ALTO em vez de rebaixar.
+-- ---------------------------------------------------------------------------
+do $guarda$
+begin
+  if exists (
+    select 1
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public'
+       and p.proname = 'tops_trava_senha_do_top'
+       and pg_get_functiondef(p.oid) like '%request.jwt.claims%'
+  ) then
+    raise exception
+      'Trava do Top JA esta na versao nova (13_trava_do_top_sem_uid_nulo.sql). '
+      'Rodar este arquivo a rebaixaria para a versao com `auth.uid() is null`, '
+      'que a chave anon satisfaz. Rode o 13.'
+      using errcode = '42501';
+  end if;
+end
+$guarda$;
+
 create or replace function public.tops_trava_senha_do_top()
 returns trigger
 language plpgsql

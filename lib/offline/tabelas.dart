@@ -449,6 +449,9 @@ abstract final class ColunasTop {
   /// `boolean` no Postgres vira 0/1 aqui; a leitura converte de volta.
   static const autocadastroLiberado = 'autocadastro_liberado';
 
+  /// Idem: 0/1 aqui, `boolean` no Postgres. Entrou na v7 do esquema local.
+  static const aceitarForaDaLista = 'aceitar_fora_da_lista';
+
   /// Só local: posição na lista que o servidor mandou.
   ///
   /// O servidor ordena por `starts_at desc`, e o Postgres põe NULL
@@ -475,6 +478,7 @@ abstract final class ColunasTop {
       $startsAt              TEXT,
       $endsAt                TEXT,
       $autocadastroLiberado  INTEGER NOT NULL DEFAULT 1,
+      $aceitarForaDaLista    INTEGER NOT NULL DEFAULT 0,
       $ordem                 INTEGER NOT NULL,
       $baixadoEm             INTEGER NOT NULL,
       PRIMARY KEY ($donoId, $id)

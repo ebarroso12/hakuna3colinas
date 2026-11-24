@@ -69,6 +69,24 @@ class AdminService {
         .eq('id', topId);
   }
 
+  /// Liga ou desliga o aceite de autocadastro FORA da lista do Top.
+  ///
+  /// Ligado, a senha do Top passa a bastar — a lista era a segunda tranca.
+  /// Por isso LIGAR é só do admin master e o banco recusa com 42501
+  /// (trigger `tops_trava_senha`); DESLIGAR qualquer admin pode, pela
+  /// mesma razão de fechar o cadastro: é o lado seguro.
+  ///
+  /// Até 24/11/2026 este interruptor NÃO tinha tela: foi ligado por SQL e
+  /// não havia como desligar pelo app. Um Top ficava aceitando qualquer
+  /// número para sempre, e a mitigação escrita ("feche o cadastro depois
+  /// que a equipe entrar") cobria só o outro interruptor.
+  Future<void> definirAceitarForaDaLista(String topId, bool aceitar) {
+    return _client
+        .from('tops')
+        .update({'aceitar_fora_da_lista': aceitar})
+        .eq('id', topId);
+  }
+
   Future<void> setApproved(String profileId, bool approved) {
     return _client
         .from('profiles')

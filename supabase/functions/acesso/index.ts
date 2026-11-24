@@ -33,17 +33,106 @@ const json = (body: unknown, status = 200) =>
     headers: { ...CORS, 'Content-Type': 'application/json' },
   })
 
+/**
+ * Alfabeto sem 0/O/1/I/L: estas senhas sao DITADAS em voz alta e lidas de
+ * cartaz impresso. 31 caracteres.
+ */
+const ALFABETO = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
+
+/**
+ * Sorteia [n] caracteres do alfabeto, SEM VIES.
+ *
+ * O jeito obvio -- `byte % 31` -- nao e uniforme: 256 nao e multiplo de
+ * 31, entao os 8 primeiros caracteres sairiam 9 vezes em 256 e os outros
+ * 23 sairiam 8. A perda era pequena (~0,06 bit na senha inteira) e por
+ * isso passou batido. Entrou na conta em 24/11/2026, quando o hash da
+ * senha do Top ganhou pepper: a partir dali a entropia da senha e a UNICA
+ * barreira, e corrigir isto e de graca.
+ *
+ * Rejeicao de amostra: descarta byte >= 248 (o maior multiplo de 31 abaixo
+ * de 256) e sorteia de novo. A chance de descartar cada byte e 8/256, logo
+ * o laco termina na primeira passada quase sempre.
+ */
+function sortearDoAlfabeto(n: number): string {
+  const limite = 256 - (256 % ALFABETO.length) // 248
+  let saida = ''
+  while (saida.length < n) {
+    for (const b of crypto.getRandomValues(new Uint8Array(n))) {
+      if (b >= limite) continue
+      saida += ALFABETO[b % ALFABETO.length]
+      if (saida.length === n) break
+    }
+  }
+  return saida
+}
+
 /** Codigo de 6 caracteres, sem 0/O/1/I/L para nao confundir ao ditar. */
 function gerarCodigo(): string {
-  const alfabeto = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
-  const bytes = crypto.getRandomValues(new Uint8Array(6))
-  return Array.from(bytes, (b) => alfabeto[b % alfabeto.length]).join('')
+  return sortearDoAlfabeto(6)
 }
 
 async function hash(texto: string): Promise<string> {
   const dados = new TextEncoder().encode(texto)
   const digest = await crypto.subtle.digest('SHA-256', dados)
   return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+/**
+ * Hash da SENHA DO TOP. HMAC-SHA256 com um segredo que NAO esta no banco.
+ *
+ * Por que nao o `hash()` acima, medido em 24/11/2026:
+ *
+ *   - `tops_select_linked` libera TODO Top nao-rascunho a TODA conta
+ *     aprovada, e `authenticated` tem `GRANT SELECT` em
+ *     `access_code_hash`. Medido com um membro comum aprovado
+ *     (`is_admin() = false`): ele le a coluna.
+ *   - O hash era SHA-256 cru. Conferido: `sha256("<senha de entao>")`
+ *     batia exatamente com a coluna.
+ *   - 31^8 = 852.891.037.441. Uma GPU modesta (2 GH/s) varre tudo em
+ *     ~7 minutos; uma RTX 4090, em ~43 segundos.
+ *
+ * O estrago nao era "a senha vaza" -- quem le o hash e membro e ja tem a
+ * senha. Era que a GARANTIA ESCRITA em `gerar_senha_top` ("gerar de novo
+ * INVALIDA a anterior - e assim que se corta o acesso se a senha vazar")
+ * NAO CORTAVA: quem vazou a senha e continua aprovado le o hash novo e
+ * recupera a senha nova em minutos. Rotacionar nao expulsava ninguem. E
+ * com `tops.aceitar_fora_da_lista` ligado, a senha BASTA para entrar.
+ *
+ * Com HMAC isso acaba: quebrar offline passa a exigir o pepper, que vive
+ * so nos segredos da funcao. Continua DETERMINISTICO, entao a busca do Top
+ * pelo hash (`validarConvite`) segue funcionando com um `maybeSingle()`
+ * -- era por isso que bcrypt/argon2 nao servem aqui.
+ *
+ * FALHA FECHADA de proposito: sem o segredo, levanta. Cair de volta no
+ * SHA-256 cru seria pior que o erro -- pareceria funcionar e estaria
+ * desprotegido.
+ *
+ * Se o pepper for trocado algum dia, toda senha de Top em vigor para de
+ * valer e precisa ser gerada de novo. Nao trocar sem querer isso.
+ */
+async function hashDoTop(texto: string): Promise<string> {
+  const pepper = Deno.env.get('SENHA_TOP_PEPPER') ?? ''
+  if (!pepper) {
+    throw new Error(
+      'SENHA_TOP_PEPPER nao configurado: a senha do Top nao pode ser ' +
+        'conferida nem gerada sem ele',
+    )
+  }
+  const chave = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(pepper),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  )
+  const mac = await crypto.subtle.sign(
+    'HMAC',
+    chave,
+    new TextEncoder().encode(texto),
+  )
+  return Array.from(new Uint8Array(mac))
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('')
 }
@@ -76,9 +165,7 @@ function numeroValido(n: unknown): n is string {
  * cerca de 850 bilhoes de combinacoes.
  */
 function gerarSenhaDoTop(): string {
-  const alfabeto = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
-  const bytes = crypto.getRandomValues(new Uint8Array(8))
-  return Array.from(bytes, (b) => alfabeto[b % alfabeto.length]).join('')
+  return sortearDoAlfabeto(8)
 }
 
 /** Senha pessoal minima. O padrao do Supabase e 6; aqui tem prontuario. */
@@ -120,7 +207,7 @@ async function validarConvite(
   numero: string,
   senhaDoTop: string,
 ): Promise<{ erro: string } | ConviteOk> {
-  const hashDaSenha = await hash(senhaDoTop.trim().toUpperCase())
+  const hashDaSenha = await hashDoTop(senhaDoTop.trim().toUpperCase())
 
   const { data: top, error: erroTop } = await admin
     .from('tops')
@@ -950,7 +1037,7 @@ Deno.serve(async (req) => {
     const { data: top, error } = await admin
       .from('tops')
       .update({
-        access_code_hash: await hash(senha),
+        access_code_hash: await hashDoTop(senha),
         access_code_set_at: new Date().toISOString(),
         access_code_set_by: user.id,
         // Gerar senha e querer que gente se cadastre: abre a trava junto.

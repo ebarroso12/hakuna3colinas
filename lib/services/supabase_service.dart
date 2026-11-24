@@ -464,9 +464,28 @@ class SupabaseService {
   /// Tops (eventos) aos quais o usuário atual está vinculado (como hakuna
   /// liberado ou senderista inscrito), respeitando a RLS do banco.
   Future<List<Top>> fetchMyTops() async {
+    // Colunas EXPLÍCITAS, nunca `select()` vazio.
+    //
+    // `select()` sem lista virava `select *`, e `*` inclui
+    // `access_code_hash` — o hash da senha do Top. Medido em 24/11/2026:
+    // um membro comum aprovado (`is_admin() = false`) lia a coluna, porque
+    // `tops_select_linked` libera todo Top não-rascunho a toda conta
+    // aprovada e `authenticated` tem `GRANT SELECT` nela. O hash era
+    // SHA-256 cru de 8 caracteres: ~43 s de GPU.
+    //
+    // O hash passou a ser HMAC com pepper (Edge Function `acesso`), então
+    // vazá-lo já não entrega a senha. Esta lista é a outra metade: o app
+    // deixa de pedir o que não usa. Falta ainda o
+    // `revoke select (access_code_hash) ... from authenticated`, que só
+    // pode entrar quando a base instalada toda estiver nesta versão — hoje
+    // ele quebraria todo APK <= 1.0.52, que ainda manda `*`.
     final rows = await _client
         .from('tops')
-        .select()
+        .select(
+          'id, name, top_number, location, cidade, diretor_responsavel, '
+          'emblema_path, description, status, starts_at, ends_at, '
+          'autocadastro_liberado, aceitar_fora_da_lista',
+        )
         .order('starts_at', ascending: false);
     return rows.map((r) => Top.fromMap(r)).toList();
   }

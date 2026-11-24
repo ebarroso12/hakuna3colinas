@@ -675,6 +675,7 @@ class CacheLocal {
           ColunasTop.startsAt: t.startsAt?.toIso8601String(),
           ColunasTop.endsAt: t.endsAt?.toIso8601String(),
           ColunasTop.autocadastroLiberado: t.autocadastroLiberado ? 1 : 0,
+          ColunasTop.aceitarForaDaLista: t.aceitarForaDaLista ? 1 : 0,
           ColunasTop.ordem: i,
           ColunasTop.baixadoEm: agora,
         }, conflictAlgorithm: ConflictAlgorithm.replace);
@@ -702,6 +703,8 @@ class CacheLocal {
             // do Postgrest. Sem isto o cast falharia na leitura.
             ColunasTop.autocadastroLiberado:
                 (l[ColunasTop.autocadastroLiberado] as int? ?? 1) == 1,
+            ColunasTop.aceitarForaDaLista:
+                (l[ColunasTop.aceitarForaDaLista] as int? ?? 0) == 1,
           }),
         )
         .toList();

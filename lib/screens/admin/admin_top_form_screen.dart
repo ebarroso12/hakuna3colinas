@@ -489,6 +489,9 @@ class _BlocoSenhaDoTopState extends State<_BlocoSenhaDoTop> {
   late bool _liberado = widget.top.autocadastroLiberado;
   bool _mudandoTrava = false;
 
+  late bool _foraDaLista = widget.top.aceitarForaDaLista;
+  bool _mudandoForaDaLista = false;
+
   /// Abre ou fecha o autocadastro deste Top.
   ///
   /// Fechar não apaga a senha: ela continua valendo quando o admin
@@ -519,6 +522,75 @@ class _BlocoSenhaDoTopState extends State<_BlocoSenhaDoTop> {
       );
     } finally {
       if (mounted) setState(() => _mudandoTrava = false);
+    }
+  }
+
+  /// Liga ou desliga o aceite de quem NÃO está na lista do Top.
+  ///
+  /// Ligado, a senha do Top basta para entrar. Desligado, exige também o
+  /// número na lista — a segunda tranca. Ligar é só do master (o banco
+  /// recusa com 42501); desligar, qualquer admin.
+  Future<void> _alternarForaDaLista(bool valor) async {
+    // Ligar afrouxa quem entra no evento: confirma, e dizendo o que muda.
+    // Desligar não pergunta — é o lado seguro, e perguntar no lado seguro
+    // ensina a pessoa a apertar "sim" sem ler.
+    if (valor) {
+      final confirmou = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Aceitar quem não está na lista?'),
+          content: const Text(
+            'Com isto ligado, QUALQUER pessoa que souber a senha do Top se '
+            'cadastra, com qualquer número de Legendários — e a ficha é '
+            'criada com o que ela mesma digitar.\n\n'
+            'É o que permite montar a lista pelo autocadastro quando não '
+            'existe lista prévia. Mas a senha deixa de ter uma segunda '
+            'tranca: ela passa a bastar.\n\n'
+            'Quem entrar assim vê o Top, lê o chat geral e pode disparar '
+            'alarme. Não alcança prontuário nem a posição dos outros.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Entendi, aceitar'),
+            ),
+          ],
+        ),
+      );
+      if (confirmou != true) return;
+      if (!mounted) return;
+    }
+
+    setState(() => _mudandoForaDaLista = true);
+    try {
+      await AdminService.instance.definirAceitarForaDaLista(
+        widget.top.id,
+        valor,
+      );
+      if (!mounted) return;
+      setState(() => _foraDaLista = valor);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            valor
+                ? 'Aceitando quem não está na lista. A senha do Top passa a '
+                      'bastar — feche o cadastro quando a equipe entrar.'
+                : 'Agora exige o número NA LISTA do Top, além da senha.',
+          ),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível mudar: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _mudandoForaDaLista = false);
     }
   }
 
@@ -697,6 +769,10 @@ class _BlocoSenhaDoTopState extends State<_BlocoSenhaDoTop> {
               ? Theme.of(context).colorScheme.surfaceContainerHighest
               : Theme.of(context).colorScheme.errorContainer,
           child: SwitchListTile(
+            // Key porque a tela tem DOIS interruptores desde 24/11/2026, e
+            // `find.byType(SwitchListTile)` passou a achar os dois — os
+            // testes antigos quebraram com "Too many elements".
+            key: const Key('trava_autocadastro'),
             value: _liberado,
             // Fechar: qualquer admin. ABRIR: só o master. Fechar é sempre
             // o lado seguro — se der engano alguém reclama e resolve em um
@@ -723,6 +799,46 @@ class _BlocoSenhaDoTopState extends State<_BlocoSenhaDoTop> {
               style: Theme.of(context).textTheme.bodySmall,
             ),
             secondary: Icon(_liberado ? Icons.lock_open : Icons.lock),
+          ),
+        ),
+        const SizedBox(height: 8),
+
+        // QUEM pode se cadastrar. Mesma assimetria da trava acima: ligar é
+        // do master, desligar é de qualquer admin.
+        Card(
+          margin: EdgeInsets.zero,
+          color: _foraDaLista
+              ? Theme.of(context).colorScheme.errorContainer
+              : Theme.of(context).colorScheme.surfaceContainerHighest,
+          child: SwitchListTile(
+            key: const Key('aceitar_fora_da_lista'),
+            value: _foraDaLista,
+            onChanged:
+                _mudandoForaDaLista ||
+                    (!_foraDaLista && !widget.isMasterAdmin)
+                ? null
+                : _alternarForaDaLista,
+            title: Text(
+              _foraDaLista
+                  ? 'Aceita quem NÃO está na lista'
+                  : 'Só quem está na lista do Top',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            subtitle: Text(
+              _foraDaLista
+                  ? 'A senha do Top BASTA: qualquer número se cadastra e a '
+                        'ficha é criada com o que a pessoa digita. Use para '
+                        'montar a lista; desligue depois.'
+                  : widget.isMasterAdmin
+                  ? 'Exige a senha E o número na lista do Top. É a segunda '
+                        'tranca. Ligue só se o Top não tiver lista prévia.'
+                  : 'Exige a senha E o número na lista do Top. Só o '
+                        'administrador master muda isto — peça a ele.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            secondary: Icon(
+              _foraDaLista ? Icons.group_add : Icons.playlist_add_check,
+            ),
           ),
         ),
         const SizedBox(height: 12),

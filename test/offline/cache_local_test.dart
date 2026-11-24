@@ -431,7 +431,10 @@ void main() {
       // a conversa da equipe sumia justamente para quem chega sem sinal.
       // v6 cache de TOPS: quem entrava com o servidor fora parava na tela
       // inicial, sem caminho até o Top e o resto do cache.
-      expect(db.getVersion(), completion(6));
+      // v7 `cache_tops.aceitar_fora_da_lista`: o interruptor que faz a
+      // senha do Top bastar passou a ter tela, e a tela precisa saber o
+      // estado dele sem rede.
+      expect(db.getVersion(), completion(7));
 
       final tabelas =
           (await db.rawQuery(

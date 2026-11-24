@@ -45,6 +45,19 @@ class Top {
   /// recusa draft.
   final bool autocadastroLiberado;
 
+  /// Aceita autocadastro de número que NÃO está na lista do Top.
+  ///
+  /// Existe para Top sem lista prévia: a ficha é criada com o que a pessoa
+  /// digita, e o autocadastro passa a ser o jeito de CONSTRUIR a lista.
+  ///
+  /// **Ligado, a senha do Top passa a bastar** — a lista era a segunda
+  /// tranca. Por isso o padrão é `false`, é por Top, e só o admin master
+  /// liga (trigger `tops_trava_senha`, em
+  /// `supabase/13_trava_do_top_sem_uid_nulo.sql`). Desligar pode ser feito
+  /// por qualquer admin, pela mesma razão de fechar o cadastro: é o lado
+  /// seguro.
+  final bool aceitarForaDaLista;
+
   Top({
     required this.id,
     required this.name,
@@ -58,6 +71,7 @@ class Top {
     this.startsAt,
     this.endsAt,
     this.autocadastroLiberado = true,
+    this.aceitarForaDaLista = false,
   });
 
   factory Top.fromMap(Map<String, dynamic> map) {
@@ -80,6 +94,10 @@ class Top {
       // `?? true` e nao `?? false`: consulta antiga que nao traga a coluna
       // nao deve FECHAR o cadastro de um Top que esta aberto.
       autocadastroLiberado: map['autocadastro_liberado'] as bool? ?? true,
+      // `?? false`, ao contrário do de cima: consulta antiga que não traga
+      // a coluna NÃO deve afirmar que o Top aceita gente fora da lista.
+      // Aqui o default seguro é o restritivo.
+      aceitarForaDaLista: map['aceitar_fora_da_lista'] as bool? ?? false,
     );
   }
 }

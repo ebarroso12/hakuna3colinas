@@ -86,7 +86,7 @@ void main() {
   ) async {
     await montar(tester, master: false, top: topDe(autocadastro: false));
 
-    final sw = tester.widget<SwitchListTile>(find.byType(SwitchListTile));
+    final sw = tester.widget<SwitchListTile>(find.byKey(const Key('trava_autocadastro')));
     expect(
       sw.onChanged,
       isNull,
@@ -101,7 +101,7 @@ void main() {
   testWidgets('cadastro ABERTO: o admin comum PODE fechar', (tester) async {
     await montar(tester, master: false, top: topDe(autocadastro: true));
 
-    final sw = tester.widget<SwitchListTile>(find.byType(SwitchListTile));
+    final sw = tester.widget<SwitchListTile>(find.byKey(const Key('trava_autocadastro')));
     expect(
       sw.onChanged,
       isNotNull,
@@ -111,11 +111,11 @@ void main() {
 
   testWidgets('o master abre e fecha', (tester) async {
     await montar(tester, master: true, top: topDe(autocadastro: false));
-    var sw = tester.widget<SwitchListTile>(find.byType(SwitchListTile));
+    var sw = tester.widget<SwitchListTile>(find.byKey(const Key('trava_autocadastro')));
     expect(sw.onChanged, isNotNull);
 
     await montar(tester, master: true, top: topDe(autocadastro: true));
-    sw = tester.widget<SwitchListTile>(find.byType(SwitchListTile));
+    sw = tester.widget<SwitchListTile>(find.byKey(const Key('trava_autocadastro')));
     expect(sw.onChanged, isNotNull);
   });
 

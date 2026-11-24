@@ -24,7 +24,7 @@ class LocalDb {
 
   /// Subir este número roda as migrações em [_upgrade]. Nunca editar uma
   /// migração já publicada: adicionar a próxima.
-  static const _schemaVersion = 6;
+  static const _schemaVersion = 7;
 
   Database? _db;
 
@@ -178,6 +178,47 @@ class LocalDb {
     if (from < 4) await _clientIdUnicoPorEntidade(db);
     if (from < 5) await _criarCacheDeMensagens(db);
     if (from < 6) await _criarCacheDeTops(db);
+    if (from < 7) await _aceitarForaDaLista(db);
+  }
+
+  /// v7: `cache_tops` ganha `aceitar_fora_da_lista`.
+  ///
+  /// Default 0 (restritivo) de propósito: num aparelho que já tinha a v6,
+  /// a coluna nasce dizendo que o Top NÃO aceita gente fora da lista. Se
+  /// aceitar, a primeira leitura com rede corrige. O inverso — nascer 1 —
+  /// faria o app afirmar offline uma permissão que talvez não exista.
+  ///
+  /// ## Por que confere a coluna antes de adicionar
+  ///
+  /// `ColunasTop.criar` é a tabela ATUAL, com a coluna nova. Num aparelho
+  /// vindo da v5 ou de antes, `_criarCacheDeTops` (passo da v6) cria a
+  /// tabela **já com ela**, e aí este passo tentaria adicioná-la de novo:
+  /// `duplicate column name`. E isso acontece DENTRO do `onUpgrade`, ou
+  /// seja, **o banco local não abre** — o app subia e morria na primeira
+  /// leitura, em todo celular que não era aberto desde a v5.
+  ///
+  /// Pego pelos testes de migração em 24/11/2026, não por leitura: eu havia
+  /// escrito o passo como um `ALTER` seco. A armadilha é que o passo mais
+  /// novo é correto olhando só para ele — o defeito mora na combinação com
+  /// um passo anterior que usa o esquema de hoje.
+  ///
+  /// A alternativa seria `if (from < 7 && from >= 6)`. A conferência da
+  /// coluna é melhor: vale para qualquer ordem, sobrevive a um upgrade
+  /// interrompido no meio e não depende de ninguém refazer essa conta ao
+  /// acrescentar a v8.
+  Future<void> _aceitarForaDaLista(Database db) async {
+    final colunas = await db.rawQuery(
+      'PRAGMA table_info(${Tabelas.tops})',
+    );
+    final jaTem = colunas.any(
+      (c) => c['name'] == ColunasTop.aceitarForaDaLista,
+    );
+    if (jaTem) return;
+
+    await db.execute(
+      'ALTER TABLE ${Tabelas.tops} ADD COLUMN '
+      '${ColunasTop.aceitarForaDaLista} INTEGER NOT NULL DEFAULT 0',
+    );
   }
 
   /// v6: a lista de Tops passa a sobreviver sem rede.

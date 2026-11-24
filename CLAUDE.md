@@ -1460,7 +1460,236 @@ apagam em bloco depois.
 Ao mexer no esquema, a pergunta certa não é "a tabela existe?" e sim
 "**este fluxo funciona chamando de verdade?**".
 
+### A senha do Top saía do hash em 43 segundos
+
+Achado na revisão de 24/11/2026, **medido, não deduzido**. Três elos, e os
+três estavam abertos ao mesmo tempo:
+
+| Elo | Como estava |
+|---|---|
+| `tops_select_linked` | `is_approved() and status <> 'draft'` — **toda** conta aprovada vê **todo** Top não-rascunho |
+| `GRANT SELECT` por coluna em `tops` | `authenticated` e `anon` tinham `access_code_hash` na lista. **RLS é por LINHA, não por coluna** |
+| `fetchMyTops` | `.select()` sem lista de colunas virava `select *`, e `*` inclui o hash |
+
+A medição foi feita criando um membro comum aprovado dentro de uma
+transação, lendo pela RLS e desfazendo: com `is_admin() = false` ele leu a
+coluna do hash. E o hash era **SHA-256 cru, sem sal** — conferido
+recalculando-o a partir da senha em claro e comparando com a coluna.
+Alfabeto de 31 caracteres, 8 posições → `31^8` = 852.891.037.441. Uma GPU
+modesta (2 GH/s) varre tudo em ~7 minutos; uma RTX 4090, em **~43
+segundos**.
+
+**O estrago não era "a senha vaza".** Quem lê o hash é membro e já tem a
+senha. O estrago era que a garantia ESCRITA em `gerar_senha_top` —
+*"gerar de novo INVALIDA a anterior na hora, é assim que se corta o acesso
+se a senha vazar"* — **não cortava**: quem vazou a senha e continua com
+conta aprovada lê o hash novo e recupera a senha nova em minutos.
+Rotacionar não expulsava ninguém. E com `aceitar_fora_da_lista` ligado, a
+senha BASTA para entrar no Top.
+
+Escopo extra: a policy abre todo Top não-rascunho, então um membro do Top A
+lia e quebrava a senha do Top B. E não precisa do app — a chave anon está
+dentro do APK e um `curl` no PostgREST devolve a coluna.
+
+**Conserto: HMAC-SHA256 com um pepper que não está no banco**
+(`hashDoTop` na Edge Function `acesso`, segredo `SENHA_TOP_PEPPER`).
+Continua **determinístico**, então a busca do Top pelo hash com
+`maybeSingle()` segue funcionando — era por isso que bcrypt/argon2 não
+servem aqui. Quebrar fora do servidor passa a exigir o segredo.
+
+Três coisas que não se pode mexer sem entender:
+
+1. **Falha fechada.** Sem o segredo, `hashDoTop` levanta. Cair de volta no
+   SHA-256 cru pareceria funcionar e estaria desprotegido — pior que o erro.
+2. **Trocar o pepper invalida toda senha de Top em vigor.** Não trocar sem
+   querer isso.
+3. **O código individual (`access_requests.code_hash`) continua no `hash()`
+   simples, e isso foi conferido, não presumido:** `access_requests` **não
+   tem policy de SELECT nenhuma**, e RLS sem policy nega para todos. Aquele
+   hash não vaza.
+
+A senha em vigor foi **migrada** (o hash reescrito como HMAC), em vez de
+gerada de novo — a que o dono já tinha anotado continuou valendo. Conferido
+de ponta a ponta na função publicada: senha certa devolve o Top, senha
+errada devolve "numero ou senha do Top incorretos".
+
+**Nunca escrever hash de senha neste arquivo nem em commit.** O repositório
+é PÚBLICO. Na primeira tentativa de documentar isto eu ia colar o hash
+antigo aqui, e a ação foi barrada — a lição vale mais que o exemplo.
+
+**Falta a outra metade, e ela depende da base instalada.** `fetchMyTops`
+já pede colunas explícitas (v1.0.53), mas o
+`revoke select (access_code_hash) on tops from authenticated, anon` só pode
+entrar quando todo aparelho estiver na 1.0.53+: hoje ele quebraria todo APK
+≤ 1.0.52, que ainda manda `*`.
+
+### `auth.uid() is null` NÃO é "é o service_role"
+
+`07_senha_do_top_so_o_master.sql` e `11_autocadastro_sem_lista.sql` abriam a
+porta do trigger assim, com o comentário afirmando que era o `service_role`.
+Era também **a chave anon**, que está dentro do APK. A regra já estava
+escrita neste arquivo, no mesmo dia em que o furo foi introduzido.
+
+**Não era explorável, e isso precisa ser dito sem maquiagem:** `is_admin()`
+usa `exists (...)`, que devolve FALSE (nunca NULL) para quem não tem perfil,
+e `tops_admin_update` é `is_admin()` — a RLS barrava o anônimo antes do
+trigger disparar. O que estava quebrado era a **segunda tranca**.
+
+A versão válida é `13_trava_do_top_sem_uid_nulo.sql`, e os dois ramos de
+passagem foram **medidos** com uma sonda `session_user` /
+`request.jwt.claims` pelos dois caminhos:
+
+| quem chama | claims role | `session_user` |
+|---|---|---|
+| Edge Function (`service_role`) | `service_role` | `authenticator` |
+| chave ANON (dentro do APK) | `anon` | `authenticator` |
+| usuário logado | `authenticated` | `authenticator` |
+| psql / Management API / migração | *sem claims* | `postgres` |
+
+```sql
+if v_papel = 'service_role'
+   or (v_papel is null and session_user <> 'authenticator') then
+```
+
+O segundo ramo existe para a migração que conserta dados não ter a escrita
+revertida em silêncio. **`session_user` é o discriminador certo porque não é
+afetado por `security definer`** — `current_user` vira o dono da função e
+não distingue nada (lição de 12/10/2026).
+
+Medido depois de aplicar, isolando o trigger (rodando como `postgres`, com
+as claims trocadas, RLS fora do caminho):
+
+```
+claims anon tenta sobrescrever o hash ... revertido em silencio
+claims anon tenta ABRIR o cadastro ...... 42501
+service_role abre o cadastro ............ passa
+```
+
+### Arquivo de migração que REBAIXA outro tem de falhar alto
+
+`07` e `11` definiam a mesma função `tops_trava_senha_do_top()`, e a do `07`
+**não tinha** o ramo de `aceitar_fora_da_lista`. Rodar o `07` sozinho — o
+uso mais natural dele, "restaurar a trava da senha" — removia a proteção do
+interruptor, calado.
+
+É a mesma classe do que custou caro em 23/11/2026: `schema.sql` reexecutado
+ressuscitou a regra pega-tudo da triagem e repintou de vermelho todo mundo
+acima de 40 anos, sem erro em lugar nenhum.
+
+Hoje os dois arquivos têm uma guarda que confere se a função já está na
+versão nova (procura `request.jwt.claims` no corpo) e **levanta 42501** em
+vez de rebaixar. Conferido: rodar `07` ou `11` agora falha, e a trava
+continua na versão nova.
+
+**A regra geral: arquivo antigo que possa sobrescrever objeto mais novo não
+pode ser idempotente em silêncio — tem de recusar.** "Idempotente" não
+basta quando o arquivo é *história*.
+
+### O interruptor `aceitar_fora_da_lista` não tinha tela
+
+Ligado por SQL em 23/11 e sem nenhuma UI: não havia como desligar pelo app.
+A mitigação documentada ("feche o cadastro depois que a equipe entrar")
+cobria só `autocadastro_liberado` — e `gerar_senha_top` reabre esse junto,
+então o Top voltaria a aceitar qualquer número sem ninguém poder impedir.
+
+Hoje é um `SwitchListTile` no mesmo bloco da senha, com a **mesma
+assimetria**: ligar é do master (e pede confirmação dizendo que a senha
+passa a bastar), desligar é de qualquer admin. O default do modelo é
+`false` nos dois caminhos — construtor e `fromMap` sem a coluna —, o
+**inverso** de `autocadastroLiberado`, que é `true`. A diferença é
+deliberada: não trazer a coluna não pode AFIRMAR uma permissão.
+
+Entrou junto a v7 do esquema local (`cache_tops` ganhou a coluna, default
+0). E os dois `SwitchListTile` ganharam `Key`: com dois na mesma tela,
+`find.byType(SwitchListTile)` passou a achar os dois e os testes antigos
+quebraram com "Too many elements".
+
+### `is_approved()` devolvia NULL quando não havia perfil
+
+Era `select coalesce(approved, false) from profiles where id = auth.uid()`.
+O `coalesce` cobre a COLUNA nula; não cobre a **linha ausente** —
+subconsulta sem linha é NULL. Inofensivo enquanto toda policy a usa dentro
+de um `AND` (NULL nega). Vira armadilha no primeiro `not is_approved()`:
+`not null` é null, que nega também, e a policy faria o oposto do nome, sem
+erro. Corrigido com `coalesce` por fora, em `13`.
+
+### Viés de módulo no sorteio da senha
+
+`b % 31` com `b` em 0..255 não é uniforme: 256 não é múltiplo de 31, então
+os 8 primeiros caracteres sairiam 9 vezes em 256 e os outros 23 sairiam 8.
+A perda era ~0,06 bit na senha inteira e por isso passou batido. Entrou na
+conta quando o hash ganhou pepper: **a partir dali a entropia da senha é a
+única barreira**. Hoje `sortearDoAlfabeto` usa rejeição de amostra
+(descarta byte ≥ 248) e serve aos dois geradores.
+
+### Passo de migração local novo tem de conferir, não supor
+
+Cometido e pego em 24/11/2026, na v7 do esquema local. O passo era um
+`ALTER TABLE cache_tops ADD COLUMN aceitar_fora_da_lista` seco, e está
+**correto olhando só para ele**. O defeito mora na combinação:
+
+```dart
+if (from < 6) await _criarCacheDeTops(db);   // roda ColunasTop.criar
+if (from < 7) await _aceitarForaDaLista(db); // ALTER ... ADD COLUMN
+```
+
+`ColunasTop.criar` é o esquema de HOJE, com a coluna nova. Num aparelho
+vindo da v5 ou de antes, o passo da v6 cria a tabela **já com ela**, e o
+passo da v7 bate em `duplicate column name`. E isso acontece dentro do
+`onUpgrade`: **o banco local não abre**. O app subia e morria na primeira
+leitura, em todo celular que não fosse aberto desde a v5 — a base mais
+antiga, justamente a que mais precisa do cache.
+
+Pego pelos **testes de migração**, não por revisão: `migracao_v2_para_v3`
+e `cache_de_tops` abrem um banco antigo de arquivo e deixam subir até a
+versão atual. São os únicos testes do projeto que exercitam a combinação
+de passos em vez de um passo isolado.
+
+A correção confere a coluna antes (`PRAGMA table_info`) e sai se já
+existir. A alternativa seria `if (from < 7 && from >= 6)`, e é pior: vale
+só para esta versão, não sobrevive a um upgrade interrompido no meio, e
+obriga quem acrescentar a v8 a refazer a conta.
+
+**A regra: todo passo de `onUpgrade` que mexe em tabela criada por um passo
+anterior tem de ser idempotente por conferência.** É a mesma regra das
+migrações do Postgres (`if not exists`, rodar duas vezes), aplicada ao
+SQLite — que não tem `ADD COLUMN IF NOT EXISTS`. E ao bumpar
+`_schemaVersion`, a asserção `expect(db.getVersion(), completion(N))` em
+`cache_local_test.dart` tem de subir junto; ela é a guarda que lembra do
+resto.
+
+### Um falso alarme que vale registrar: a malha JÁ tem porteiro de plataforma
+
+Na mesma revisão eu afirmei que `BotaoDaMalha` era montado sem checar
+plataforma e que no iOS pediria o trio de Bluetooth do Android 12.
+**Errado.** O porteiro está em `TransporteNearby.disponivel`
+(`!kIsWeb && defaultTargetPlatform == TargetPlatform.android`),
+`BotaoDaMalha.build` devolve `SizedBox.shrink()` quando não está disponível,
+e `MalhaService.ligar` recusa **antes** de `_pedirPermissoes()`.
+
+O erro foi do método: procurei `kIsWeb` em `botao_da_malha.dart` e
+`malha_service.dart` e concluí da ausência. O porteiro mora na terceira
+camada. **Ausência de uma marca nos arquivos que eu escolhi olhar não é
+ausência da proteção** — seguir a chamada até o fim custa um grep a mais.
+
 ## Pendências conhecidas
+
+- **O `revoke` da coluna do hash espera a base instalada.** Desde 24/11/2026
+  o hash da senha do Top é HMAC com pepper, então vazar a coluna já não
+  entrega a senha — mas `authenticated` continua com `GRANT SELECT` em
+  `tops.access_code_hash`, e toda conta aprovada lê todo Top não-rascunho.
+  O conserto que falta é uma linha:
+
+  ```sql
+  revoke select (access_code_hash, access_code_set_at, access_code_set_by)
+    on public.tops from authenticated, anon;
+  ```
+
+  **Não rodar antes de todo aparelho estar na 1.0.53+.** APK <= 1.0.52 manda
+  `select *` em `fetchMyTops`, e com a coluna revogada o PostgREST recusa a
+  consulta inteira: a lista de Tops sumiria para quem não atualizou, que é
+  o caminho para todo o resto do app. Conferir com `app_versions` e com o
+  aviso de atualização antes.
 
 - **O Top novo está VAZIO, e é o que falta para o app servir.** Estado em
   23/11/2026, conferido no banco: Top "TRACK 3 Colinas 1 ano"
